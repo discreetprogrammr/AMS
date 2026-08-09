@@ -74,6 +74,32 @@ Once it runs locally without errors:
 2. In Vercel, import the repo, and add the same two environment variables (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`) under Project Settings → Environment Variables.
 3. Deploy. This gives you a shareable demo URL — useful for the BOC pitch without needing anyone else to run it locally.
 
-## Next (Step 3 in the spec)
+---
 
-Once the asset registry is confirmed working, the next step is the internal dashboard (KPI row, alerts panel) and reporting/export, per Section 6 of the spec.
+# Step 3 — Internal Dashboard and Export
+
+Implements Step 3 of the build order: a dashboard with the KPI row and alerts panels from Section 6 of the spec, plus a CSV export.
+
+## What's here
+
+- `app/dashboard/page.tsx` — the new landing page (the app now redirects `/` here instead of straight to `/assets`). Shows:
+  - **KPI row:** Total Assets, % Operational, Under Maintenance, Unserviceable, Certificates Expiring in the next 30 days.
+  - **Service Due panel:** any asset whose `next_service_due` falls within 30 days, overdue ones shown in red.
+  - **Certificates Expiring panel:** same idea, pulled from `compliance_certificates`.
+  - **Open Service Tickets** count.
+- `app/api/assets/export/route.ts` — a CSV export endpoint. The "Export CSV" button on the Assets page downloads every asset with its organization, site, and compliance fields.
+- Nav links added both ways: Dashboard ↔ Assets.
+
+Since no compliance certificates or service tickets exist yet (we haven't built that UI — that's the deferred Step 2 from the spec's build order, "Service records — scheduling, parts tracking, certificate tracking"), those two panels will legitimately show empty/zero right now. That's expected, not a bug — the dashboard is querying real tables that just don't have data in them yet. The "Service Due" panel *will* show something, since `next_service_due` is a field on the asset itself and you may have set it on your test asset.
+
+## Setup steps
+
+1. Pull the latest code (or re-copy from this project folder if you're not on git yet for this update).
+2. No new dependencies and no schema changes — nothing extra to install or run in Supabase.
+3. `npm run dev`, sign in, and you should land on `/dashboard` automatically now instead of `/assets`.
+4. Click "Export CSV" from the Assets page and confirm a file downloads with your test asset's data in it.
+5. As before: this hasn't been build-tested against the real npm/TypeScript toolchain in this session. If `npm run dev` or a Vercel build throws an error, send me the exact message.
+
+## Next (Step 4 in the spec)
+
+Client-facing portal — RLS-scoped views and service requests, so a client like BOC can log in and see only their own equipment.

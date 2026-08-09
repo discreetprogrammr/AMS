@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { requireStaff } from "@/lib/supabase/profile";
 
 // Anyone who can see the asset can raise a ticket on it — RLS restricts a
 // client_viewer to only their own organization's assets (see
@@ -39,10 +40,12 @@ export async function createTicket(assetId: string, formData: FormData) {
   redirect(`/assets/${assetId}?ticket=submitted`);
 }
 
-// Staff-only in practice — the "staff manage tickets" RLS policy is what
-// actually enforces this; a client_viewer's update would just fail silently
-// against RLS (no matching row to update) even if this were called.
+// Staff-only. RLS also enforces this at the database level, but without
+// this check a non-staff call would silently match zero rows and redirect
+// as if it worked — requireStaff() gives a clean redirect instead.
 export async function resolveTicket(assetId: string, ticketId: string) {
+  await requireStaff(`/assets/${assetId}`);
+
   const supabase = await createClient();
 
   const { error } = await supabase

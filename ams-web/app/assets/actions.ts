@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { requireStaff } from "@/lib/supabase/profile";
 
 function emptyToNull(value: FormDataEntryValue | null): string | null {
   if (value === null) return null;
@@ -30,6 +31,8 @@ function parseAssetForm(formData: FormData) {
 }
 
 export async function createAsset(formData: FormData) {
+  await requireStaff();
+
   const supabase = await createClient();
   const values = parseAssetForm(formData);
 
@@ -44,6 +47,8 @@ export async function createAsset(formData: FormData) {
 }
 
 export async function updateAsset(assetId: string, formData: FormData) {
+  await requireStaff(`/assets/${assetId}`);
+
   const supabase = await createClient();
   const values = parseAssetForm(formData);
 

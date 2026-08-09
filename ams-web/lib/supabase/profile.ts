@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { createClient } from "./server";
 
 export type Profile = {
@@ -28,4 +29,18 @@ export async function getProfile(): Promise<Profile | null> {
     .single();
 
   return (profile as Profile) ?? null;
+}
+
+// Defense-in-depth check for pages AND server actions. RLS in the database
+// is the real security boundary (it blocks the write either way), but
+// without this, a non-staff user hitting a staff-only action directly would
+// either get a confusing raw Postgres error or, worse, an UPDATE that
+// silently matches zero rows with no error at all. This gives a clean
+// redirect instead, before the query even runs.
+export async function requireStaff(redirectTo = "/assets"): Promise<Profile> {
+  const profile = await getProfile();
+  if (profile?.role !== "internal_staff") {
+    redirect(redirectTo);
+  }
+  return profile;
 }

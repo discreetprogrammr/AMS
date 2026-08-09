@@ -3,11 +3,14 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { requireStaff } from "@/lib/supabase/profile";
 
 // Starts a new inventory cycle for a site and auto-populates one checklist
 // item per asset currently at that site — the "scheduled cycle per site
 // with a checklist" from the spec's inventory cycle workflow.
 export async function createInventoryCycle(formData: FormData) {
+  await requireStaff();
+
   const supabase = await createClient();
 
   const {
@@ -59,6 +62,8 @@ export async function verifyItem(
   itemId: string,
   formData: FormData,
 ) {
+  await requireStaff(`/inventory/${cycleId}`);
+
   const supabase = await createClient();
 
   const {
@@ -83,6 +88,8 @@ export async function verifyItem(
 
 // Reopens an item if it was checked off by mistake.
 export async function unverifyItem(cycleId: string, itemId: string) {
+  await requireStaff(`/inventory/${cycleId}`);
+
   const supabase = await createClient();
 
   await supabase
@@ -98,6 +105,8 @@ export async function unverifyItem(cycleId: string, itemId: string) {
 // at close time ARE the discrepancies the reconciliation export surfaces,
 // mirroring how a real physical-count reconciliation works.
 export async function completeCycle(cycleId: string) {
+  await requireStaff(`/inventory/${cycleId}`);
+
   const supabase = await createClient();
 
   await supabase

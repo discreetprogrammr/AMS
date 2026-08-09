@@ -65,14 +65,14 @@ export default async function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-6xl p-6">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Dashboard</h1>
           <p className="text-sm text-slate-500">
             Fleet status across all clients and sites.
           </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <Link
             href="/assets"
             className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
@@ -85,6 +85,14 @@ export default async function DashboardPage() {
               className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
             >
               Inventory
+            </Link>
+          )}
+          {isStaff && (
+            <Link
+              href="/audit-log"
+              className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
+            >
+              Audit Log
             </Link>
           )}
           <form action={logout}>

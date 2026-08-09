@@ -159,6 +159,36 @@ This step needed two new tables, so there's a second SQL file: **`schema_step5.s
 5. Go back to Assets, edit your test asset's status to `unserviceable`, then click "Unserviceable Report" and confirm it shows up in that CSV.
 6. As always: untested against a real build in this session — send me the exact error if `npm run dev` or Vercel's build throws one.
 
-## Next (Step 6 in the spec)
+---
 
-Audit log and role-permission hardening — the last step in the build order. The audit log itself has existed since Step 1 (every change to assets, service records, and tickets is already logged); Step 6 is about surfacing it in the UI and tightening up permissions.
+# Step 6 — Audit Log and Role-Permission Hardening
+
+Implements Step 6, the last step in the build order.
+
+## Database change — run this first, and read this one carefully
+
+**`schema_step6.sql`** fixes a real gap, not just a cosmetic addition: `audit_log` has had **no Row Level Security enabled at all** since Step 1 — every other table got `alter table ... enable row level security`, but audit_log was missed. In practice that meant any authenticated user, including a client_viewer, could read the entire change history across every organization via the Supabase API, bypassing the org-scoping the rest of the schema enforces. This migration turns RLS on for it and restricts reads to internal staff only.
+
+It also adds a foreign key from `audit_log.changed_by` to `profiles`, so the UI can show a person's name instead of a bare UUID.
+
+1. Open the Supabase SQL Editor.
+2. Paste the full contents of `schema_step6.sql` and run it.
+3. If the foreign key step fails, it means some historical `changed_by` value doesn't match a `profiles` row — let me know and we'll track down which one.
+
+## What's here
+
+- **`/audit-log`** — a global, staff-only log of the last 100 changes across the system: table, action, who, when, and (for updates) which fields actually changed.
+- **"History" panel** on each asset's detail page (staff-only) — the same idea, scoped to that one asset.
+- **`requireStaff()`** — a shared helper (`lib/supabase/profile.ts`) now used consistently across every staff-only page *and* every staff-only server action (`createAsset`, `updateAsset`, `resolveTicket`, and all four inventory actions). RLS was already the real enforcement layer for all of these — this just means a non-staff user gets a clean redirect instead of either a raw Postgres error or, in the ticket/inventory update cases, a silent no-op with no explanation at all.
+
+## Setup steps
+
+1. Run `schema_step6.sql` in Supabase first — `/audit-log` and the asset History panel will error without it.
+2. `npm run dev`, sign in as staff, open any asset you've edited a few times, and check the History panel shows the edits with the right fields listed.
+3. Visit `/audit-log` directly and confirm it shows activity across assets, tickets, and inventory cycles.
+4. Log in as the client_viewer test user and confirm they don't see an "Audit Log" link anywhere, and that navigating to `/audit-log` directly redirects them away.
+5. As always: untested against a real build in this session — send me the exact error if something breaks.
+
+## Where things stand
+
+That's all six steps from the AMS spec's build order. The app now covers: asset registry, internal dashboard, client portal, inventory cycles, and a hardened audit trail — built on GitHub + Supabase + Vercel per the tech stack in `AMS_Spec_v0.3.docx`. Government hosting requirements (DICT GovCloud accreditation, formal compliance sign-off) remain explicitly out of scope until BOC's actual procurement requirements are known, per Section 8 of the spec.

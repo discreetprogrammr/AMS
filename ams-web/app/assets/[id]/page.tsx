@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/supabase/profile";
+import { changedFields } from "@/lib/audit";
 import { AssetForm } from "../asset-form";
 import { updateAsset } from "../actions";
 import { createTicket, resolveTicket } from "../tickets-actions";
@@ -37,6 +38,7 @@ export default async function EditAssetPage({
     { data: sites },
     { data: tickets },
     { data: certificates },
+    { data: history },
   ] = await Promise.all([
     supabase.from("assets").select("*").eq("id", params.id).single(),
     supabase.from("organizations").select("id, name").order("name"),
@@ -54,6 +56,14 @@ export default async function EditAssetPage({
       .select("id, certificate_type, issue_date, expiry_date")
       .eq("asset_id", params.id)
       .order("expiry_date", { ascending: true }),
+    // RLS restricts this to staff only — a client_viewer's query just
+    // comes back empty, no error, so it's safe to always run this.
+    supabase
+      .from("audit_log")
+      .select("id, action, changed_at, old_data, new_data, profiles(full_name)")
+      .eq("table_name", "assets")
+      .eq("record_id", params.id)
+      .order("changed_at", { ascending: false }),
   ]);
 
   if (!asset) notFound();
@@ -192,6 +202,40 @@ export default async function EditAssetPage({
           </div>
         </form>
       </div>
+
+      {isStaff && (
+        <div className="mt-6 rounded-lg border border-slate-200 bg-white p-6">
+          <h2 className="mb-3 text-sm font-semibold uppercase text-slate-500">
+            History
+          </h2>
+          {history?.length ? (
+            <ul className="divide-y divide-slate-100 text-sm">
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              {history.map((h: any) => (
+                <li key={h.id} className="py-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium capitalize">
+                      {String(h.action).toLowerCase()}
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      {new Date(h.changed_at).toLocaleString()}
+                    </span>
+                  </div>
+                  <p className="text-slate-500">
+                    {h.profiles?.full_name ?? "System"}
+                    {h.action === "UPDATE" &&
+                    changedFields(h.old_data, h.new_data).length
+                      ? ` changed: ${changedFields(h.old_data, h.new_data).join(", ")}`
+                      : ""}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-slate-400">No history recorded yet.</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

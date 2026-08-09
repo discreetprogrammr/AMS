@@ -1,13 +1,9 @@
-import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile } from "@/lib/supabase/profile";
+import { requireStaff } from "@/lib/supabase/profile";
 
 export default async function InventoryPage() {
-  const profile = await getProfile();
-  if (profile?.role !== "internal_staff") {
-    redirect("/assets");
-  }
+  await requireStaff();
 
   const supabase = await createClient();
 

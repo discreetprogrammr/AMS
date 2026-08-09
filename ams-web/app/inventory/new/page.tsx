@@ -1,6 +1,5 @@
-import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile } from "@/lib/supabase/profile";
+import { requireStaff } from "@/lib/supabase/profile";
 import { createInventoryCycle } from "../actions";
 
 export default async function NewInventoryCyclePage({
@@ -8,10 +7,7 @@ export default async function NewInventoryCyclePage({
 }: {
   searchParams: { error?: string };
 }) {
-  const profile = await getProfile();
-  if (profile?.role !== "internal_staff") {
-    redirect("/assets");
-  }
+  await requireStaff();
 
   const supabase = await createClient();
 

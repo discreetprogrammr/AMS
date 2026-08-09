@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getProfile } from "@/lib/supabase/profile";
 import { logout } from "../login/actions";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -18,6 +19,8 @@ const EQUIPMENT_LABEL: Record<string, string> = {
 
 export default async function AssetsPage() {
   const supabase = await createClient();
+  const profile = await getProfile();
+  const isStaff = profile?.role === "internal_staff";
 
   const { data: assets, error } = await supabase
     .from("assets")
@@ -48,12 +51,14 @@ export default async function AssetsPage() {
           >
             Export CSV
           </a>
-          <Link
-            href="/assets/new"
-            className="rounded bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700"
-          >
-            + Add Asset
-          </Link>
+          {isStaff && (
+            <Link
+              href="/assets/new"
+              className="rounded bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700"
+            >
+              + Add Asset
+            </Link>
+          )}
           <form action={logout}>
             <button className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100">
               Sign out
@@ -115,8 +120,9 @@ export default async function AssetsPage() {
             {assets?.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
-                  No assets yet. Click &ldquo;Add Asset&rdquo; to create the
-                  first one.
+                  {isStaff
+                    ? 'No assets yet. Click "Add Asset" to create the first one.'
+                    : "No assets on file yet."}
                 </td>
               </tr>
             )}

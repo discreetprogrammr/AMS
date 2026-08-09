@@ -100,6 +100,34 @@ Since no compliance certificates or service tickets exist yet (we haven't built 
 4. Click "Export CSV" from the Assets page and confirm a file downloads with your test asset's data in it.
 5. As before: this hasn't been build-tested against the real npm/TypeScript toolchain in this session. If `npm run dev` or a Vercel build throws an error, send me the exact message.
 
-## Next (Step 4 in the spec)
+---
 
-Client-facing portal — RLS-scoped views and service requests, so a client like BOC can log in and see only their own equipment.
+# Step 4 — Client-Facing Portal
+
+Implements Step 4 of the build order: role-aware views so a client (like BOC) can log in and see only their own equipment, plus service requests.
+
+## What's here
+
+Most of the actual data scoping for this step was already done back in Step 1 — the Row Level Security policies in `schema.sql` already restrict a `client_viewer` to their own `organization_id`, which is why the RLS test in Step 1 worked. Step 4 is mostly about the UI catching up to that:
+
+- `lib/supabase/profile.ts` — fetches the signed-in user's `profiles` row (role + organization) so pages know who's looking.
+- `app/assets/[id]/page.tsx` — now branches by role: `internal_staff` sees the editable form as before; `client_viewer` sees a read-only detail view instead. Both roles now see that asset's **Compliance Certificates** and **Service Tickets** below it.
+- `app/assets/tickets-actions.ts` — `createTicket` (anyone who can see the asset can raise a request — RLS already restricts a client_viewer to their own org's assets) and `resolveTicket` (staff-only in practice, enforced by RLS).
+- `app/assets/page.tsx` — the "+ Add Asset" button and the direct `/assets/new` route are now hidden/blocked for anyone who isn't `internal_staff`.
+
+Worth repeating: the UI hiding these actions is for a clean experience, not the actual security boundary — RLS in the database is what actually prevents a client_viewer from editing an asset or another org's data, regardless of what buttons are shown. That was already true and tested back in Step 1.
+
+## Setup steps — testing both roles
+
+1. No schema changes, no new dependencies. Pull the latest code and `npm run dev` as usual.
+2. **As internal staff** (your usual login): open any asset, confirm you still see the editable form, plus the new Certificates and Service Tickets sections underneath.
+3. **As the client_viewer test user** you created back in Step 1's RLS test: log out, log back in as that user. You should see:
+   - Only that user's own organization's asset(s) on `/assets` and reflected in `/dashboard`'s KPIs.
+   - No "+ Add Asset" button, and no edit form on the asset detail page — just a read-only view.
+   - A "Raise a Service Request" form at the bottom of the asset detail page. Submit one.
+4. Log back in as internal staff, open that same asset, and confirm the ticket you just submitted as the client shows up, with a "Mark Resolved" link. Click it and confirm the ticket's status updates and the dashboard's "Open Service Tickets" count drops by one.
+5. As always: this is untested against a real build in this session. If something errors locally or on Vercel, send me the message.
+
+## Next (Step 5 in the spec)
+
+Inventory cycle workflow and unserviceable reporting — the COA-style annual physical inventory checklist and the IIRUP-style unserviceable equipment report.

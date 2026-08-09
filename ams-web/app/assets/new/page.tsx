@@ -1,4 +1,6 @@
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getProfile } from "@/lib/supabase/profile";
 import { AssetForm } from "../asset-form";
 import { createAsset } from "../actions";
 
@@ -7,6 +9,11 @@ export default async function NewAssetPage({
 }: {
   searchParams: { error?: string };
 }) {
+  const profile = await getProfile();
+  if (profile?.role !== "internal_staff") {
+    redirect("/assets");
+  }
+
   const supabase = await createClient();
 
   const [{ data: organizations }, { data: sites }] = await Promise.all([

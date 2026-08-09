@@ -192,3 +192,256 @@ It also adds a foreign key from `audit_log.changed_by` to `profiles`, so the UI 
 ## Where things stand
 
 That's all six steps from the AMS spec's build order. The app now covers: asset registry, internal dashboard, client portal, inventory cycles, and a hardened audit trail — built on GitHub + Supabase + Vercel per the tech stack in `AMS_Spec_v0.3.docx`. Government hosting requirements (DICT GovCloud accreditation, formal compliance sign-off) remain explicitly out of scope until BOC's actual procurement requirements are known, per Section 8 of the spec.
+
+---
+
+# Rebrand — HorizonCare360 UI restyle
+
+No database changes, no new dependencies. Pure front-end: the app is now branded **HorizonCare360** and restyled to match a dark-theme reference design (color palette, typography, persistent sidebar/topbar layout).
+
+## What changed
+
+- **Rebrand**: page title/metadata, login screen, and sidebar header now say "HorizonCare360" instead of "Pacific Horizon Tek — AMS".
+- **Design system**: dark near-black background, card/surface color, hairline borders, Inter font (loaded via `next/font/google`), added as Tailwind theme tokens in `tailwind.config.ts` (`base`, `surface`, `surface-2`, `hairline`).
+- **`components/sidebar.tsx`** — persistent left nav, role-aware. Staff see every section from the reference design: Dashboard, Assets, and Inventory / Audit Log (real, working links), plus Fleet Map, Clients, Work Orders, Tickets, Inspections, Calendar, Reports, Alerts, and "HorizonCare360 Assist" chat as **disabled placeholders labeled "Soon"** — nothing here is faked as working. Client-viewer accounts see only Dashboard and Assets, matching what they could already access.
+- **`components/topbar.tsx`** and **`components/app-shell.tsx`** — shared page header + layout wrapper. Every page now imports `AppShell` instead of hand-rolling its own header/nav bar.
+- **`components/status-badge.tsx`** — one shared color-coded pill component for every status/priority value in the app (asset status, ticket status/priority, sold-by), replacing plain text labels.
+- All existing pages (`dashboard`, `assets`, `assets/[id]`, `assets/new`, `inventory`, `inventory/new`, `inventory/[id]`, `audit-log`, `login`) restyled to the new dark theme. **No new features, no fabricated data** — every number on the dashboard and every table column is still pulled from the same real Supabase queries as before; nothing like the SLA gauges or engineer-workload charts in the reference screenshots was added, since we don't track that data yet.
+
+## Setup steps
+
+1. No SQL to run — this is a front-end-only change.
+2. `npm run dev` as usual, no new dependencies.
+3. Check the login page, then sign in as staff and click through Dashboard → Assets → an asset detail page → Inventory → a cycle detail page → Audit Log. Confirm the sidebar highlights the active page and the placeholder items ("Fleet Map", "Clients", etc.) show a "Soon" tag and don't navigate anywhere.
+4. Log in as the client_viewer test user and confirm the sidebar only shows Dashboard and Assets — no placeholders, no staff-only links.
+5. As always: only syntax-checked in this session, not run through a real build — send me the exact error if `npm run dev` or Vercel's build throws one.
+
+## What's next
+
+Two options once this is confirmed working: keep going on new features (the placeholder nav items — Fleet Map, Clients, Work Orders, Tickets, Inspections, Calendar, Reports, Alerts — are natural candidates, in whatever order matters most), or start the CRM build. Let me know which.
+
+---
+
+# Dashboard widgets — Active Tickets, Equipment Health, SLA Performance
+
+Adding the reference-design dashboard widgets one at a time, on top of the HorizonCare360 restyle above.
+
+## Database change
+
+**`schema_step7.sql`** — adds two columns to `service_tickets`: `first_response_at` and `resolved_at`. No RLS changes (existing policies already cover them). Run this in the Supabase SQL Editor before testing the SLA widget.
+
+## What's here
+
+- **Active Support Tickets card** — real counts of open/in-progress/resolved tickets, links to a new **`/tickets`** page (global, staff-only ticket queue across all clients).
+- **System & Equipment Health card** — reuses the existing operational/maintenance/unserviceable asset counts, shown as a status dot + progress bar.
+- **SLA Performance card** — the one that needed new tracking. A ticket's `first_response_at` gets stamped the first time staff clicks the new **"Start Progress"** button on its detail page (or the moment it's resolved, if it was resolved without an explicit acknowledgement first). `resolved_at` gets stamped by "Mark Resolved" as before. The dashboard then computes, over tickets created in the last 30 days: average first-response time, average resolution time, and a real compliance % (resolved within 48h ÷ tickets resolved). Target is currently hardcoded at 8h response / 48h resolution — not a signed client SLA, just the working number until there's a real one to replace it with.
+
+## Setup steps
+
+1. Run `schema_step7.sql` in Supabase first.
+2. `npm run dev`, sign in as staff, open an asset with an open ticket (or raise a new one), and click "Start Progress" — confirm it moves to "in_progress".
+3. Click "Mark Resolved" and confirm the ticket disappears from the active count.
+4. Go to `/dashboard` and check the SLA Performance card shows real numbers (or "—" if there's no resolved-ticket data yet in the last 30 days — that's expected on a fresh dataset, not a bug).
+5. Visit `/tickets` directly and confirm it lists tickets across all assets/clients.
+6. As always: only syntax-checked in this session, not run through a real build — send me the exact error if `npm run dev` or Vercel's build throws one.
+
+## Still to come
+
+The SLA Historical Performance chart (needs a few weeks of real resolved-ticket data to not be an empty chart) and Recent Activity & Inspections (the "Inspections" part doesn't exist as a feature yet — audit log + tickets activity could be shown now, inspections would need to be scoped separately).
+
+---
+
+# Quick Action Center widget
+
+No schema changes. Adds the 4th card to the dashboard's top row (now `Active Support Tickets · System & Equipment Health · SLA Performance · Quick Action Center`).
+
+## What's here
+
+- **Request New Service** (primary button) — links to a new **`/tickets/new`** page: a staff-only form with an asset dropdown, description, and priority. Submitting it creates a real ticket via a new `createGlobalTicket` action (same insert logic as the per-asset "Raise a Service Request" form, just with the asset picked from a list instead of already being on that asset's page).
+- **Open Support Ticket** (secondary button) — links to the `/tickets` queue built earlier.
+- **Start Live Call** — shown as a disabled "Soon" item, same treatment as the unbuilt sidebar sections. Per your call: live chat/calling is a real feature you want to build later, not something to fake a link for now.
+
+## Setup steps
+
+1. No SQL to run.
+2. `npm run dev`, sign in as staff, click "Request New Service" on the dashboard, pick an asset, submit — confirm it lands you back on `/tickets` with a "Service request submitted" banner and the new ticket shows up in the queue.
+3. Click "Open Support Ticket" and confirm it goes straight to the queue.
+4. Confirm "Start Live Call" is visibly inert (no click target) and tagged "Soon."
+5. As always: only syntax-checked in this session — send me the exact error if `npm run dev` or Vercel's build throws one.
+
+---
+
+# SLA Historical Performance widget
+
+No schema changes, no new dependencies — the chart is hand-rolled with plain divs (no charting library), same approach as the SLA Performance ring.
+
+## What's here
+
+A 5-bar weekly chart on the dashboard: for each of the last 5 rolling 7-day windows (`W-4` through `This wk`), it shows what percent of tickets *resolved* that week were closed within the 48h target. Bucketed by `resolved_at`, not `created_at` — the question this chart answers is "how did we perform closing tickets that week," not "how are tickets created that week doing."
+
+Because this reuses the same `resolved_at` field the SLA Performance widget just started tracking, **the chart will be mostly empty on a fresh dataset** — that's expected, not a bug. A week with zero resolved tickets shows as "—" with a bar, not a fake 0%. There's a small note under the chart title when there's no data at all yet in the last 5 weeks.
+
+Bars are colored the same way as the SLA ring: green ≥80%, amber ≥50%, red below that.
+
+## Setup steps
+
+1. No SQL to run.
+2. `npm run dev`, sign in as staff, resolve a couple of tickets (Start Progress → Mark Resolved on a few different assets), then check the dashboard — "This wk" should start showing a real percentage.
+3. Hover a bar to see the tooltip (`X% of Y resolved`, or "No tickets resolved this week").
+4. As always: only syntax-checked in this session — send me the exact error if `npm run dev` or Vercel's build throws one.
+
+## Still to come
+
+Recent Activity & Inspections is the last widget from the reference screenshots. The "Recent Activity" half is buildable now from the audit log + tickets we already track; "Inspections" isn't a feature yet and would need to be scoped as its own thing (separate from the existing Inventory Cycles) before it can show real data.
+
+---
+
+# Recent Activity widget
+
+No schema changes, no new dependencies. Sits next to the SLA Historical Performance chart on the dashboard (chart takes 2/3 width, this takes 1/3, matching the reference layout).
+
+## What's here
+
+A feed of the last 8 audit log entries, across every table that's already audited — assets, service tickets, and inventory cycles — turned into plain-language activity lines instead of raw table/action/diff rows:
+
+- **Assets**: "Asset Added / Updated / Removed" + the asset tag + its current status badge.
+- **Tickets**: "Ticket Opened / In Progress / Resolved" + the same `TKT-XXXXXXXX` reference used on the `/tickets` queue, plus which asset and client it's for.
+- **Inventory Cycles**: "Inventory Cycle Started / Completed / Updated" + the cycle's label.
+
+Everything here is real — pulled straight from `audit_log`, which already captures a full snapshot of the row on every insert/update/delete (see `log_audit()` in `schema.sql`), so there's nothing invented to build this. One small addition: ticket audit rows only carry an asset ID, not the asset's tag or client name, so there's a tiny follow-up query that looks up just the assets referenced on that page of activity.
+
+This intentionally does **not** include "Inspections" from the reference screenshots — that's not a feature that exists yet (it's different from the Inventory Cycles we do have), so nothing was added to fake it.
+
+## Setup steps
+
+1. No SQL to run.
+2. `npm run dev`, sign in as staff, and check the dashboard — you should see recent asset edits, ticket status changes, and inventory cycle activity you've already generated while testing the earlier widgets.
+3. Click an entry and confirm it takes you to the right asset or inventory cycle page.
+4. Confirm client_viewer accounts don't see this card at all (staff-only row, like the other four widgets).
+5. As always: only syntax-checked in this session — send me the exact error if `npm run dev` or Vercel's build throws one.
+
+## Where things stand
+
+That's every widget from the original HorizonCare360 reference screenshots now built with real data: Active Support Tickets, System & Equipment Health, SLA Performance, Quick Action Center, SLA Historical Performance, and Recent Activity. Nothing on the dashboard is fabricated — every number, badge, and chart traces back to an actual Supabase query. The only screenshot element intentionally left out is "Inspections," which isn't a feature yet.
+
+---
+
+# Login page redesign — real logo, grid-texture branding
+
+Replicates the reference login screenshot's split-screen design: dark navy left panel with a subtle grid texture and blue glow, the real HorizonCare360 logo, bold headline, and address footer; a plain dark sign-in form on the right.
+
+## New assets
+
+Cropped the logo file you uploaded into two PNGs in `ams-web/public/`:
+
+- `logo-mark.png` — just the icon (gear/chart/arrows mark), used everywhere small: the sidebar header and the login page. Replaces the placeholder "HC" gradient badge that was there before.
+- `logo-full.png` — the icon plus the "HorizonCare360" wordmark, saved for later if you want the full lockup somewhere (not used in the UI yet).
+
+## Deliberate deviations from the reference
+
+A few things in the reference screenshot don't map cleanly onto what actually exists yet, so instead of faking them:
+
+- **"CLIENT PORTAL" → "HorizonCare360 Portal"** — the reference screenshot is client-facing copy, but this login page serves both staff and clients (role is decided after sign-in). Relabeled so it's accurate for both.
+- **"SEC-registered counterparty" dropped** — that's financial-industry language that doesn't apply to Phtek; replaced with "Protected environment · Role-based access control," which is actually true (RLS + role-based RBAC).
+- **"Forgot password?" is inert, not a dead link** — there's no password-reset flow built yet. It's shown (matching the design) but greyed out with a tooltip explaining a staff admin can reset it in Supabase for now. Say the word if you want a real self-service reset flow built.
+- **"Remember me" is a plain checkbox** — sessions already persist via cookies regardless of its state (that's the existing Supabase Auth default), so it's cosmetic for now, not a functional toggle.
+
+## Setup steps
+
+1. No SQL to run.
+2. `npm run dev` and check `/login` — confirm the logo renders (it's a local file in `public/`, no external URL), the grid texture and glow show up on the left panel, and the sidebar logo (after signing in) also updated.
+3. As always: only syntax-checked in this session, not run through a real build — send me the exact error if `npm run dev` or Vercel's build throws one.
+
+---
+
+# Topbar redesign + real dark/light theme toggle
+
+This one touched almost every file in the app, but mechanically — it's a rename, not a rewrite. No new dependencies.
+
+## How the toggle actually works
+
+Every themed color in the app (`bg-base`, `bg-surface`, `border-hairline`, the `text-ink`/`text-ink-soft` text tokens, and the amber/emerald/red/blue "400" status shades) now reads from CSS variables defined in `app/globals.css` — dark values under `:root`, light values under a `.light` class. Clicking the sun/moon button in the topbar (`components/theme-toggle.tsx`) toggles that `.light` class on `<html>` and saves the choice to `localStorage`. Because it's the *same* color tokens flipping everywhere — not a `dark:`-prefixed twin class on every element — the whole app re-themes at once, not just the topbar. A small inline script in `app/layout.tsx` applies the saved theme before first paint, so there's no flash of the wrong theme on reload.
+
+The mechanical part: every page's `text-white` / `text-slate-200` became `text-ink`, and `text-slate-300` / `text-slate-400` became `text-ink-soft` (105 replacements across 16 files) — those were the only text colors that would've gone invisible or low-contrast against a white background. `text-slate-500` and `text-slate-600` were left alone; they read fine on both a dark surface and a white one.
+
+## Topbar layout
+
+Matches your reference: title/subtitle on the left, then search box, "All Sites" filter, the theme toggle, and a notification bell on the right. Page-specific action buttons (Add Asset, Export CSV, Request New Service, etc.) that used to live in the topbar now render as a row at the top of the page content instead — the reference topbar has no room for them, so they moved down one level. Nothing about those buttons changed functionally, just where they sit.
+
+## What's real vs. what's not (yet)
+
+- **Theme toggle**: real, works, persists.
+- **Search box, "All Sites" filter, notification bell**: visible for layout parity with your reference, but intentionally inert — disabled, with a tooltip explaining they're not wired up. None of them fake functionality; nothing happens if you click them. Search and site-filtering would each be a real (and reasonably sized) feature to build on top of what already exists in the schema; the bell is a natural fit for the certs-expiring / unserviceable / SLA-breach data the dashboard already computes, if you want that as a next step.
+
+## Setup steps
+
+1. No SQL to run.
+2. `npm run dev`, sign in, and click the sun icon in the top-right — confirm the whole app (not just the topbar) switches to a light theme, the icon becomes a moon, and reloading the page keeps the light theme (no flash back to dark first).
+3. Toggle back to dark and confirm the same in reverse.
+4. Spot-check a few pages (Assets, an asset detail page, Inventory) in light mode for any low-contrast text — I've mapped every text color used, but I can't run a real build or take a screenshot in this environment, so a visual pass on your end is the real check here.
+5. As always: only syntax-checked in this session — send me the exact error (or a screenshot of anything that looks off) if `npm run dev` or Vercel's build throws one.
+
+---
+
+# Clients module — the first of several "match the reference" modules
+
+You connected the actual source of the HorizonCare360 reference (a separate app, `horizoncare-360`, built on a different stack with its own Supabase project) and asked me to bring AMS up to feature parity: all its tabs/modules, matching design, real database tables on our own Supabase project, and eventually its live chat + calling feature.
+
+That's a big scope — bigger than everything built so far in this project combined, including a full WebRTC voice/video calling system in the reference. We agreed to do it in phases, simple modules first. This is phase 1: **Clients**.
+
+## An important adaptation, not a literal copy
+
+The reference has separate `clients` and `machines` tables. AMS already has the same real-world entities under different names: `organizations` (= their `clients`) and `assets` (= their `machines`), and our RLS/client-portal security model is already built around `organization_id`. Adding parallel `clients`/`machines` tables would just split the same data across two schemas with no way to keep them in sync — the client portal would show one asset list, the new "Clients" admin view would show another. So instead of copying their schema literally, **`schema_step8.sql`** adds the one genuinely missing field (`email`) to `organizations`, and adds audit logging to `organizations` and `sites` (every other editable entity already has it, these two didn't).
+
+## What's here
+
+- **`/clients`** — staff-only list of every client organization, with a real client-side search box (name/sector/contact/email), plus site and asset counts per client.
+- **`/clients/new`** — add a client (name, sector, primary contact, email).
+- **`/clients/[id]`** — client detail: editable client info, its sites (with an inline "add site" form), and its registered assets (linking to the existing asset detail pages — no duplicate asset UI).
+- Sidebar "Clients" link is now live instead of "Soon".
+
+## Setup steps
+
+1. Run `schema_step8.sql` in Supabase.
+2. `npm run dev`, sign in as staff, go to Clients, add a test client, add a site to it, then check that client's existing assets (if any) show up correctly scoped.
+3. Confirm client_viewer accounts still don't see "Clients" in the sidebar and can't reach `/clients` directly (staff-only, same `requireStaff()` pattern as everywhere else).
+4. As always: only syntax-checked in this session — send me the exact error if `npm run dev` or Vercel's build throws one.
+
+## What's next
+
+Work Orders, then Alerts, Inspections, Calendar, Reports, Fleet Map, and finally the big one — live chat + WebRTC calling — per the order you picked.
+
+## Follow-up — reverted the topbar's visual redesign, kept the toggle
+
+The search box, "All Sites" filter, and notification bell from the reference screenshot are gone again — back to the plain topbar (title/subtitle on the left, real page action buttons on the right). The dark/light toggle stays, now living in that original topbar layout, and the theming system underneath it (CSS variables in `globals.css`, the `text-ink`/`text-ink-soft` tokens) is untouched since that's what makes the toggle actually work app-wide. Page action buttons (Add Asset, Export CSV, etc.) also moved back into the topbar itself instead of the row above page content.
+
+---
+
+# Work Orders module — phase 2 of "match the reference"
+
+Phase 2 of the build order: **Work Orders**, the internal maintenance-operations queue.
+
+## Staff-only, unlike Tickets
+
+Checked the reference's `/work-orders` route before building this: it calls a `useClientRedirect()` hook that bounces any client-role user straight back to their dashboard. So unlike `service_tickets` (which clients can raise and view for their own assets), `work_orders` is staff-only end to end — same RLS pattern as `inventory_cycles` (Step 5), not the shared staff-manage/client-read pattern tickets use. Sidebar-wise that means Work Orders only ever shows up for staff, same as Clients and Inventory.
+
+Also reused the existing `ticket_priority` enum (low/medium/high) instead of inventing a parallel priority type for work orders — same scale, and `StatusBadge` already has colors wired up for those three values, so no UI changes needed there.
+
+## What's here
+
+- **`schema_step9.sql`** — new `work_orders` table (asset, task title, description, work type, priority, status, lead technician, due date), `work_order_status`/`work_order_type` enums, audit trigger, staff-only RLS policy.
+- **`/work-orders`** — staff-only queue with filter pills (All Open / High Priority / In Progress / Completed, matching the reference's filter bar) and an inline status dropdown per row for quick updates without leaving the list.
+- **`/work-orders/new`** — create a work order against any asset (asset picker, task title, description, work type, priority, lead technician, due date).
+- Sidebar "Work Orders" link is now live instead of "Soon".
+- No detail/edit page — the reference itself doesn't have one either, just the list with inline status changes and a create form, so this matches it exactly rather than adding scope it doesn't have.
+
+## Setup steps
+
+1. Run `schema_step9.sql` in Supabase (after `schema_step8.sql`, if you haven't already).
+2. `npm run dev`, sign in as staff, go to Work Orders, create one against an existing asset, then change its status from the dropdown in the list and confirm it moves between filter pills correctly (e.g. marking it "Completed" drops it out of "All Open").
+3. Confirm client_viewer accounts still don't see "Work Orders" in the sidebar and can't reach `/work-orders` or `/work-orders/new` directly.
+4. As always: only syntax-checked in this session — send me the exact error if `npm run dev` or Vercel's build throws one.
+
+## What's next
+
+Alerts, then Inspections, Calendar, Reports, Fleet Map, and finally live chat + WebRTC calling.

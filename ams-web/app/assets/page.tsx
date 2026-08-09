@@ -1,13 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/supabase/profile";
-import { logout } from "../login/actions";
-
-const STATUS_LABEL: Record<string, string> = {
-  operational: "Operational",
-  under_maintenance: "Under Maintenance",
-  unserviceable: "Unserviceable",
-};
+import { AppShell } from "@/components/app-shell";
+import { StatusBadge } from "@/components/status-badge";
 
 const EQUIPMENT_LABEL: Record<string, string> = {
   xray_screening: "X-ray Screening",
@@ -30,76 +25,46 @@ export default async function AssetsPage() {
     .order("created_at", { ascending: false });
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Assets</h1>
-          <p className="text-sm text-slate-500">
-            All equipment tracked across clients and sites.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <Link
-            href="/dashboard"
-            className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
-          >
-            Dashboard
-          </Link>
+    <AppShell
+      profile={profile}
+      title="Assets"
+      subtitle="All equipment tracked across clients and sites."
+      actions={
+        <>
           <a
             href="/api/assets/export"
-            className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
+            className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
           >
             Export CSV
           </a>
           {isStaff && (
-            <Link
-              href="/inventory"
-              className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
-            >
-              Inventory
-            </Link>
-          )}
-          {isStaff && (
             <a
               href="/api/assets/export/unserviceable"
-              className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
+              className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
             >
               Unserviceable Report
             </a>
           )}
           {isStaff && (
             <Link
-              href="/audit-log"
-              className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
-            >
-              Audit Log
-            </Link>
-          )}
-          {isStaff && (
-            <Link
               href="/assets/new"
-              className="rounded bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700"
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-ink hover:bg-blue-500"
             >
               + Add Asset
             </Link>
           )}
-          <form action={logout}>
-            <button className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100">
-              Sign out
-            </button>
-          </form>
-        </div>
-      </div>
-
+        </>
+      }
+    >
       {error && (
-        <p className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
           {error.message}
         </p>
       )}
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="overflow-hidden rounded-xl border border-hairline bg-surface">
         <table className="w-full text-left text-sm">
-          <thead className="bg-slate-100 text-xs uppercase text-slate-500">
+          <thead className="bg-surface-2 text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3">Asset Tag</th>
               <th className="px-4 py-3">Organization</th>
@@ -114,36 +79,41 @@ export default async function AssetsPage() {
             {assets?.map((asset: any) => (
               <tr
                 key={asset.id}
-                className="border-t border-slate-100 hover:bg-slate-50"
+                className="border-t border-hairline hover:bg-surface-2"
               >
                 <td className="px-4 py-3">
                   <Link
                     href={`/assets/${asset.id}`}
-                    className="font-medium text-slate-900 hover:underline"
+                    className="font-medium text-ink hover:underline"
                   >
                     {asset.asset_tag}
                   </Link>
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 text-ink-soft">
                   {asset.organizations?.name ?? "—"}
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 text-ink-soft">
                   {EQUIPMENT_LABEL[asset.equipment_type] ??
                     asset.equipment_type}
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 text-ink-soft">
                   {[asset.brand, asset.model].filter(Boolean).join(" / ") ||
                     "—"}
                 </td>
                 <td className="px-4 py-3">
-                  {STATUS_LABEL[asset.status] ?? asset.status}
+                  <StatusBadge status={asset.status} />
                 </td>
-                <td className="px-4 py-3">{asset.next_service_due ?? "—"}</td>
+                <td className="px-4 py-3 text-ink-soft">
+                  {asset.next_service_due ?? "—"}
+                </td>
               </tr>
             ))}
             {assets?.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
+                <td
+                  colSpan={6}
+                  className="px-4 py-8 text-center text-slate-500"
+                >
                   {isStaff
                     ? 'No assets yet. Click "Add Asset" to create the first one.'
                     : "No assets on file yet."}
@@ -153,6 +123,6 @@ export default async function AssetsPage() {
           </tbody>
         </table>
       </div>
-    </div>
+    </AppShell>
   );
 }

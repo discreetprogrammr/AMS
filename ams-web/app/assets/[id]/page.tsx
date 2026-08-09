@@ -3,15 +3,11 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/supabase/profile";
 import { changedFields } from "@/lib/audit";
+import { AppShell } from "@/components/app-shell";
+import { StatusBadge } from "@/components/status-badge";
 import { AssetForm } from "../asset-form";
 import { updateAsset } from "../actions";
-import { createTicket, resolveTicket } from "../tickets-actions";
-
-const STATUS_LABEL: Record<string, string> = {
-  operational: "Operational",
-  under_maintenance: "Under Maintenance",
-  unserviceable: "Unserviceable",
-};
+import { createTicket, resolveTicket, acknowledgeTicket } from "../tickets-actions";
 
 const EQUIPMENT_LABEL: Record<string, string> = {
   xray_screening: "X-ray Screening",
@@ -72,171 +68,191 @@ export default async function EditAssetPage({
   const boundCreateTicket = createTicket.bind(null, params.id);
 
   return (
-    <div className="mx-auto max-w-2xl p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">
-          {isStaff ? "Edit Asset" : "Asset Details"} — {asset.asset_tag}
-        </h1>
+    <AppShell
+      profile={profile}
+      title={`${isStaff ? "Edit Asset" : "Asset Details"} — ${asset.asset_tag}`}
+      actions={
         <Link
           href="/assets"
-          className="text-sm text-slate-500 hover:underline"
+          className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
         >
           ← Back to Assets
         </Link>
-      </div>
-
-      {searchParams?.error && (
-        <p className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
-          {searchParams.error}
-        </p>
-      )}
-      {searchParams?.ticket === "submitted" && (
-        <p className="mb-4 rounded bg-green-50 px-3 py-2 text-sm text-green-700">
-          Service request submitted.
-        </p>
-      )}
-
-      {isStaff ? (
-        <AssetForm
-          organizations={organizations ?? []}
-          sites={sites ?? []}
-          action={boundUpdate}
-          defaultValues={asset}
-          submitLabel="Update Asset"
-        />
-      ) : (
-        <AssetDetailReadOnly asset={asset} />
-      )}
-
-      <div className="mt-6 rounded-lg border border-slate-200 bg-white p-6">
-        <h2 className="mb-3 text-sm font-semibold uppercase text-slate-500">
-          Compliance Certificates
-        </h2>
-        {certificates?.length ? (
-          <ul className="divide-y divide-slate-100 text-sm">
-            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-            {certificates.map((c: any) => (
-              <li
-                key={c.id}
-                className="flex items-center justify-between py-2"
-              >
-                <span>{c.certificate_type}</span>
-                <span className="text-slate-500">
-                  Expires {c.expiry_date ?? "—"}
-                </span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-slate-400">
-            No certificates on file yet.
+      }
+    >
+      <div className="mx-auto max-w-2xl">
+        {searchParams?.error && (
+          <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+            {searchParams.error}
           </p>
         )}
-      </div>
-
-      <div className="mt-6 rounded-lg border border-slate-200 bg-white p-6">
-        <h2 className="mb-3 text-sm font-semibold uppercase text-slate-500">
-          Service Tickets
-        </h2>
-        {tickets?.length ? (
-          <ul className="mb-4 divide-y divide-slate-100 text-sm">
-            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-            {tickets.map((t: any) => (
-              <li key={t.id} className="py-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium capitalize">
-                    {String(t.status).replace("_", " ")} · {t.priority}
-                  </span>
-                  <span className="text-xs text-slate-400">
-                    {new Date(t.created_at).toLocaleDateString()}
-                  </span>
-                </div>
-                <p className="mt-1 text-slate-600">{t.description}</p>
-                {isStaff && t.status !== "resolved" && (
-                  <form action={resolveTicket.bind(null, params.id, t.id)}>
-                    <button
-                      type="submit"
-                      className="mt-1 text-xs text-slate-500 underline hover:text-slate-800"
-                    >
-                      Mark Resolved
-                    </button>
-                  </form>
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mb-4 text-sm text-slate-400">
-            No service tickets yet.
+        {searchParams?.ticket === "submitted" && (
+          <p className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400">
+            Service request submitted.
           </p>
         )}
 
-        <form
-          action={boundCreateTicket}
-          className="space-y-3 border-t border-slate-100 pt-4"
-        >
-          <h3 className="text-sm font-medium">Raise a Service Request</h3>
-          <textarea
-            name="description"
-            required
-            rows={3}
-            placeholder="Describe the issue…"
-            className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+        {isStaff ? (
+          <AssetForm
+            organizations={organizations ?? []}
+            sites={sites ?? []}
+            action={boundUpdate}
+            defaultValues={asset}
+            submitLabel="Update Asset"
           />
-          <select
-            name="priority"
-            defaultValue="medium"
-            className="rounded border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-          </select>
-          <div>
-            <button
-              type="submit"
-              className="rounded bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700"
-            >
-              Submit Request
-            </button>
-          </div>
-        </form>
-      </div>
+        ) : (
+          <AssetDetailReadOnly asset={asset} />
+        )}
 
-      {isStaff && (
-        <div className="mt-6 rounded-lg border border-slate-200 bg-white p-6">
-          <h2 className="mb-3 text-sm font-semibold uppercase text-slate-500">
-            History
+        <div className="mt-6 rounded-xl border border-hairline bg-surface p-6">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-soft">
+            Compliance Certificates
           </h2>
-          {history?.length ? (
-            <ul className="divide-y divide-slate-100 text-sm">
+          {certificates?.length ? (
+            <ul className="divide-y divide-hairline text-sm">
               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              {history.map((h: any) => (
-                <li key={h.id} className="py-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium capitalize">
-                      {String(h.action).toLowerCase()}
-                    </span>
-                    <span className="text-xs text-slate-400">
-                      {new Date(h.changed_at).toLocaleString()}
-                    </span>
-                  </div>
-                  <p className="text-slate-500">
-                    {h.profiles?.full_name ?? "System"}
-                    {h.action === "UPDATE" &&
-                    changedFields(h.old_data, h.new_data).length
-                      ? ` changed: ${changedFields(h.old_data, h.new_data).join(", ")}`
-                      : ""}
-                  </p>
+              {certificates.map((c: any) => (
+                <li
+                  key={c.id}
+                  className="flex items-center justify-between py-2"
+                >
+                  <span className="text-ink-soft">{c.certificate_type}</span>
+                  <span className="text-slate-500">
+                    Expires {c.expiry_date ?? "—"}
+                  </span>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-slate-400">No history recorded yet.</p>
+            <p className="text-sm text-slate-500">
+              No certificates on file yet.
+            </p>
           )}
         </div>
-      )}
-    </div>
+
+        <div className="mt-6 rounded-xl border border-hairline bg-surface p-6">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-soft">
+            Service Tickets
+          </h2>
+          {tickets?.length ? (
+            <ul className="mb-4 divide-y divide-hairline text-sm">
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              {tickets.map((t: any) => (
+                <li key={t.id} className="py-2">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-2 font-medium text-ink">
+                      <StatusBadge status={t.status} />
+                      <StatusBadge status={t.priority} />
+                    </span>
+                    <span className="text-xs text-slate-500">
+                      {new Date(t.created_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-ink-soft">{t.description}</p>
+                  {isStaff && t.status !== "resolved" && (
+                    <div className="mt-1 flex gap-3">
+                      {t.status === "open" && (
+                        <form
+                          action={acknowledgeTicket.bind(null, params.id, t.id)}
+                        >
+                          <button
+                            type="submit"
+                            className="text-xs text-slate-500 underline hover:text-ink-soft"
+                          >
+                            Start Progress
+                          </button>
+                        </form>
+                      )}
+                      <form action={resolveTicket.bind(null, params.id, t.id)}>
+                        <button
+                          type="submit"
+                          className="text-xs text-slate-500 underline hover:text-ink-soft"
+                        >
+                          Mark Resolved
+                        </button>
+                      </form>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mb-4 text-sm text-slate-500">
+              No service tickets yet.
+            </p>
+          )}
+
+          <form
+            action={boundCreateTicket}
+            className="space-y-3 border-t border-hairline pt-4"
+          >
+            <h3 className="text-sm font-medium text-ink-soft">
+              Raise a Service Request
+            </h3>
+            <textarea
+              name="description"
+              required
+              rows={3}
+              placeholder="Describe the issue…"
+              className="w-full rounded-lg border border-hairline bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+            />
+            <select
+              name="priority"
+              defaultValue="medium"
+              className="rounded-lg border border-hairline bg-surface-2 px-3 py-2 text-sm text-ink focus:border-blue-500 focus:outline-none"
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+            <div>
+              <button
+                type="submit"
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-ink hover:bg-blue-500"
+              >
+                Submit Request
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {isStaff && (
+          <div className="mt-6 rounded-xl border border-hairline bg-surface p-6">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-soft">
+              History
+            </h2>
+            {history?.length ? (
+              <ul className="divide-y divide-hairline text-sm">
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                {history.map((h: any) => (
+                  <li key={h.id} className="py-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium capitalize text-ink">
+                        {String(h.action).toLowerCase()}
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        {new Date(h.changed_at).toLocaleString()}
+                      </span>
+                    </div>
+                    <p className="text-slate-500">
+                      {h.profiles?.full_name ?? "System"}
+                      {h.action === "UPDATE" &&
+                      changedFields(h.old_data, h.new_data).length
+                        ? ` changed: ${changedFields(h.old_data, h.new_data).join(", ")}`
+                        : ""}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-slate-500">
+                No history recorded yet.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </AppShell>
   );
 }
 
@@ -250,19 +266,22 @@ function AssetDetailReadOnly({ asset }: { asset: any }) {
     ["Brand", asset.brand],
     ["Model", asset.model],
     ["Serial Number", asset.serial_number],
-    ["Status", STATUS_LABEL[asset.status] ?? asset.status],
     ["Install Date", asset.install_date],
     ["Warranty End Date", asset.warranty_end_date],
     ["Next Service Due", asset.next_service_due],
   ];
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-6">
-      <dl className="divide-y divide-slate-100 text-sm">
+    <div className="rounded-xl border border-hairline bg-surface p-6">
+      <div className="flex items-center justify-between border-b border-hairline pb-3">
+        <dt className="text-sm text-slate-500">Status</dt>
+        <StatusBadge status={asset.status} />
+      </div>
+      <dl className="divide-y divide-hairline text-sm">
         {rows.map(([label, value]) => (
           <div key={label} className="flex justify-between py-2">
             <dt className="text-slate-500">{label}</dt>
-            <dd className="font-medium">{value ?? "—"}</dd>
+            <dd className="font-medium text-ink">{value ?? "—"}</dd>
           </div>
         ))}
       </dl>

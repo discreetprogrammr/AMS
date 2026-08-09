@@ -1,25 +1,25 @@
 import { createClient } from "@/lib/supabase/server";
 import { getProfile, requireStaff } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
-import { createInventoryCycle } from "../actions";
+import { createGlobalTicket } from "../../assets/tickets-actions";
 
-export default async function NewInventoryCyclePage({
+export default async function NewTicketPage({
   searchParams,
 }: {
   searchParams: { error?: string };
 }) {
-  await requireStaff();
+  await requireStaff("/tickets");
   const profile = await getProfile();
 
   const supabase = await createClient();
 
-  const { data: sites } = await supabase
-    .from("sites")
-    .select("id, address, organizations(name)")
-    .order("address");
+  const { data: assets } = await supabase
+    .from("assets")
+    .select("id, asset_tag, organizations(name)")
+    .order("asset_tag");
 
   return (
-    <AppShell profile={profile} title="Start Inventory Cycle">
+    <AppShell profile={profile} title="Request New Service">
       <div className="mx-auto max-w-xl">
         {searchParams?.error && (
           <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
@@ -28,54 +28,66 @@ export default async function NewInventoryCyclePage({
         )}
 
         <form
-          action={createInventoryCycle}
+          action={createGlobalTicket}
           className="space-y-5 rounded-xl border border-hairline bg-surface p-6"
         >
           <div>
             <label className="block text-sm font-medium text-ink-soft">
-              Site
+              Asset
             </label>
             <select
-              name="site_id"
+              name="asset_id"
               required
               className="mt-1 w-full rounded-lg border border-hairline bg-surface-2 px-3 py-2 text-sm text-ink focus:border-blue-500 focus:outline-none"
             >
               <option value="" disabled>
-                Select site…
+                Select asset…
               </option>
               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              {(sites ?? []).map((site: any) => (
-                <option key={site.id} value={site.id}>
-                  {site.organizations?.name
-                    ? `${site.organizations.name} — `
+              {(assets ?? []).map((asset: any) => (
+                <option key={asset.id} value={asset.id}>
+                  {asset.organizations?.name
+                    ? `${asset.organizations.name} — `
                     : ""}
-                  {site.address}
+                  {asset.asset_tag}
                 </option>
               ))}
             </select>
-            <p className="mt-1 text-xs text-slate-500">
-              A checklist item is created for every asset currently at this
-              site.
-            </p>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-ink-soft">
-              Label
+              Description
             </label>
-            <input
-              name="label"
+            <textarea
+              name="description"
               required
-              placeholder="e.g. Annual Physical Inventory 2026"
+              rows={4}
+              placeholder="Describe the issue or service needed…"
               className="mt-1 w-full rounded-lg border border-hairline bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-ink-soft">
+              Priority
+            </label>
+            <select
+              name="priority"
+              defaultValue="medium"
+              className="mt-1 rounded-lg border border-hairline bg-surface-2 px-3 py-2 text-sm text-ink focus:border-blue-500 focus:outline-none"
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
           </div>
 
           <button
             type="submit"
             className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-ink hover:bg-blue-500"
           >
-            Start Cycle
+            Submit Request
           </button>
         </form>
       </div>

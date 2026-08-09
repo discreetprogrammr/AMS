@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { requireStaff } from "@/lib/supabase/profile";
+import { getProfile, requireStaff } from "@/lib/supabase/profile";
+import { AppShell } from "@/components/app-shell";
 import { changedFields } from "@/lib/audit";
 
 const TABLE_LABEL: Record<string, string> = {
@@ -12,6 +12,7 @@ const TABLE_LABEL: Record<string, string> = {
 
 export default async function AuditLogPage() {
   await requireStaff();
+  const profile = await getProfile();
 
   const supabase = await createClient();
 
@@ -24,31 +25,20 @@ export default async function AuditLogPage() {
     .limit(100);
 
   return (
-    <div className="mx-auto max-w-5xl p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Audit Log</h1>
-          <p className="text-sm text-slate-500">
-            Last 100 changes across the system — who changed what, and when.
-          </p>
-        </div>
-        <Link
-          href="/dashboard"
-          className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
-        >
-          Dashboard
-        </Link>
-      </div>
-
+    <AppShell
+      profile={profile}
+      title="Audit Log"
+      subtitle="Last 100 changes across the system — who changed what, and when."
+    >
       {error && (
-        <p className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
           {error.message}
         </p>
       )}
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="overflow-hidden rounded-xl border border-hairline bg-surface">
         <table className="w-full text-left text-sm">
-          <thead className="bg-slate-100 text-xs uppercase text-slate-500">
+          <thead className="bg-surface-2 text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3">When</th>
               <th className="px-4 py-3">Record</th>
@@ -60,17 +50,17 @@ export default async function AuditLogPage() {
           <tbody>
             {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
             {entries?.map((e: any) => (
-              <tr key={e.id} className="border-t border-slate-100">
-                <td className="whitespace-nowrap px-4 py-3">
+              <tr key={e.id} className="border-t border-hairline">
+                <td className="whitespace-nowrap px-4 py-3 text-ink-soft">
                   {new Date(e.changed_at).toLocaleString()}
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 text-ink-soft">
                   {TABLE_LABEL[e.table_name] ?? e.table_name}
                 </td>
-                <td className="px-4 py-3 capitalize">
+                <td className="px-4 py-3 capitalize text-ink-soft">
                   {String(e.action).toLowerCase()}
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 text-ink-soft">
                   {e.profiles?.full_name ?? "System"}
                 </td>
                 <td className="px-4 py-3 text-slate-500">
@@ -84,7 +74,7 @@ export default async function AuditLogPage() {
               <tr>
                 <td
                   colSpan={5}
-                  className="px-4 py-8 text-center text-slate-400"
+                  className="px-4 py-8 text-center text-slate-500"
                 >
                   No activity logged yet.
                 </td>
@@ -93,6 +83,6 @@ export default async function AuditLogPage() {
           </tbody>
         </table>
       </div>
-    </div>
+    </AppShell>
   );
 }

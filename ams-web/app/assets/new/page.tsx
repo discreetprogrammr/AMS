@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
-import { requireStaff } from "@/lib/supabase/profile";
+import { getProfile, requireStaff } from "@/lib/supabase/profile";
+import { AppShell } from "@/components/app-shell";
 import { AssetForm } from "../asset-form";
 import { createAsset } from "../actions";
 
@@ -9,6 +10,7 @@ export default async function NewAssetPage({
   searchParams: { error?: string };
 }) {
   await requireStaff();
+  const profile = await getProfile();
 
   const supabase = await createClient();
 
@@ -21,18 +23,19 @@ export default async function NewAssetPage({
   ]);
 
   return (
-    <div className="mx-auto max-w-2xl p-6">
-      <h1 className="mb-6 text-2xl font-semibold">Add Asset</h1>
-      {searchParams?.error && (
-        <p className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
-          {searchParams.error}
-        </p>
-      )}
-      <AssetForm
-        organizations={organizations ?? []}
-        sites={sites ?? []}
-        action={createAsset}
-      />
-    </div>
+    <AppShell profile={profile} title="Add Asset">
+      <div className="mx-auto max-w-2xl">
+        {searchParams?.error && (
+          <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+            {searchParams.error}
+          </p>
+        )}
+        <AssetForm
+          organizations={organizations ?? []}
+          sites={sites ?? []}
+          action={createAsset}
+        />
+      </div>
+    </AppShell>
   );
 }

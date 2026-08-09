@@ -22,6 +22,10 @@ type AssetFormValues = {
   next_service_due?: string | null;
 };
 
+const inputClass =
+  "mt-1 w-full rounded-lg border border-hairline bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
+const labelClass = "block text-sm font-medium text-ink-soft";
+
 export function AssetForm({
   organizations,
   sites,
@@ -47,16 +51,16 @@ export function AssetForm({
   return (
     <form
       action={action}
-      className="space-y-5 rounded-lg border border-slate-200 bg-white p-6"
+      className="space-y-5 rounded-xl border border-hairline bg-surface p-6"
     >
       <div>
-        <label className="block text-sm font-medium">Organization</label>
+        <label className={labelClass}>Organization</label>
         <select
           name="organization_id"
           required
           value={organizationId}
           onChange={(e) => setOrganizationId(e.target.value)}
-          className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+          className={inputClass}
         >
           <option value="" disabled>
             Select organization…
@@ -70,11 +74,11 @@ export function AssetForm({
       </div>
 
       <div>
-        <label className="block text-sm font-medium">Site</label>
+        <label className={labelClass}>Site</label>
         <select
           name="site_id"
           defaultValue={defaultValues?.site_id ?? ""}
-          className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+          className={inputClass}
         >
           <option value="">No specific site</option>
           {filteredSites.map((site) => (
@@ -87,21 +91,21 @@ export function AssetForm({
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium">Asset Tag</label>
+          <label className={labelClass}>Asset Tag</label>
           <input
             name="asset_tag"
             required
             defaultValue={defaultValues?.asset_tag ?? ""}
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+            className={inputClass}
           />
         </div>
         <div>
-          <label className="block text-sm font-medium">Equipment Type</label>
+          <label className={labelClass}>Equipment Type</label>
           <select
             name="equipment_type"
             required
             defaultValue={defaultValues?.equipment_type ?? ""}
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+            className={inputClass}
           >
             <option value="" disabled>
               Select…
@@ -119,40 +123,40 @@ export function AssetForm({
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium">Brand</label>
+          <label className={labelClass}>Brand</label>
           <input
             name="brand"
             defaultValue={defaultValues?.brand ?? ""}
             placeholder="Linev, Astrophysics, Rapiscan, Nuctech…"
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+            className={inputClass}
           />
         </div>
         <div>
-          <label className="block text-sm font-medium">Model</label>
+          <label className={labelClass}>Model</label>
           <input
             name="model"
             defaultValue={defaultValues?.model ?? ""}
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+            className={inputClass}
           />
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium">Serial Number</label>
+          <label className={labelClass}>Serial Number</label>
           <input
             name="serial_number"
             defaultValue={defaultValues?.serial_number ?? ""}
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+            className={inputClass}
           />
         </div>
         <div>
-          <label className="block text-sm font-medium">Sold By</label>
+          <label className={labelClass}>Sold By</label>
           <select
             name="sold_by"
             required
             defaultValue={defaultValues?.sold_by ?? "pacific_horizon_tek"}
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+            className={inputClass}
           >
             <option value="pacific_horizon_tek">Pacific Horizon Tek</option>
             <option value="third_party">Third-party / Client-owned</option>
@@ -162,12 +166,12 @@ export function AssetForm({
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium">Status</label>
+          <label className={labelClass}>Status</label>
           <select
             name="status"
             required
             defaultValue={defaultValues?.status ?? "operational"}
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+            className={inputClass}
           >
             <option value="operational">Operational</option>
             <option value="under_maintenance">Under Maintenance</option>
@@ -175,65 +179,59 @@ export function AssetForm({
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium">Custodian</label>
+          <label className={labelClass}>Custodian</label>
           <input
             name="custodian"
             defaultValue={defaultValues?.custodian ?? ""}
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+            className={inputClass}
           />
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium">Install Date</label>
+          <label className={labelClass}>Install Date</label>
           <input
             type="date"
             name="install_date"
             defaultValue={defaultValues?.install_date ?? ""}
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+            className={inputClass}
           />
         </div>
         <div>
-          <label className="block text-sm font-medium">
-            Warranty End Date
-          </label>
+          <label className={labelClass}>Warranty End Date</label>
           <input
             type="date"
             name="warranty_end_date"
             defaultValue={defaultValues?.warranty_end_date ?? ""}
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+            className={inputClass}
           />
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium">
-            Next Service Due
-          </label>
+          <label className={labelClass}>Next Service Due</label>
           <input
             type="date"
             name="next_service_due"
             defaultValue={defaultValues?.next_service_due ?? ""}
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+            className={inputClass}
           />
         </div>
         <div>
-          <label className="block text-sm font-medium">
-            PNRI License # (X-ray only)
-          </label>
+          <label className={labelClass}>PNRI License # (X-ray only)</label>
           <input
             name="pnri_license_number"
             defaultValue={defaultValues?.pnri_license_number ?? ""}
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+            className={inputClass}
           />
         </div>
       </div>
 
       <button
         type="submit"
-        className="rounded bg-slate-900 px-5 py-2 text-white hover:bg-slate-700"
+        className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-ink hover:bg-blue-500"
       >
         {submitLabel}
       </button>

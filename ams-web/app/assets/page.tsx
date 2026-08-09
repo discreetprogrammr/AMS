@@ -53,6 +53,22 @@ export default async function AssetsPage() {
           </a>
           {isStaff && (
             <Link
+              href="/inventory"
+              className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
+            >
+              Inventory
+            </Link>
+          )}
+          {isStaff && (
+            <a
+              href="/api/assets/export/unserviceable"
+              className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
+            >
+              Unserviceable Report
+            </a>
+          )}
+          {isStaff && (
+            <Link
               href="/assets/new"
               className="rounded bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700"
             >

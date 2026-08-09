@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getProfile } from "@/lib/supabase/profile";
 import { logout } from "../login/actions";
 
 function today(): string {
@@ -14,6 +15,8 @@ function daysFromNow(days: number): string {
 
 export default async function DashboardPage() {
   const supabase = await createClient();
+  const profile = await getProfile();
+  const isStaff = profile?.role === "internal_staff";
 
   const [
     { count: totalAssets },
@@ -76,6 +79,14 @@ export default async function DashboardPage() {
           >
             View Assets
           </Link>
+          {isStaff && (
+            <Link
+              href="/inventory"
+              className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
+            >
+              Inventory
+            </Link>
+          )}
           <form action={logout}>
             <button className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100">
               Sign out

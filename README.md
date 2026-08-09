@@ -128,6 +128,37 @@ Worth repeating: the UI hiding these actions is for a clean experience, not the 
 4. Log back in as internal staff, open that same asset, and confirm the ticket you just submitted as the client shows up, with a "Mark Resolved" link. Click it and confirm the ticket's status updates and the dashboard's "Open Service Tickets" count drops by one.
 5. As always: this is untested against a real build in this session. If something errors locally or on Vercel, send me the message.
 
-## Next (Step 5 in the spec)
+---
 
-Inventory cycle workflow and unserviceable reporting — the COA-style annual physical inventory checklist and the IIRUP-style unserviceable equipment report.
+# Step 5 — Inventory Cycle Workflow and Unserviceable Report
+
+Implements Step 5 of the build order: the COA-style annual physical inventory checklist and a dedicated unserviceable-equipment report, per Section 6/7 of the spec.
+
+## Database change — run this first
+
+This step needed two new tables, so there's a second SQL file: **`schema_step5.sql`**, sitting next to the original `schema.sql`. It's additive — it doesn't touch anything from Step 1.
+
+1. Open the Supabase SQL Editor.
+2. Paste the full contents of `schema_step5.sql` and run it.
+3. This creates `inventory_cycles` and `inventory_cycle_items`, plus RLS policies scoping them to internal staff only (this feature isn't part of the client portal — it's pure internal ops, per the spec).
+
+## What's here
+
+- **`/inventory`** — list of inventory cycles, staff-only (same role guard pattern as `/assets/new`).
+- **`/inventory/new`** — pick a site and a label (e.g. "Annual Physical Inventory 2026"), and starting the cycle auto-creates one checklist item for every asset currently at that site.
+- **`/inventory/[id]`** — the checklist itself: mark each asset verified (with optional condition notes), undo a mark if needed, see a running verified/pending count, and "Complete Cycle" when done. Completing doesn't require 100% verification — whatever's still unverified at close time *is* the discrepancy list, same as a real physical count reconciliation.
+- **"Export Reconciliation"** on the cycle page — CSV of every item in that cycle: verified or not, when, by whom (implicitly, via the audit log), and condition notes.
+- **"Unserviceable Report"** — a new button on the Assets page (staff-only), exporting just the assets currently flagged `unserviceable`, mirroring COA's IIRUP report.
+
+## Setup steps
+
+1. Run `schema_step5.sql` in Supabase first (see above) — the app will error on `/inventory` without it.
+2. `npm run dev` as usual, no new dependencies.
+3. As internal staff: go to Assets → Inventory → Start Cycle. Pick the site your demo asset is at, give it a label, and start it.
+4. On the cycle page, mark the asset verified (try adding a condition note), confirm the count updates, then click "Export Reconciliation" and check the CSV.
+5. Go back to Assets, edit your test asset's status to `unserviceable`, then click "Unserviceable Report" and confirm it shows up in that CSV.
+6. As always: untested against a real build in this session — send me the exact error if `npm run dev` or Vercel's build throws one.
+
+## Next (Step 6 in the spec)
+
+Audit log and role-permission hardening — the last step in the build order. The audit log itself has existed since Step 1 (every change to assets, service records, and tickets is already logged); Step 6 is about surfacing it in the UI and tightening up permissions.

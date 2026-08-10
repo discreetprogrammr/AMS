@@ -1051,3 +1051,61 @@ Before starting the chat/video-call feature, an audit found the app effectively 
 3. **Fixed-2-column forms now collapse to one column below `sm`.** `grid grid-cols-2 gap-4` → `grid grid-cols-1 gap-4 sm:grid-cols-2` in `assets/asset-form.tsx` (6 instances), `work-orders/new/page.tsx`, `reports/corrective-checklist/corrective-form.tsx`, `alerts/new/page.tsx`, and `calendar/new/page.tsx`.
 
 Verified with a full `npx tsc --noEmit` (clean). Couldn't verify visually in this sandbox — `next dev`/`next build` both hang here for the same reason noted earlier in this changelog (reaching the live Supabase project over a network this sandbox blocks). Please pull these changes and check a few pages at a phone width (or your browser's device toolbar) before we start on chat/video-calling — the sidebar drawer in particular is the kind of thing worth eyeballing once for real before building more UI on top of it.
+
+## Follow-up — Messages: chat + voice/video calling, scoped to a ticket
+
+Built the long-deferred chat/calling feature (task list item since early in the project). Client ↔ staff, one conversation per ticket — a ticket already is the unit of work everything else (status, priority, SLA) hangs off, so there's no separate "conversation" record, just `messages` rows filtered by `ticket_id`.
+
+**Architecture — zero new npm dependencies:**
+- **Text chat** runs entirely on Supabase (already in the stack): a `messages` table (`schema_step25.sql`) + Supabase Realtime `postgres_changes` for live delivery.
+- **Voice/video calls** use the browser's native WebRTC (`RTCPeerConnection`/`getUserMedia`, built into every modern browser including mobile Safari/Chrome — no SDK). The call *signaling* (offer/answer/ICE candidates, ringing/hangup) travels over a Supabase Realtime **Broadcast** channel per ticket (`call:${ticketId}`) — ephemeral, nothing persisted. The actual audio/video is a direct peer-to-peer connection between the two browsers and never touches Supabase.
+- **TURN relay**: the one piece that can't come from Supabase — WebRTC needs a relay server for calls to reliably connect over mobile/cellular data and behind strict firewalls (direct peer-to-peer alone works fine on wifi but frequently fails on carrier networks). Wired up [Metered.ca's TURN Server Service](https://www.metered.ca/stun-turn) (free tier, 500MB/month, no card required) via a server-side proxy route so the API key never reaches the browser.
+
+**New files:**
+- `schema_step25.sql` — `messages` table (`ticket_id`, `sender_id`, `message_type` covering both real text AND call *events* — `call_started`/`call_ended`/`call_missed`/`call_declined` — so the call history shows up inline in the same feed as text, one timeline instead of two UIs), RLS mirroring the exact same "staff manage everything, client reads/writes only their own org's tickets" pattern already used for `service_tickets`, and adds `messages` to the `supabase_realtime` publication (required for `postgres_changes` subscriptions to fire at all on a new table).
+- `app/api/turn-credentials/route.ts` — auth-gated server route that fetches short-lived ICE server credentials from Metered using `METERED_APP_NAME`/`METERED_API_KEY` env vars. Falls back to a public STUN-only server (same-network calls still work, just not reliably over mobile/behind firewalls) if those env vars aren't set yet, or if Metered has a transient outage — never hard-blocks the feature.
+- `lib/webrtc/use-call.ts` — the call state machine as a React hook (`idle → calling/ringing → connecting → active`), handling the full signaling handshake, ICE candidate buffering (for candidates that arrive before the remote description is set), a 45-second ring timeout that logs a missed call, mute/camera toggles, and cleanup on unmount (hangs up if you navigate away mid-call).
+- `app/messages/page.tsx` — inbox-style list of every ticket the signed-in user can access (RLS-scoped), sorted by most recent activity, with a one-line preview of the latest message or call event.
+- `app/messages/[ticketId]/page.tsx` + `ticket-chat.tsx` — the actual thread: scrolling message list (call events render as centered pills, text as left/right bubbles), a composer, voice/video call buttons, an incoming-call banner with Accept/Decline, and a full call overlay (remote video full-size + local video PIP for video calls, avatar + controls for audio-only) with mute/camera/hang-up controls sized for touch. `<video>` elements use `playsInline` (without it, iOS Safari forces its own fullscreen player instead of an in-page video).
+- `components/mobile-nav.tsx`'s sidebar entry: repurposed the long-disabled "HorizonCare360 Assist" placeholder into "Messages" — enabled, no longer staff-only.
+
+**Entry points**: a "Message" link on every row in the Tickets table, and a "Message about this ticket →" link on each ticket in the Asset detail page's Service Tickets section (both client- and staff-visible, unlike the staff-only ticket action buttons next to it).
+
+**Known v1 simplifications** (fine for a small team, worth knowing about): no read receipts or unread-count badges; if two staff members both try to accept the same incoming call, only the first "answer" the caller receives wins (no explicit conflict handling); no call duration shown in the log (just start/end/missed/declined events with timestamps); RLS on `messages` INSERT scopes by ticket/org but doesn't independently verify `sender_id` matches the authenticated user, matching the same lighter-touch convention already used by `service_tickets`' own insert policy elsewhere in this project (RLS's real boundary here is organizational scoping).
+
+**Still needed before calling works reliably on mobile:**
+1. Run `schema_step25.sql` in the Supabase SQL editor.
+2. Sign up at [dashboard.metered.ca/signup](https://dashboard.metered.ca/signup) for the free TURN Server Service plan, then add `METERED_APP_NAME` and `METERED_API_KEY` to both `.env.local` (already has placeholders with instructions) and your Vercel project's environment variables.
+
+Text chat works right now with neither of those — only calling needs them, and even calling will work on same-wifi testing without Metered credentials, just not reliably over cellular.
+
+Verified with a full `npx tsc --noEmit` (clean). Not visually tested in this sandbox for the same Supabase-network reason as everything else in this changelog — please try it out (a text message between a staff and client account, then a voice/video call) once the migration is run.
+
+## Follow-up — sound effects + fixed a real Accept-call bug
+
+Real-device testing (staff on a Mac calling a client's phone) surfaced an actual bug: tapping Accept on the phone resulted in "Voice call declined" showing up on the caller's side instead of connecting.
+
+**Root cause**: `acceptCall()` in `lib/webrtc/use-call.ts` wraps `getUserMedia`/`RTCPeerConnection` setup in a try/catch — and the catch block's job is to gracefully tell the caller "this device can't take the call" by sending a `decline` signal. That's correct behavior when it's genuinely needed, but the catch block was swallowing the *real* underlying browser error and always showing the same generic "check your permissions" message — so there was no way to tell whether it was a denied mic permission, no available device, the browser blocking `getUserMedia` in some restricted context, or something else. Fixed the error handling to capture and surface the actual `err.name`/`err.message` (also logged to the console) — next time this happens, whatever's shown in the red error banner will say exactly what failed.
+
+Also fixed a real race condition while in there: a fast double-tap on the Accept button (easy to do on a touchscreen) could fire `acceptCall()` twice concurrently, each creating its own `RTCPeerConnection` and overwriting the other's reference mid-setup — a very plausible way to end up in a broken state that looks like a spurious decline. Added a guard (`acceptingRef`) so only the first tap's run actually executes.
+
+**Sound effects** (`lib/sounds.ts`, new) — synthesized with the Web Audio API (a few oscillator beeps), not audio files, so this needed no new dependencies or licensed assets:
+- A short two-note "pop" plays right after you send a chat message.
+- A repeating two-tone ringtone plays for the callee while a call is incoming, until accepted/declined/the caller hangs up.
+- A repeating ringback tone plays for the caller while waiting for the other side to pick up.
+
+One real constraint worth knowing: browsers (especially mobile) block any audio — including a ringtone triggered by an incoming call, which isn't a direct tap/click — until the page has seen at least one real user gesture. `unlockAudioOnFirstInteraction()` primes the shared `AudioContext` on the first tap/click/keypress after the Messages thread mounts, so by the time an actual call comes in, the ringtone isn't silently blocked. Simply having opened the ticket's chat is enough — no separate "enable sound" step needed.
+
+Verified with a full `npx tsc --noEmit` (clean). Please retest the same call scenario — if it still fails, the error banner should now show the actual browser error message; send that over and I can fix the real cause instead of guessing at it.
+
+## Follow-up — fixed `crypto.randomUUID is not a function` on mobile dev testing
+
+The improved error surfacing above immediately paid off: real-device testing on the phone hit `TypeError: crypto.randomUUID is not a function` in `lib/webrtc/use-call.ts` when starting a call. This is exactly why "surface the real error" was worth doing — the underlying browser API `crypto.randomUUID()` only exists in a "secure context" (HTTPS, or `localhost`), so it's silently undefined on a phone browser reached over plain `http://<lan-ip>:3000` — the normal way to test a local dev server from another device on the same wifi. It'll always work fine on the deployed Vercel site (which is HTTPS), but not for this style of local-network testing.
+
+Fixed by adding a small fallback ID generator (`makeCallId()`) that uses `crypto.randomUUID()` when available and otherwise builds an equally-unique-enough ID from a timestamp + random string — no crypto strength needed here, it's just a call identifier. Verified with a full `npx tsc --noEmit` (clean).
+
+## Follow-up — clearer error for camera/mic access over plain HTTP
+
+Same root cause as above, different symptom: after the `randomUUID` fix, testing on the phone hit `Cannot read properties of undefined (reading 'getUserMedia')`. `navigator.mediaDevices` itself is only exposed in a secure context (HTTPS, or `localhost` on the same device) — over plain `http://<lan-ip>:3000` the browser doesn't throw a permission error, it just doesn't expose the API at all, which is why the error looked like an internal bug rather than a permissions issue.
+
+This one isn't fixable in code — camera/mic access over plain HTTP from another device is a hard browser security restriction, not a bug. Added an upfront check in `getLocalMedia()` (`lib/webrtc/use-call.ts`) so it now fails with a clear message ("Camera/microphone access requires HTTPS...") instead of a confusing stack trace. **Practical takeaway: chat/calling needs to be tested on the deployed Vercel site (HTTPS) from here on, not the local dev server reached from a phone.** Everything else in the app is unaffected — regular pages work fine either way.

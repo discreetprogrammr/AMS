@@ -73,11 +73,11 @@ function buildNav(): NavItem[] {
     { href: "/tickets", label: "Tickets", icon: <Icon d={ICONS.tickets} /> },
     { href: "/inspections", label: "Inspections", icon: <Icon d={ICONS.inspections} />, staffOnly: true },
     { href: "/inventory", label: "Inventory", icon: <Icon d={ICONS.inventory} />, staffOnly: true },
+    { href: "/messages", label: "Messages", icon: <Icon d={ICONS.chat} /> },
     { href: "/calendar", label: "Calendar", icon: <Icon d={ICONS.calendar} /> },
     { href: "/reports", label: "Reports", icon: <Icon d={ICONS.reports} /> },
     { href: "/alerts", label: "Alerts", icon: <Icon d={ICONS.alerts} />, staffOnly: true },
     { href: "/audit-log", label: "Audit Log", icon: <Icon d={ICONS.audit} />, staffOnly: true, superAdminOnly: true },
-    { href: "#", label: "HorizonCare360 Assist", icon: <Icon d={ICONS.chat} />, staffOnly: true, disabled: true },
   ];
 }
 

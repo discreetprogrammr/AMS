@@ -100,6 +100,7 @@ export function TicketsTable({
               <th className="px-4 py-3">Priority</th>
               <th className="px-4 py-3">Work Order</th>
               <th className="px-4 py-3">Raised</th>
+              <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody>
@@ -161,12 +162,20 @@ export function TicketsTable({
                 <td className="px-4 py-3 whitespace-nowrap text-ink-soft">
                   {new Date(t.created_at).toLocaleDateString()}
                 </td>
+                <td className="px-4 py-3 whitespace-nowrap text-right">
+                  <Link
+                    href={`/messages/${t.id}`}
+                    className="text-xs text-blue-400 hover:underline"
+                  >
+                    Message
+                  </Link>
+                </td>
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-4 py-8 text-center text-slate-500"
                 >
                   No service tickets match this filter.

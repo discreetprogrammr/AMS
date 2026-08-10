@@ -165,6 +165,14 @@ export default async function EditAssetPage({
                     </span>
                   </div>
                   <p className="mt-1 text-ink-soft">{t.description}</p>
+                  <div className="mt-1">
+                    <Link
+                      href={`/messages/${t.id}`}
+                      className="text-xs text-blue-400 hover:underline"
+                    >
+                      Message about this ticket →
+                    </Link>
+                  </div>
                   {isStaff && (
                     <div className="mt-1 flex flex-wrap items-center gap-3">
                       {t.status === "open" && (

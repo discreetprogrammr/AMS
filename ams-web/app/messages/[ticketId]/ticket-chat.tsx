@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useCall, type CallEvent } from "@/lib/webrtc/use-call";
 import {
   unlockAudioOnFirstInteraction,
   playSentTone,
+  playReceivedTone,
   startRingtone,
   stopRingtone,
   startRingback,
@@ -72,6 +74,14 @@ function HangupIcon({ className = "h-5 w-5" }: { className?: string }) {
   );
 }
 
+function CloseIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  );
+}
+
 function timeLabel(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
@@ -108,6 +118,27 @@ export function TicketChat({
   const [sending, setSending] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const supabase = useRef(createClient()).current;
+  const router = useRouter();
+
+  // Marks this ticket's thread as read for the current user as of right
+  // now (schema_step26.sql's message_reads) — drives the sidebar's
+  // notification dot and the inbox's "New" indicator. Safe to call
+  // liberally: it's just "how far I've seen", not a one-shot action.
+  async function markRead() {
+    await supabase
+      .from("message_reads")
+      .upsert(
+        { user_id: currentUserId, ticket_id: ticketId, last_read_at: new Date().toISOString() },
+        { onConflict: "user_id,ticket_id" },
+      );
+  }
+
+  // Mark read as soon as the thread is open — whatever's in
+  // initialMessages has, by definition, just been seen.
+  useEffect(() => {
+    markRead();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticketId]);
 
   // Live-updating message list — postgres_changes needs `messages` in the
   // supabase_realtime publication (schema_step25.sql's last line).
@@ -119,6 +150,9 @@ export function TicketChat({
         { event: "INSERT", schema: "public", table: "messages", filter: `ticket_id=eq.${ticketId}` },
         async (payload) => {
           const id = payload.new.id as string;
+          const senderId = payload.new.sender_id as string | null;
+          const messageType = payload.new.message_type as Message["message_type"];
+          const fromSomeoneElse = !!senderId && senderId !== currentUserId;
           // Add the raw row immediately for a snappy UI — postgres_changes
           // payloads are plain table rows with no joins, so it won't have
           // the sender's name yet. Patch that in via a follow-up select
@@ -128,6 +162,13 @@ export function TicketChat({
             if (prev.some((m) => m.id === id)) return prev;
             return [...prev, payload.new as Message];
           });
+          if (fromSomeoneElse) {
+            // The thread is open right now, so this counts as read the
+            // instant it arrives — keeps the sidebar dot from lighting up
+            // for a ticket the user is actively looking at.
+            markRead();
+            if (messageType === "text") playReceivedTone();
+          }
           const { data } = await supabase
             .from("messages")
             .select(
@@ -222,30 +263,37 @@ export function TicketChat({
 
   return (
     <div className="relative flex h-[calc(100vh-160px)] flex-col overflow-hidden rounded-xl border border-hairline bg-surface sm:h-[calc(100vh-180px)]">
-      {/* Incoming call banner */}
+      {/* Incoming call banner — pinned to the top of the VIEWPORT (not
+          just this card) with `fixed`, so Accept/Decline are immediately
+          visible on mobile regardless of scroll position or how tall the
+          page header above the chat card happens to be. It used to be an
+          inline banner inside the card, which could end up below the
+          fold on phones. */}
       {call.incoming && (
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-blue-500/30 bg-blue-500/10 px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-2 text-sm text-blue-200">
-            {call.incoming.kind === "video" ? <VideoIcon className="h-4 w-4" /> : <PhoneIcon className="h-4 w-4" />}
-            <span>
-              <strong>{call.incoming.fromName}</strong> is calling ({call.incoming.kind === "video" ? "video" : "voice"})…
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={call.declineCall}
-              className="rounded-lg border border-red-500/40 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/10"
-            >
-              Decline
-            </button>
-            <button
-              type="button"
-              onClick={call.acceptCall}
-              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-ink hover:bg-emerald-500"
-            >
-              Accept
-            </button>
+        <div className="fixed inset-x-0 top-0 z-[60] flex justify-center px-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-4">
+          <div className="flex w-full max-w-lg flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-500/40 bg-surface px-4 py-3 shadow-2xl sm:px-6">
+            <div className="flex items-center gap-2 text-sm text-blue-200">
+              {call.incoming.kind === "video" ? <VideoIcon className="h-4 w-4" /> : <PhoneIcon className="h-4 w-4" />}
+              <span>
+                <strong>{call.incoming.fromName}</strong> is calling ({call.incoming.kind === "video" ? "video" : "voice"})…
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={call.declineCall}
+                className="rounded-lg border border-red-500/40 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/10"
+              >
+                Decline
+              </button>
+              <button
+                type="button"
+                onClick={call.acceptCall}
+                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-ink hover:bg-emerald-500"
+              >
+                Accept
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -279,6 +327,16 @@ export function TicketChat({
             aria-label="Start video call"
           >
             <VideoIcon className="h-4 w-4" />
+          </button>
+          <span className="mx-1 h-5 w-px bg-hairline" aria-hidden="true" />
+          <button
+            type="button"
+            onClick={() => router.push("/messages")}
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-hairline text-ink-soft hover:bg-surface-2 hover:text-ink"
+            title="Close conversation"
+            aria-label="Close conversation"
+          >
+            <CloseIcon className="h-4 w-4" />
           </button>
         </div>
       </div>

@@ -1109,3 +1109,25 @@ Fixed by adding a small fallback ID generator (`makeCallId()`) that uses `crypto
 Same root cause as above, different symptom: after the `randomUUID` fix, testing on the phone hit `Cannot read properties of undefined (reading 'getUserMedia')`. `navigator.mediaDevices` itself is only exposed in a secure context (HTTPS, or `localhost` on the same device) — over plain `http://<lan-ip>:3000` the browser doesn't throw a permission error, it just doesn't expose the API at all, which is why the error looked like an internal bug rather than a permissions issue.
 
 This one isn't fixable in code — camera/mic access over plain HTTP from another device is a hard browser security restriction, not a bug. Added an upfront check in `getLocalMedia()` (`lib/webrtc/use-call.ts`) so it now fails with a clear message ("Camera/microphone access requires HTTPS...") instead of a confusing stack trace. **Practical takeaway: chat/calling needs to be tested on the deployed Vercel site (HTTPS) from here on, not the local dev server reached from a phone.** Everything else in the app is unaffected — regular pages work fine either way.
+
+## Follow-up — chat/calling housekeeping round (close button, rename, unread state, mobile call banner)
+
+With calling confirmed working end-to-end, five polish items:
+
+1. **Close button in the chat card.** Added an X button in the conversation toolbar (`ticket-chat.tsx`) that returns to the inbox — same destination as the existing "← Back" link in the page header, just also reachable from inside the card itself.
+
+2. **Renamed the nav item.** "Messages" is now "HorizonCare360 Assist" throughout — the sidebar link, the inbox page title, and the ticket URL structure (`/messages/...`) is unchanged since renaming routes isn't necessary for this and would just add risk.
+
+3. **Received-message tone.** Added `playReceivedTone()` (`lib/sounds.ts`) — same synthesis approach as the sent tone, but the two notes fall instead of rise, so sent vs. received are distinguishable by ear alone. Plays whenever a text message arrives from someone else while the thread is open.
+
+4. **Unread indicator — bell dot + inbox "New" badges.** This needed real state, not just a UI tweak:
+   - New table `message_reads` (`schema_step26.sql` — **needs to be run in the Supabase SQL editor**, same as every other schema_step file): one row per (user, ticket) recording when that user last saw the thread. RLS: a user can only read/write their own rows.
+   - `ticket-chat.tsx` upserts its own `message_reads` row the moment a thread opens, and again every time a new inbound message arrives while it's open — so a ticket you're actively looking at never shows as unread.
+   - A shared pure function (`lib/messages/unread.ts`, no Supabase import so it works identically server- and client-side) compares each ticket's newest inbound message against that read state to decide "unread or not."
+   - `components/messages-unread-dot.tsx` (new, sidebar-only) shows a small red dot on the "HorizonCare360 Assist" nav item whenever anything is unread, and listens live via Realtime so it lights up immediately on a new message, not just on next page load.
+   - The `/messages` inbox list now shows a red "New" badge and a bold preview line on any ticket with unread messages.
+   - Note: while wiring this up I found `components/notification-bell.tsx` was already taken by the unrelated Alerts bell on the dashboard — kept that file untouched and put the new one under its own name to avoid clashing with it.
+
+5. **Mobile: Accept/Decline weren't reachable without scrolling.** The incoming-call banner used to be the first element inside the chat card — reasonable in theory, but on a phone the page header (title, subtitle, back link) pushed the card far enough down that the banner started below the fold. Changed it to a `position: fixed` bar pinned to the very top of the viewport (with iOS safe-area padding for the notch), so Accept/Decline are visible the instant a call comes in, regardless of scroll position or how tall anything above it is.
+
+Verified with a full `npx tsc --noEmit` (clean). **`schema_step26.sql` needs to be run in Supabase before the unread dot/badges will work** — everything else (close button, rename, received tone, fixed call banner) works as soon as it's deployed.

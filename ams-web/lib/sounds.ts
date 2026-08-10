@@ -66,6 +66,19 @@ export function playSentTone() {
   beep(1320, now + 0.07, 0.08, 0.12);
 }
 
+// Short two-note "pop" — plays when a message arrives FROM someone else.
+// Deliberately the mirror image of playSentTone (falling instead of
+// rising) so sent vs. received are distinguishable by ear, not just by
+// bubble alignment.
+export function playReceivedTone() {
+  const c = getContext();
+  if (!c) return;
+  if (c.state === "suspended") c.resume().catch(() => {});
+  const now = c.currentTime;
+  beep(720, now, 0.07, 0.13);
+  beep(540, now + 0.08, 0.09, 0.13);
+}
+
 let ringtoneTimer: ReturnType<typeof setInterval> | null = null;
 let ringbackTimer: ReturnType<typeof setInterval> | null = null;
 

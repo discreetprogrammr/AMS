@@ -51,7 +51,7 @@ export default async function TicketMessagesPage({
           href="/messages"
           className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
         >
-          ← All Messages
+          ← Back
         </Link>
       }
     >

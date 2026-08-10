@@ -8,6 +8,7 @@ import type { Profile } from "@/lib/supabase/profile";
 import { isStaffRole, isSuperAdminRole } from "@/lib/supabase/roles";
 import { logout } from "@/app/login/actions";
 import { useMobileNav } from "./mobile-nav";
+import { MessagesUnreadDot } from "./messages-unread-dot";
 
 type NavItem = {
   href: string;
@@ -73,7 +74,7 @@ function buildNav(): NavItem[] {
     { href: "/tickets", label: "Tickets", icon: <Icon d={ICONS.tickets} /> },
     { href: "/inspections", label: "Inspections", icon: <Icon d={ICONS.inspections} />, staffOnly: true },
     { href: "/inventory", label: "Inventory", icon: <Icon d={ICONS.inventory} />, staffOnly: true },
-    { href: "/messages", label: "Messages", icon: <Icon d={ICONS.chat} /> },
+    { href: "/messages", label: "HorizonCare360 Assist", icon: <Icon d={ICONS.chat} /> },
     { href: "/calendar", label: "Calendar", icon: <Icon d={ICONS.calendar} /> },
     { href: "/reports", label: "Reports", icon: <Icon d={ICONS.reports} /> },
     { href: "/alerts", label: "Alerts", icon: <Icon d={ICONS.alerts} />, staffOnly: true },
@@ -188,7 +189,12 @@ export function Sidebar({ profile }: { profile: Profile | null }) {
                   : "text-ink-soft hover:bg-surface-2 hover:text-ink"
               }`}
             >
-              {item.icon}
+              <span className="relative shrink-0">
+                {item.icon}
+                {item.href === "/messages" && profile?.id && (
+                  <MessagesUnreadDot userId={profile.id} />
+                )}
+              </span>
               {item.label}
             </Link>
           );

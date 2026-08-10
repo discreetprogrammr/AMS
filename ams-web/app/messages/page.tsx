@@ -4,6 +4,7 @@ import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { StatusBadge } from "@/components/status-badge";
 import { ticketRef } from "@/lib/format";
+import { computeUnreadTicketIds } from "@/lib/messages/unread";
 
 // Client-visible, same as Tickets/Reports/Dashboard — RLS on both
 // service_tickets and messages (schema_step25.sql) already scopes
@@ -26,10 +27,23 @@ export default async function MessagesPage() {
   const { data: messages } = ticketIds.length
     ? await supabase
         .from("messages")
-        .select("id, ticket_id, message_type, call_kind, body, created_at")
+        .select("id, ticket_id, sender_id, message_type, call_kind, body, created_at")
         .in("ticket_id", ticketIds)
         .order("created_at", { ascending: false })
     : { data: [] };
+
+  const { data: reads } = profile?.id
+    ? await supabase
+        .from("message_reads")
+        .select("ticket_id, last_read_at")
+        .eq("user_id", profile.id)
+    : { data: [] };
+
+  const unreadTicketIds = computeUnreadTicketIds(
+    messages ?? [],
+    reads ?? [],
+    profile?.id ?? "",
+  );
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const latestByTicket = new Map<string, any>();
@@ -41,6 +55,7 @@ export default async function MessagesPage() {
   const rows = (tickets ?? []).map((t: any) => ({
     ...t,
     latest: latestByTicket.get(t.id) ?? null,
+    unread: unreadTicketIds.has(t.id),
   }));
 
   rows.sort((a, b) => {
@@ -52,7 +67,7 @@ export default async function MessagesPage() {
   return (
     <AppShell
       profile={profile}
-      title="Messages"
+      title="HorizonCare360 Assist"
       subtitle={
         isStaff
           ? "Chat and calls across every ticket."
@@ -75,6 +90,11 @@ export default async function MessagesPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium text-ink">{ticketRef(t.id)}</span>
                 <StatusBadge status={t.status} />
+                {t.unread && (
+                  <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink">
+                    New
+                  </span>
+                )}
               </div>
               <p className="mt-0.5 truncate text-sm text-ink-soft">
                 {t.assets?.sites?.address ?? "—"}
@@ -82,13 +102,16 @@ export default async function MessagesPage() {
                   ? ` — ${t.assets.organizations.name}`
                   : ""}
               </p>
-              <p className="mt-1 truncate text-sm text-slate-500">
+              <p className={`mt-1 truncate text-sm ${t.unread ? "font-semibold text-ink" : "text-slate-500"}`}>
                 {previewText(t.latest)}
               </p>
             </div>
-            <span className="shrink-0 whitespace-nowrap text-xs text-slate-500">
-              {new Date(t.latest?.created_at ?? t.created_at).toLocaleDateString()}
-            </span>
+            <div className="flex shrink-0 flex-col items-end gap-1.5">
+              {t.unread && <span className="h-2.5 w-2.5 rounded-full bg-red-500" aria-label="Unread" />}
+              <span className="whitespace-nowrap text-xs text-slate-500">
+                {new Date(t.latest?.created_at ?? t.created_at).toLocaleDateString()}
+              </span>
+            </div>
           </Link>
         ))}
       </div>

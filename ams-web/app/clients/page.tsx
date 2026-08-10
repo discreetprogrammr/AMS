@@ -2,20 +2,37 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile, requireStaff } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
+import { SearchBar } from "@/components/search-bar";
 import { ClientsTable, type ClientRow } from "./clients-table";
 
-export default async function ClientsPage() {
+export default async function ClientsPage({
+  searchParams,
+}: {
+  searchParams: { q?: string; deleted?: string; error?: string };
+}) {
   await requireStaff();
   const profile = await getProfile();
 
   const supabase = await createClient();
 
+  // Same ?q= pattern as /assets — plain GET form, server-side filtering,
+  // no client JS. PostgREST's .or() splits on commas, so strip any first.
+  const q = (searchParams?.q ?? "").trim().replace(/,/g, "");
+
+  let orgQuery = supabase
+    .from("organizations")
+    .select("id, name, sector, primary_contact, email")
+    .order("name");
+
+  if (q) {
+    orgQuery = orgQuery.or(
+      `name.ilike.%${q}%,sector.ilike.%${q}%,primary_contact.ilike.%${q}%,email.ilike.%${q}%`,
+    );
+  }
+
   const [{ data: organizations, error }, { data: sites }, { data: assets }] =
     await Promise.all([
-      supabase
-        .from("organizations")
-        .select("id, name, sector, primary_contact, email")
-        .order("name"),
+      orgQuery,
       supabase.from("sites").select("id, organization_id"),
       supabase.from("assets").select("id, organization_id"),
     ]);
@@ -45,20 +62,37 @@ export default async function ClientsPage() {
       title="Clients"
       subtitle="Admin registry of every client organization and their sites."
       actions={
-        <Link
-          href="/clients/new"
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-ink hover:bg-blue-500"
-        >
-          + Add Client
-        </Link>
+        <>
+          <SearchBar
+            action="/clients"
+            placeholder="Search clients…"
+            defaultValue={q}
+          />
+          <Link
+            href="/clients/new"
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-ink hover:bg-blue-500"
+          >
+            + Add Client
+          </Link>
+        </>
       }
     >
+      {searchParams?.deleted === "1" && (
+        <p className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400">
+          Client deleted.
+        </p>
+      )}
+      {searchParams?.error && (
+        <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+          {searchParams.error}
+        </p>
+      )}
       {error && (
         <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
           {error.message}
         </p>
       )}
-      <ClientsTable clients={clients} />
+      <ClientsTable clients={clients} query={q} />
     </AppShell>
   );
 }

@@ -445,3 +445,609 @@ Also reused the existing `ticket_priority` enum (low/medium/high) instead of inv
 ## What's next
 
 Alerts, then Inspections, Calendar, Reports, Fleet Map, and finally live chat + WebRTC calling.
+
+---
+
+# Alerts module — phase 3 of "match the reference"
+
+Phase 3: **Alerts**, the monitoring feed.
+
+## Another adaptation worth flagging
+
+The reference's `/alerts` route looks like a live telemetry feed, but checking its own seed data shows it's hand-inserted rows ("Uptime below SLA threshold", "Contract renewal upcoming") — it doesn't actually have a real monitoring/IoT source behind it either. AMS doesn't have that kind of automated pipeline yet, so **`schema_step10.sql`** builds this as a staff-logged alert feed instead: staff record something they've spotted (a site visit, a phone call, whatever), tag it with a severity, and it shows up in the feed with read/resolved tracking. The `alerts` table is shaped so a future automated source — say, a scheduled job that checks `next_service_due` or `warranty_end_date` on assets and raises an alert automatically — could write into the same table later with no UI changes. Same staff-only pattern as Work Orders: the reference redirects clients away from `/alerts` too.
+
+I also split "severity" and "resolved state" into two separate fields (`severity` + `resolved_at`/`is_read`) rather than reusing severity as a catch-all status like the reference does (its `severity` column holds values like `"RESOLVED"` alongside `"CRITICAL"`/`"CAUTION"`) — same kind of separation-of-concerns fix as `ticket_status` vs. `ticket_priority` elsewhere in AMS.
+
+## What's here
+
+- **`schema_step10.sql`** — new `alerts` table (title, description, severity, optional asset link, read/resolved tracking), `alert_severity` enum, audit trigger, staff-only RLS policy.
+- **`/alerts`** — feed with colored severity bars/icons (critical = red, caution = amber, info = blue), filter pills (All / Unread / Critical / Caution), and inline "Mark Read" / "Resolve" buttons per alert.
+- **`/alerts/new`** — log an alert (title, description, severity, optional related asset).
+- `StatusBadge` now also knows `critical`/`caution`/`info`.
+- Sidebar "Alerts" link is now live instead of "Soon".
+
+## Setup steps
+
+1. Run `schema_step10.sql` in Supabase (after Steps 8 and 9, if you haven't already).
+2. `npm run dev`, sign in as staff, go to Alerts, log a test alert with each severity, then try "Mark Read" and "Resolve" on one and confirm it moves correctly between the filter pills.
+3. Confirm client_viewer accounts still don't see "Alerts" in the sidebar and can't reach `/alerts` or `/alerts/new` directly.
+4. As always: only syntax-checked in this session — send me the exact error if `npm run dev` or Vercel's build throws one.
+
+## What's next
+
+Inspections, then Calendar, Reports, Fleet Map, and finally live chat + WebRTC calling.
+
+---
+
+# Inspections module — phase 4 of "match the reference"
+
+Phase 4: **Inspections**, the field checklist.
+
+## What the reference actually does (and where AMS goes further)
+
+The reference's `/inspections` route is staff-only and only ever shows the single most recent inspection record — there's no list in the UI and no way to start a new one from the app itself (its "Start Inspection" flow isn't wired up). AMS keeps its three-category checklist shape (Exterior & Safety / Imaging & Detection / System & Software, tap-to-cycle pass → attention → fail) but makes it a real workflow: every inspection ever run shows up in a list, staff can start a new one against any asset, and each one gets its own detail page — closer to how the existing Inventory Cycles module (Step 5) already works than to the reference's single-record view.
+
+## What's here
+
+- **`schema_step11.sql`** — new `inspections` (asset, technician, date, draft/submitted status) and `inspection_items` (category, item name, pass/attention/fail result) tables, audit triggers on both, staff-only RLS.
+- **`/inspections`** — list of every inspection with asset, technician, date, pass/total score, and status.
+- **`/inspections/new`** — pick an asset, technician, and date; a standard 12-item checklist across the three categories is bulk-created automatically, same pattern as starting an inventory cycle.
+- **`/inspections/[id]`** — the checklist itself, grouped by category, each item's status as a tappable pill that cycles pass → attention → fail → pass. "Submit & Sign Off" locks it to read-only in the UI (RLS still lets staff correct it later if genuinely needed — same defense-in-depth approach as everywhere else).
+- `StatusBadge` now also knows `draft`, `submitted`, and `attention`.
+- Sidebar "Inspections" link is now live instead of "Soon".
+
+## Setup steps
+
+1. Run `schema_step11.sql` in Supabase (after Steps 8–10, if you haven't already).
+2. `npm run dev`, sign in as staff, go to Inspections, start one against an asset, tap a few items to cycle their status, then Submit & Sign Off and confirm the checklist becomes read-only.
+3. Confirm client_viewer accounts still don't see "Inspections" in the sidebar and can't reach `/inspections` directly.
+4. As always: only syntax-checked in this session — send me the exact error if `npm run dev` or Vercel's build throws one.
+
+## What's next
+
+Calendar, then Reports, Fleet Map, and finally live chat + WebRTC calling.
+
+---
+
+# Calendar module — phase 5 of "match the reference"
+
+Phase 5: **Calendar**, and the first module in this phase that's actually client-visible.
+
+## Checked visibility before building this one
+
+Work Orders, Alerts, and Inspections all turned out to be staff-only in the reference (each route redirects client-role users away). Before assuming Calendar was the same, I checked the reference's nav component directly — its `clientHidden` list is `["work-orders", "tickets", "inspections", "alerts", "clients", "support-inbox"]`, and Calendar isn't in it. So clients do see the calendar in the reference app, and `calendar_events` in AMS follows the shared staff-manage / client-read RLS pattern (same as `service_tickets`) instead of the staff-only pattern from Steps 9–11.
+
+Also skipped the reference's separate `location` text column on each event — AMS already knows an event's site through `asset_id → sites → address`, so location is derived through that relation on display instead of duplicated as a field that could go stale.
+
+## What's here
+
+- **`schema_step12.sql`** — new `calendar_events` table (asset, title, type, date, status, notes), `calendar_event_type`/`calendar_event_status` enums, audit trigger, shared staff-manage/client-read RLS.
+- **`/calendar`** — month grid (previous/next/today navigation) with color-coded events by type (calibration/maintenance/firmware/inspection/other), plus an "Upcoming" side panel. Visible to both staff and clients — clients only see events tied to their own organization's assets, same scoping as everywhere else.
+- **`/calendar/new`** — staff-only: schedule an event against an asset (title, type, date, notes).
+- "Mark Completed" quick action on upcoming events, staff-only.
+- "Overdue" is computed on the fly (scheduled + date in the past = shown in red) rather than needing a background job to flip a status column.
+- `StatusBadge` now also knows `scheduled` and `overdue`.
+- Sidebar "Calendar" link is now live instead of "Soon" — and, matching the reference, it's not staff-only in the nav.
+
+## Setup steps
+
+1. Run `schema_step12.sql` in Supabase (after Steps 8–11, if you haven't already).
+2. `npm run dev`, sign in as staff, go to Calendar, schedule an event for an asset, confirm it shows up on the right day in the grid and in the Upcoming panel, then try "Mark Completed."
+3. Sign in as a client_viewer and confirm Calendar is visible (unlike Work Orders/Alerts/Inspections) but scoped to only that client's own assets, with no "+ Schedule Event" button.
+4. As always: only syntax-checked in this session — send me the exact error if `npm run dev` or Vercel's build throws one.
+
+## What's next
+
+Reports (plus the corrective/preventive checklist sub-pages), then Fleet Map, and finally live chat + WebRTC calling.
+
+---
+
+# Reports module — phase 6 of "match the reference"
+
+Phase 6: **Reports**, plus the preventive and corrective checklist sub-pages you asked about specifically.
+
+## The real find in this one: service_records never had a UI
+
+Before building anything, I checked what the reference's Reports page actually pulls from — its own `pm_reports` / `cm_reports` tables, which don't correspond to anything in AMS. But AMS already has `service_records` (built all the way back in Step 1 — service_type, date_performed, performed_by, findings, result, next_due_date) sitting completely unused: no page anywhere in the app has ever let anyone create one. So this phase isn't just a reporting dashboard — the preventive and corrective checklist forms are the first real way to log a maintenance visit against an asset. Everything they submit becomes a genuine `service_records` row, immediately visible wherever service records already show up (audit log, and now the Reports history lists).
+
+## What I deliberately did NOT replicate
+
+The reference's checklist forms also do PDF generation, signature capture, CSAT satisfaction ratings, and photo upload — all backed by a Supabase Storage bucket and a client-side PDF library. That's a project of its own, not a couple hours of scope. I've left it out entirely rather than half-building it, and I'm flagging it here explicitly so it doesn't look like it was missed by accident. Say the word if you want that as its own phase later.
+
+## What's here
+
+- **`schema_step13.sql`** — adds `downtime_hours` to `service_records` (needed for corrective reports, nothing tracked it before), plus a new `service_record_checklist_items` child table (same sibling pattern as the existing `service_record_parts`) to hold the section-by-section OK/Attention/Fail detail from the PM checklist.
+- **`/reports`** — client-and-staff-visible (checked the reference's nav code again — Reports isn't in `clientHidden` either, same as Calendar). Equipment health KPIs, service ticket summary with CSV export, and Preventive/Corrective maintenance history pulled straight from `service_records`, each with its own CSV export.
+- **`/reports/preventive-checklist`** (staff-only) — the same 5-section, 15-item checklist structure as the reference (External Parts, Moving Components, Internal Parts, Safety Parts, Software), tap-to-cycle OK → Attention → Fail per item with an optional remarks field. Submitting creates a `service_records` row (`service_type = preventive_maintenance`) plus all 15 checklist item rows.
+- **`/reports/corrective-checklist`** (staff-only) — free-text fault description, root cause, corrective action, parts replaced, downtime hours, and outcome (matches the reference, which also skips the checklist grid for corrective reports). Creates a `service_records` row (`service_type = repair`) and, if parts were listed, real `service_record_parts` rows.
+- Two new CSV export endpoints: `/api/reports/tickets/export` and `/api/reports/service-records/export?type=preventive|corrective`, following the same pattern as the existing `/api/assets/export`.
+- Sidebar "Reports" link is now live instead of "Soon," and — like Calendar — it's not staff-only in the nav.
+
+## Setup steps
+
+1. Run `schema_step13.sql` in Supabase (after Steps 8–12, if you haven't already).
+2. `npm run dev`, sign in as staff, go to Reports → Issue New Report, submit a preventive checklist against an asset (try flagging an item as Fail), then submit a corrective report with a couple of parts replaced. Confirm both show up in the Maintenance History lists on `/reports` and on that asset's own page.
+3. Try both CSV export links and confirm the files download with real data.
+4. Sign in as a client_viewer and confirm Reports is visible (like Calendar) but scoped to their own org, with no "Issue New Report" section.
+5. As always: only syntax-checked in this session — send me the exact error if `npm run dev` or Vercel's build throws one.
+
+## What's next
+
+Fleet Map, then the big one — live chat + WebRTC calling.
+
+---
+
+# Fleet Map module — phase 7 of "match the reference," and the last "simple module"
+
+Phase 7: **Fleet Map**. This is the last module before the big one — live chat + WebRTC calling.
+
+## Real sites, not a fictional deployment list
+
+The reference's Fleet Map plots a hardcoded list of 17 named Philippine airports and ports, matched against a free-text `assets.site` column by string comparison. That list is specific to the reference's demo data — it's not Pacific Horizon Tek's actual client sites. AMS already has real, relational sites (`organizations → sites → assets`), so the map plots those instead: whichever sites staff has added coordinates to, aggregated by their real assets' real status. The only genuinely missing piece was coordinates, so `schema_step14.sql` just adds nullable `latitude`/`longitude` to the existing `sites` table.
+
+Since most existing sites predate this and don't have coordinates yet, I also extended the Clients page (`/clients/[id]`) — the "Add Site" form now has optional lat/lng fields, and every existing site in the list gets its own small "Save Location" form so you can retrofit coordinates without recreating anything. A site shows "Not on Fleet Map yet" until it has both values set.
+
+## The map itself
+
+I did reuse one thing directly from the reference: the Philippines coastline outline data (`lib/philippines-geo.ts`). It's generated from Natural Earth's 10m Admin-0 Countries dataset, which is public domain — not proprietary code, just an accurate shape of the actual coastline, same as using any other public map data. Everything around it (the pan/zoom/drag interaction, the projection math, the pins, the legend, the info card, the side panel) is written fresh against AMS's data and component conventions.
+
+Site status on the map is asset-status-driven, adapted to AMS's real `asset_status` enum instead of the reference's simplified up/down flag:
+- **Down** (red) — the site has at least one `unserviceable` asset.
+- **Attention** (amber) — no unserviceable assets, but at least one `under_maintenance`.
+- **No Assets** (slate) — the site has coordinates but no assets registered yet.
+- **Operational** (emerald) — everything at that site is operational.
+
+## What's here
+
+- **`schema_step14.sql`** — adds `latitude`/`longitude` to `sites`.
+- **`lib/philippines-geo.ts`** — Natural Earth coastline path data (public domain), used as the map backdrop.
+- **`/fleet-map`** — client-and-staff-visible (checked the reference's nav code once more — Fleet Map isn't in `clientHidden` either). Interactive map: scroll to zoom, drag to pan, click a pin or a sidebar row to pin its info card, zoom controls, a legend, and a live readiness summary (sites down, sites with no assets, total units down).
+- **`/clients/[id]`** — "Add Site" form now takes optional lat/lng; every existing site has its own inline "Save Location" mini-form.
+- Sidebar "Fleet Map" link is now live instead of "Soon," and — like Calendar and Reports — it's not staff-only.
+
+## Setup steps
+
+1. Run `schema_step14.sql` in Supabase (after Steps 8–13, if you haven't already).
+2. `npm run dev`, sign in as staff, go to a client's page, add coordinates to a site or two (any real lat/lng works — e.g. Manila is roughly 14.5995, 120.9842), then go to Fleet Map and confirm the pin shows up in the right spot with the right color for that site's asset mix.
+3. Try zoom/pan, click a pin, click a sidebar row, and confirm the info card and "View client" link work.
+4. Sign in as a client_viewer and confirm Fleet Map is visible (like Calendar/Reports) but only shows their own org's sites.
+5. As always: only syntax-checked in this session — send me the exact error if `npm run dev` or Vercel's build throws one.
+
+## What's next
+
+The last phase: live chat + WebRTC calling. This one's genuinely large — comparable in size to everything built in phases 1–7 combined — and needs one thing from you first: your own TURN relay account (e.g. a free Metered.ca account), since the reference's credentials aren't ours to reuse. I'll flag exactly what's needed when we start that phase.
+
+---
+
+# Housekeeping — fixed sidebar, and a real header on Dashboard/Assets
+
+Two small requested fixes, not part of the phased build:
+
+- **Sidebar now stays put while you scroll.** `components/sidebar.tsx`'s `<aside>` is `sticky top-0` (matching the pattern the topbar already used) — it no longer scrolls away on tall pages like Reports.
+- **Dashboard header**: title/subtitle changed to "Operations Control Center" / "Fleet-wide oversight across clients, machines, and tickets." The old "View Assets" button is gone, replaced with a real search bar and a notification bell.
+  - The search bar (`components/search-bar.tsx`) is a plain GET form to `/assets?q=...` — no client JS, and it actually filters (asset tag/brand/model) once you land there. Reused the same component on the Assets page itself so the query stays visible and editable.
+  - The bell (`components/notification-bell.tsx`) shows a small red dot when there's at least one unread Alert (`is_read = false`) and links to `/alerts`. A client_viewer clicking it just gets redirected to `/assets` by the existing `requireStaff()` guard on that page — same graceful fallback as everywhere else Alerts is staff-only.
+
+## Setup steps
+
+No SQL to run — this is UI-only. `npm run dev`, check that the sidebar holds still while scrolling a long page, and try the search bar (e.g. search part of an asset tag) from both Dashboard and Assets.
+
+## Follow-up — notification bell dropdown
+
+The bell now opens a dropdown on click instead of just linking straight to `/alerts`: latest 5 unread-aware alerts (with severity badge) and the latest 5 Recent Activity entries (same data the dashboard's Recent Activity card already uses), each row clickable, closes on outside click/Escape/picking a row. `components/notification-bell.tsx` is now a client component; the two extra data queries live in `dashboard/page.tsx`.
+
+## Follow-up — Assets page: title, row actions menu, and delete
+
+- Title/subtitle changed to "Managed Assets" / "Asset registry across all sites."
+- Every row now has a three-dot menu (staff only) with **Edit** (goes to the existing edit page) and **Delete**. There's no separate "Update" entry — editing an asset's status/fields *is* updating it, so a third option would've just duplicated Edit.
+- Delete is real and cascading: every table that references an asset (service records, tickets, certificates, work orders, alerts, calendar events, inspections, inventory items) was declared `on delete cascade` back when those tables were created, so deleting an asset removes its full history at the database level. The row menu confirms this in plain language before submitting — it's not reversible.
+- New `deleteAsset` server action in `app/assets/actions.ts`, staff-only via `requireStaff()` same as everywhere else.
+
+**On your question — does "+ Add Asset" really write to Supabase?** Yes. `createAsset` in `app/assets/actions.ts` does a real `supabase.from("assets").insert(values)` — nothing in this app is mocked or held in memory; every create/edit/delete action across every module goes straight to your Supabase Postgres database, scoped by the same RLS policies that control who can see what.
+
+## Setup steps
+
+No SQL to run for either of these two — UI and server actions only. `npm run dev`: click the bell and confirm the dropdown shows real alerts/activity; on Assets, open a row's three-dot menu, try Edit, then try Delete on a test asset and confirm the confirmation dialog appears and the row disappears after confirming.
+
+## Follow-up — "Asset Tag" renamed to "Asset ID," and it's now auto-generated
+
+- Every user-facing label that said "Asset Tag" (the Assets table header, the asset form, and all three CSV export headers) now says "Asset ID." The underlying database column is still named `asset_tag` — renaming a live column isn't worth the migration risk for what's purely a label change, and nothing outside the UI cares what it's called.
+- On **`/assets/new`**, the Asset ID field is gone — it's generated automatically once you save, based on Equipment Type: `XRY-0001` for X-ray Screening, `PTS-0001` for People/Threat Screening, `WTR-0001` for Water Generation, `PMP-0001` for Pump, `OTH-0001` for Other. Each prefix has its own counter (so your 50th X-ray unit is `XRY-0050` regardless of how many pumps exist).
+- The generator looks at the *highest* existing number for that prefix, not a row count — so if `XRY-0003` ever gets deleted, the next X-ray asset still becomes `XRY-0004`, not a reissued `XRY-0003`.
+- On the **edit page** (`/assets/[id]`), Asset ID stays a normal editable field, in case a real correction is ever needed — auto-generation only applies at creation time.
+
+## Setup steps
+
+No SQL to run. `npm run dev`, sign in as staff, add a couple of new assets of different equipment types and confirm the IDs come out as `XRY-0001`, `PMP-0001`, etc. without you typing anything, then confirm editing an existing asset still lets you change its Asset ID manually if needed.
+
+## Follow-up — three-dot menu no longer gets clipped
+
+Bug: on rows near the bottom of the Assets table, the three-dot menu's dropdown opened but was invisible. Cause: the table's wrapper div (`overflow-hidden`, for the rounded corners) clips any normal absolutely-positioned child that would render outside its box — which is exactly what a dropdown on a bottom-row does.
+
+Fix: `app/assets/asset-row-actions.tsx` now renders the dropdown through a React portal straight into `document.body`, positioned with `position: fixed` at coordinates computed from the three-dot button's own `getBoundingClientRect()` at the moment it's opened. That sidesteps the ancestor's `overflow-hidden` entirely. Since the position is a one-time snapshot, the menu closes itself if the page scrolls or the window resizes rather than drifting away from its button.
+
+## Follow-up — Site is now a text field, and there's a Cancel button
+
+- **Site** on the Add/Edit Asset form was a dropdown limited to sites already on file. It's now a plain text box — type the address directly. Under the hood it still resolves to a real `site_id` (Fleet Map and the Clients page both depend on that relationship): on save, `resolveSiteId()` in `app/assets/actions.ts` looks for an existing site on that client with a matching address (case-insensitive) and reuses it, or creates a new site row on the fly if there's no match. Leaving it blank still means "no specific site," same as before.
+  - One thing worth knowing: a site created this way has no lat/lng yet, so it won't show up on Fleet Map until someone adds coordinates for it from the client's page — same as any manually-added site today.
+- **Cancel button** added next to Save/Update Asset — takes you back to `/assets` without submitting.
+- Since Site no longer needs to filter by the selected Organization, `asset-form.tsx` dropped its client-side state entirely and is a plain server component again.
+
+## Setup steps
+
+No SQL to run — UI and server action only. `npm run dev`, sign in as staff: on Add Asset, type a brand-new address into Site and save, then check the client's page and confirm a new site was created with that address. Try it again with the *same* address for the same client and confirm it reuses the existing site rather than creating a duplicate. Also click Cancel from both Add and Edit Asset and confirm it returns to `/assets` with nothing saved.
+
+## Follow-up — new sites get a location automatically
+
+**On the "detailed 2D map" question**: the Fleet Map view (`app/fleet-map/fleet-map-view.tsx`) was already built from the exact same source as the reference — same Natural Earth coastline data (`lib/philippines-geo.ts`), same projection math, same zoom/pan/pin/legend interaction. Nothing needed to change there visually; the reason it was looking sparse is the real issue below.
+
+**The real gap**: a site created through the Assets page's free-text Site field (or the Clients "Add Site" form) had no coordinates unless someone manually typed lat/lng — so it silently never showed up on Fleet Map. New helper, `lib/site-location.ts`, fixes that by resolving a location automatically whenever a site is created without one:
+
+1. **Known-facility match first** (`lib/ph-locations.ts`) — a small keyword table of the airports/seaports/freeports PHTek actually deploys to (NAIA, Clark, Subic, Cebu/Mactan, Davao, Zamboanga, etc., with real published coordinates — the same real-world facilities the reference's fleet map used). If the typed address mentions one, it resolves instantly with no network call.
+2. **Live geocoding fallback** (`lib/geocode.ts`) — anything that doesn't match a known facility gets looked up via OpenStreetMap's free Nominatim geocoder, scoped to the Philippines. No API key needed. If that also comes up empty (unreachable, no match, etc.), the site is just left uncharted — exactly today's behavior — and can still be set by hand from the Clients page's "Save Location" mini-form, which always overrides anything automatic.
+3. Wired into both places a site can be created: `resolveSiteId()` in `app/assets/actions.ts`, and `createSite()` in `app/clients/actions.ts` (only kicks in there if you leave the lat/lng fields blank — a manually typed value always wins).
+
+## Setup steps
+
+No SQL to run. `npm run dev`, sign in as staff, add a new asset with a Site like "NAIA Terminal 3" or "Port of Davao" (or reuse the same client's existing site with the same address to confirm it doesn't create a duplicate) — then check Fleet Map and confirm a pin shows up in roughly the right place without you touching lat/lng. Try an address that isn't a known facility too (e.g. a specific street address) to exercise the geocoding fallback; if Nominatim is unreachable or returns nothing, the site should still save fine, just without a pin, same as before.
+
+## Follow-up — banner removed, and existing sites are backfilled automatically too
+
+Two gaps from the previous follow-up:
+
+- The screenshot showed the amber "N sites without coordinates" banner still up, and only 1 of 8 sites had a pin. Right — auto-geocoding only ran for sites created *after* that change went in; the other 7 predated it and had no coordinates to backfill retroactively.
+- Fixed by adding `backfillMissingSiteLocations()` (`lib/site-location.ts`), called at the top of `app/fleet-map/page.tsx` on every load, staff-only: it finds any site with an address but no lat/lng, resolves one via the same known-facility/geocoding logic, and updates it in the database. So opening Fleet Map as staff now quietly catches up any site that slipped through — no separate button, no manual step.
+- The banner itself is gone (`FleetMapView` no longer takes a `missingCoords` prop at all) — now that catching up happens automatically on load, a standing "go fix this" notice didn't make sense anymore.
+
+## Setup steps
+
+No SQL to run. `npm run dev`, sign in as staff, open Fleet Map — the sites that showed up in your screenshot without pins should now have them (matched against the known-facility list: Zamboanga, NAIA, Cebu/Mactan, etc.), and the amber banner should be gone. If a site's address doesn't match anything, it'll silently try live geocoding on that same load — refresh once if a couple of pins don't appear immediately.
+
+## Follow-up — asset status widened to match Fleet Map: Operational, Attention, Down, Unserviceable
+
+Previously an asset's status was one of 3 values (Operational / Under Maintenance / Unserviceable), while Fleet Map showed a different 4-value site-level scale (Operational / Attention / Down / No Assets) derived from it — same idea, different words, so the two pages didn't read as the same system. Both now use the identical 4-word scale.
+
+- **`schema_step15.sql`** — widens the `asset_status` enum. `under_maintenance` is renamed to `attention` (a real Postgres `ALTER TYPE ... RENAME VALUE`, so every existing row carries over automatically, no data migration needed). `down` is added as a genuinely new value — previously "temporarily out" and "beyond repair" were both lumped into `unserviceable`; this migration leaves existing `unserviceable` assets as-is rather than guessing which ones are actually just down. Reclassify individually from the Assets page if needed; going forward, pick whichever of the two actually applies.
+- **Asset form** (`app/assets/asset-form.tsx`) — Status dropdown is now Operational / Attention / Down / Unserviceable.
+- **Status badges** (`components/status-badge.tsx`) — added an `orange` tone for "Down" so it's visually distinct from "Unserviceable" (red) — Operational is green, Attention is amber, Down is orange, Unserviceable is red, ordered by severity.
+- **Fleet Map** (`app/fleet-map/page.tsx` + `fleet-map-view.tsx`) — a site's pin now takes the *worst* status among its assets, using the exact same 4-word scale (previously it only distinguished "down" vs "attention" vs "operational"; now it separately recognizes Unserviceable as more severe than Down). The legend lists all 4 in severity order, plus a 5th "No Assets" entry for sites with nothing registered yet — that one's a genuinely different situation (nothing to roll up) so it stays distinct rather than being folded into any of the 4, but I kept it out of your requested 4-word list and appended it after. Let me know if you'd rather it disappear from the legend entirely.
+- **Dashboard** — KPI row and the System & Equipment Health widget now show Attention/Down/Unserviceable as three separate counts instead of two.
+- **Reports** — the "Needs Attention" card's sub-label updated to say "Attention / down / unserviceable."
+
+## Setup steps
+
+1. Run `schema_step15.sql` in the Supabase SQL editor (after Steps 1–14).
+2. `npm run dev`, sign in as staff, open an asset and confirm the Status dropdown shows all 4 options; set a couple of test assets to Attention, Down, and Unserviceable respectively.
+3. Check Dashboard — KPI row and System & Equipment Health should show separate Attention/Down/Unserviceable counts.
+4. Check Fleet Map — a site with a "Down" asset should show an orange pin, "Unserviceable" a red pin (pulsing/ping like Down did before), and the legend at bottom-left should read Operational, Attention, Down, Unserviceable, No Assets.
+5. Any asset that was previously "Under Maintenance" should now show as "Attention" everywhere without you touching it — that's the enum rename taking effect automatically.
+
+## Follow-up — Clients page brought to parity with Assets page
+
+Three asks, all copying patterns already established on `/assets`:
+
+- **Cancel button** — Add Client (`app/clients/new/page.tsx`) and Edit Client (`app/clients/[id]/page.tsx`) both now have a Cancel link next to their submit button, back to `/clients`, same as the Asset form.
+- **Three-dot row actions** — every row on `/clients` now has an Edit/Delete menu (`app/clients/client-row-actions.tsx`), same portal-into-`document.body` pattern as `asset-row-actions.tsx` so it isn't clipped by the table's rounded-corner `overflow-hidden` wrapper. Edit goes to the client's existing detail/edit page (no separate "Update" entry, same reasoning as Assets). Delete is a real cascading delete — sites and assets both belong to the org with `on delete cascade` — with a plain-language confirm dialog. One wrinkle handled specifically: if a client_viewer login is tied to that organization, the database refuses the delete (`profiles.organization_id` deliberately isn't cascading — deleting a client shouldn't silently orphan or wipe someone's account), and that shows up as a clear message instead of a raw Postgres error.
+- **Search bar** — swapped the old client-side instant-filter box (typed into `ClientsTable`, filtered in the browser) for the same server-driven `<SearchBar>` component `/assets` uses: a plain `?q=` GET form in the page header, filtering `organizations` server-side across name/sector/contact/email. `ClientsTable` is now a plain server component — no more `"use client"`, no local state, just renders whatever list the page passes in.
+
+## Setup steps
+
+No SQL to run — UI and server actions only. `npm run dev`, sign in as staff: try the search bar on `/clients` (search by name, sector, contact, or email), open a row's three-dot menu and try Edit, then try Delete on a test client and confirm the confirm dialog and cascade behavior. Click Cancel from both Add Client and Edit Client and confirm it returns to `/clients` with nothing saved.
+
+## Follow-up — link Service Tickets to the Work Orders they spawn
+
+Discussed keeping Work Orders and Service Tickets as separate concepts (client-facing complaint with an SLA clock vs. staff-only maintenance task — no change there), but added the missing connection between them so a ticket and the work it triggers aren't two disconnected records anymore.
+
+- **`schema_step16.sql`** — adds `service_tickets.work_order_id`, nullable, `references work_orders(id) on delete set null`. Deleting a work order un-links the ticket rather than deleting it.
+- **`app/work-orders/actions.ts`** — `createWorkOrder` now accepts an optional `ticket_id`. When present: the new work order's id gets written back onto the ticket, and the ticket is nudged to "In Progress" (with `first_response_at` stamped if it wasn't already) — spawning a work order counts as acknowledging the ticket, same as the explicit "Start Progress" action.
+- **`/work-orders/new?ticket_id=...`** — new entry point. Pre-fills the asset, description, and priority from the ticket, shows a banner confirming what it's linked to, and carries `ticket_id` through as a hidden field.
+- **Ticket rows** now show either a link to their linked work order (`app/tickets/page.tsx`, and the ticket list on `app/assets/[id]/page.tsx`), or a "+ Create Work Order" link if they don't have one yet and aren't resolved. There's no per-work-order detail page in this module (matches the reference's scope — list + inline status only), so the link goes to `/work-orders` rather than a specific record.
+- **Work order rows** (`app/work-orders/work-orders-table.tsx`) show a small "From TKT-XXXXXXXX" tag under the task title when a work order was spawned from a ticket, linking back to `/tickets`.
+
+## Setup steps
+
+1. Run `schema_step16.sql` in the Supabase SQL editor (after Steps 1–15).
+2. `npm run dev`, sign in as staff, open a client's asset, raise a test ticket (or use an existing open one), then click "+ Create Work Order" on it — confirm the new-work-order form is pre-filled and shows the "Creating from ticket…" banner.
+3. Submit it, and confirm: you land back on the asset page with a "linked" banner, the ticket now shows "In Progress" and a link to the work order, and the work order itself (on `/work-orders`) shows a "From TKT-XXXXXXXX" tag linking back to `/tickets`.
+4. Check `/tickets` too — the new "Work Order" column should show the same link, and "+ Create" for any other open/in-progress ticket that doesn't have one yet.
+
+## Follow-up — link a ticket from the plain "Create Work Order" form too
+
+Gap in the last follow-up: linking only worked if you started from a ticket's own "+ Create Work Order" link (`?ticket_id=...`). Starting from the plain "+ Create Work Order" button on `/work-orders` gave no way to pick a ticket at all — `createWorkOrder` supported it, but the form never offered it.
+
+`app/work-orders/new/page.tsx` now covers that path too: when there's no `ticket_id` in the URL, it queries unresolved tickets that aren't already linked to a work order and shows them in an optional "Link to Ticket" dropdown, labeled with the ticket ref, asset, and a snippet of the description. Picking one behaves exactly like arriving via the ticket's own link — the ticket moves to In Progress and gets pointed at the new work order once you submit.
+
+**To answer your question directly: no, creating a ticket never auto-creates a work order, by design** — a lot of tickets get resolved without one (a quick remote fix, a duplicate, etc.), so making one is a deliberate staff action, not automatic. If you want a work order for a ticket, either click "+ Create Work Order" next to it (on `/tickets` or the asset's page), or now, pick it from the dropdown when creating one from `/work-orders` directly.
+
+## Setup steps
+
+No SQL to run — this only touches the form. `npm run dev`, sign in as staff, go to `/work-orders` → "+ Create Work Order" (not through a ticket this time) and confirm the "Link to Ticket" dropdown appears and lists your open ticket. Pick it, submit, and confirm the ticket shows the link and moved to In Progress, same as the other path.
+
+## Follow-up — Assets table: "Next Service Due" swapped for "Site"
+
+The Assets table column now shows each asset's site address (whatever was typed into the Site field when it was created — see the earlier "Site is now a text field" follow-up) instead of "Next Service Due." `next_service_due` is still a real column and still shown/editable on the asset's own edit page; it just wasn't pulling its weight as a column when most demo assets don't have one set yet, and Site is more useful at a glance. `app/assets/page.tsx`'s query already joined `sites(address)` for search/filtering — this just renders it.
+
+## Setup steps
+
+No SQL to run — UI only. `npm run dev` and check `/assets`: the second-to-last column should now read "Site" and show each asset's site address (or "—" if none is set).
+
+## Follow-up — Work Orders and Tickets: "Asset" column now shows Site
+
+Same swap as the Assets table follow-up: the second column on `/work-orders` and `/tickets` (header renamed from "Asset" to "Site") now shows the linked asset's site address instead of its Asset ID. Organization name still shows underneath, unchanged. Both queries now join through `assets(sites(address))` to get it.
+
+## Setup steps
+
+No SQL to run — UI only. `npm run dev` and check `/work-orders` and `/tickets`: that column should read "Site" and show the site address (or "—" if the asset has none set).
+
+## Follow-up — Asset picker shows Site name too
+
+The Asset dropdowns on `/tickets/new` ("Request New Service") and `/work-orders/new` ("Create Work Order") now show each option as `Organization — Asset ID (Site)`, e.g. "Bureau of Customs (Demo) — XRY-0009 (NAIA Terminal 3, Pasay City)" — same info the tables already show, just visible while you're still picking. Same treatment for the "Creating from ticket…" banner and the "Link to Ticket" dropdown on `/work-orders/new`, which also now show the site alongside the asset.
+
+## Setup steps
+
+No SQL to run — UI only. `npm run dev`, sign in as staff, open "Request New Service" and "Create Work Order" and confirm each asset in the dropdown shows its site in parentheses (assets with no site just show the asset ID with nothing after it).
+
+## Follow-up — Asset picker also shows Serial Number
+
+Extending the last follow-up: every place an asset gets picked when creating a ticket or work order now also shows its serial number, e.g. "Bureau of Customs (Demo) — XRY-0009 (NAIA Terminal 3, Pasay City) · SN HXP60-2024-0117". Covers the same four spots: the Asset dropdown on `/tickets/new` and `/work-orders/new`, the "Creating from ticket…" banner, and the "Link to Ticket" dropdown — assets/tickets with no serial number on file just omit that part.
+
+## Setup steps
+
+No SQL to run — UI only. `npm run dev`, sign in as staff, open "Request New Service" and "Create Work Order" and confirm each asset option shows its serial number after the site.
+
+## Follow-up — Asset ID dropped from the asset picker
+
+The Asset ID no longer shows in the dropdown/labels when creating a ticket or work order — just Organization — Site · SN (serial number), e.g. "Bureau of Customs (Demo) — NAIA Terminal 3, Pasay City · SN HXP60-2024-0117". Same four spots as before: the Asset dropdown on `/tickets/new` and `/work-orders/new`, the "Creating from ticket…" banner (now reads "on {site}" instead of "on {Asset ID}"), and the "Link to Ticket" dropdown.
+
+## Setup steps
+
+No SQL to run — UI only. `npm run dev`, sign in as staff, open "Request New Service" and "Create Work Order" and confirm the Asset ID no longer appears in the option text — just organization, site, and serial number.
+
+## Follow-up — Cancel button added across every "create" form
+
+Audited every form in the app with a single submit button (the same pattern already used on Add/Edit Asset and Add/Edit Client) and added a matching Cancel link back to that section's list page, wherever one was missing:
+
+- `/work-orders/new` — Cancel → `/work-orders`
+- `/tickets/new` (Request New Service) — Cancel → `/tickets`
+- `/inspections/new` — Cancel → `/inspections`
+- `/calendar/new` — Cancel → `/calendar`
+- `/reports/corrective-checklist` — Cancel → `/reports`
+- `/reports/preventive-checklist` — Cancel → `/reports`
+- `/alerts/new` — Cancel → `/alerts`
+- `/inventory/new` — Cancel → `/inventory`
+
+Left alone, deliberately:
+- The "Raise a Service Request" form on an asset's own page — it's an embedded sub-form, not a standalone page with a list to return to.
+- `/inspections/[id]` and `/inventory/[id]` — these already have a "← Back" link in the page header, just not directly next to the submit button.
+- The three-dot menu's Delete confirmation forms and the login page — neither fits the "creating a record" pattern this convention is for.
+
+## Setup steps
+
+No SQL to run — UI only. `npm run dev`, sign in as staff, and spot-check a few: Create Work Order, Request New Service, and one of the two report checklists — each should now show a Cancel link next to its submit button that returns to the right list page without saving anything.
+
+## Follow-up — ticket ↔ work order linking wasn't surfacing failures
+
+This exact behavior (Work Order column shows the work order number once one's linked, "+ Create" only when there isn't one yet) was already built in the previous "Link Service Tickets to Work Orders" follow-up — `app/tickets/page.tsx` already branches on `t.work_order_id`. If it looked like nothing changed after creating a work order from a ticket, the most likely cause is **`schema_step16.sql` not having been run yet** in your Supabase project — without the `work_order_id` column, the write-back to the ticket was failing silently (the code wasn't checking that update's result).
+
+Fixed in `app/work-orders/actions.ts`: that update's error is now checked. If linking fails, you're taken back to the asset page with a clear message — "Work order created, but couldn't link it to the ticket: [reason]. Have you run schema_step16.sql yet?" — instead of it just quietly not happening.
+
+## Setup steps
+
+1. **If you haven't already, run `schema_step16.sql`** in the Supabase SQL editor — this is almost certainly why the ticket wasn't updating.
+2. `npm run dev`, create a work order from an existing ticket, and confirm: you land back on the asset page with a success banner (or, if something's still wrong, a clear error telling you why), and the ticket on `/tickets` now shows the work order number instead of "+ Create."
+
+## Follow-up — work order creation now always lands on the Work Orders page
+
+Creating a work order from a ticket (either the "+ Create" link in the Ticket Queue or "+ Create Work Order" on an asset's ticket list) used to redirect back to the asset page. Changed to redirect to `/work-orders` instead, matching plain work-order creation — one consistent destination regardless of entry point. If linking back to the ticket fails, the Work Orders page now shows that error directly (amber banner) instead of it living on a page you might not visit.
+
+If the ticket still shows "+ Create" after this, the two most likely causes: (1) `schema_step16.sql` genuinely hasn't been run yet against the live Supabase project, or (2) the deployed site is still running the previous build. Worth confirming both.
+
+## Follow-up — every Work Order now auto-adds a Service Calendar event
+
+**`schema_step17.sql`** (new): adds a `work_order` value to `calendar_event_type`, and a `work_order_id` column on `calendar_events` linking back to the work order that created it.
+
+**`app/work-orders/actions.ts`** — `createWorkOrder` now also inserts a matching `calendar_events` row (title = task title, date = the work order's due date, or today if none was set, notes = description) right after the work order itself is created — regardless of whether it came from the plain "+ Create Work Order" button or from a ticket. `updateWorkOrderStatus` now keeps that calendar entry's status in sync — marking the work order "completed" marks its calendar event completed too.
+
+**`app/calendar/calendar-view.tsx`** — added a cyan color for the new `work_order` event type so it's visually distinct from Calibration/Maintenance/Firmware/Inspection/Other on the calendar grid and the Upcoming list.
+
+The manual "Schedule Event" form on `/calendar/new` intentionally does NOT offer "Work Order" as an option — that type is reserved for auto-generated entries actually linked to a real work order, so manually-added events can't masquerade as ones.
+
+## Setup steps
+
+Run `schema_step17.sql` in the Supabase SQL editor. Until it's run, work orders will still be created fine, but you'll see an error banner noting the calendar entry couldn't be added (same defensive pattern as the step16/ticket-linking fix).
+
+## Follow-up — Reports page headings matched to reference wording
+
+`app/reports/page.tsx` — added the reference's two-line section header style (small blue tracked-out "kicker" label above a larger title, with a gray hint alongside). Section text now matches the reference exactly:
+- "Executive Summary" → Equipment Health Overview
+- "Service Performance" → Service Ticket Summary
+- "Maintenance & Compliance" → Exportable Report Logs (was "Maintenance History")
+- "Digital Forms" → Issue New Report
+
+(The reference's separate "Preventive Maintenance Reports Archive" section — a signed-PDF library from Supabase Storage — wasn't ported over, since AMS's preventive/corrective records live as `service_records` rows, not stored PDF files; that data is already covered under "Exportable Report Logs.")
+
+## Follow-up — "Recent Service Tickets" heading added to Reports
+
+The tickets table under Service Ticket Summary now has its own card heading, "Recent Service Tickets," matching the reference — moved the Export CSV button down onto that card header instead of the section header above it, same placement as the reference.
+
+## Follow-up — Customer Satisfaction survey + digital signatures on both report forms
+
+Matched the reference's PM checklist sign-off block on both `/reports/preventive-checklist` and `/reports/corrective-checklist`.
+
+**`schema_step18.sql`** (new) — adds `csat_service`, `csat_machine`, `csat_support`, `csat_overall` (1–5 ratings), `customer_signatory`, `technician_signature`, and `customer_signature` to `service_records`. Signatures are stored as PNG data URLs directly in a `text` column rather than Supabase Storage — no service-role key available in this sandbox to wire up a signed storage bucket, and a few KB of base64 per signature is well within Postgres's text limits.
+
+**`components/customer-survey.tsx`** (new) — the "Customer Satisfaction Rating" card (service / machine / support / overall, 1–5 each), self-contained like the checklist grid: each question keeps its own state and posts as a hidden form field.
+
+**`components/signature-pad.tsx`** (new) — canvas-based signature capture (pointer events, same approach as the reference's `SignaturePad.tsx`), restyled to AMS's theme tokens (reads `--c-ink` at draw time so the pen color stays legible in both dark and light mode). Also self-contained — posts its own hidden field.
+
+**`app/reports/corrective-checklist/`** — split into a thin server `page.tsx` (fetches assets) + new client `corrective-form.tsx` (was previously all in `page.tsx` as a plain server-rendered form), same split `preventive-checklist/` already used — needed since the survey/signature widgets require client-side state.
+
+**`app/reports/actions.ts`** — both `createPreventiveReport` and `createCorrectiveReport` now save the CSAT ratings, customer signatory name, and both signatures via a shared `readSurveyAndSignOff()` helper.
+
+## Setup steps
+
+Run `schema_step18.sql` in the Supabase SQL editor.
+
+## Follow-up — Asset picker on PM/CM reports now shows site + serial number
+
+`app/reports/preventive-checklist/` and `app/reports/corrective-checklist/` — the Asset dropdown now matches the same `org — site · SN serial` format used on `/tickets/new` and `/work-orders/new` (Asset ID dropped), instead of just the asset tag. Both pages' Supabase queries were widened to pull `serial_number` and `sites(address)`.
+
+## Follow-up — Site Visit Verification + wider report pages
+
+**`components/site-visit-verification.tsx`** (new) — the reference's 4-tile "Site Visit Verification" block (GPS Check-In, Scan asset QR tag, Request customer confirmation, Photo Evidence), each a manual tap-to-toggle with a "N / 4 checks" badge that flips to "VERIFIED" once all four are on. Added to both `preventive-form.tsx` and `corrective-form.tsx`, positioned right after the report's top details section — same placement as the reference. Like the reference's own version, these aren't wired to real GPS/QR/camera hardware and aren't saved to the database; it's a visual sign-off aid, not a data field.
+
+**Widened both report pages** — `/reports/preventive-checklist` and `/reports/corrective-checklist` no longer cap out at `max-w-3xl`/`max-w-2xl`; they now use the full content width like the reference does (no width cap in its own layout). Preventive's top details grid also goes up to 4 columns on wide screens instead of 2, to use the extra room instead of just leaving whitespace.
+
+## Follow-up — unified "Comments & Sign-off" card, matching the reference layout
+
+Both report forms now merge Comments, Performed By, Customer Signatory, and the two signatures into one card titled "Comments & Sign-off" — matching the reference's layout in the screenshot the user shared, instead of having Notes/Performed By and the signatures split across separate cards.
+
+- `app/reports/preventive-checklist/preventive-form.tsx` — "Performed By" moved out of the top details grid and into this card; textarea placeholder changed to "Additional comments…" (was "Any additional summary…").
+- `app/reports/corrective-checklist/corrective-form.tsx` — "Performed By" moved out of the Outcome card; added a Comments textarea (previously the Corrective report had no free-text comments field at all).
+- `app/reports/actions.ts` — `createCorrectiveReport` now reads the new `notes` field and appends it to the saved findings as `Comments: …`, same as how Preventive already handled it.
+
+Both Performed By fields now use the reference's placeholder text, "Service engineer / technician."
+
+## Follow-up — Service Timing + If Failures Occurred added to both reports
+
+Matched the reference's time-tracking block on both `/reports/preventive-checklist` and `/reports/corrective-checklist`:
+
+- **Service Timing** — Time Arrived, Begin/Completed times ("Begin PM"/"PM Completed" on the Preventive form, "Service Begin"/"Service Completed" on Corrective — same fields, worded to fit each report type), and a manual visit Status (Completed/Pending).
+- **If Failures Occurred** — Start Diagnostic, Diagnostic Done, Repair Starts, Repair Ends.
+
+**`schema_step19.sql`** (new) — adds `time_arrived`, `service_begin`, `service_completed`, `visit_status`, `diagnostic_start`, `diagnostic_done`, `repair_start`, `repair_end` to `service_records` (shared by both report types, same table).
+
+**`app/reports/actions.ts`** — both actions now save these via a shared `readServiceTiming()` helper, same pattern as `readSurveyAndSignOff()`.
+
+## Setup steps
+
+Run `schema_step19.sql` in the Supabase SQL editor.
+
+## Follow-up — downloadable PDF for every submitted PM/CM report
+
+**Implementation note — why this isn't a pre-generated file stored via a PDF library:** I checked, and no PDF-generation package (pdf-lib, jsPDF, @react-pdf/renderer, etc.) can be installed in this sandbox — `npm install` here is restricted to the packages already in `package.json` (confirmed: `npm install pdf-lib` returns a 403 from the registry, not a network failure). The same install would succeed on Vercel at deploy time, but I didn't want to ship an untested dependency + untestable PDF-drawing code for something this important (compliance paperwork) without being able to verify it actually renders correctly first.
+
+Instead, built a printable report view that produces a real, downloadable PDF via the browser's native "Print → Save as PDF" — the same mechanism most invoicing/reporting SaaS tools use under the hood. Advantage over a pre-generated file: it always reflects the current stored data (can't go stale) and needed no Supabase Storage bucket setup.
+
+**`app/reports/service-record/[id]/page.tsx`** (new) — standalone, non-AppShell printable report page (always white background — a dark UI theme doesn't print well, so this intentionally ignores the app's dark/light toggle). Renders: Pacific Horizon Tek letterhead (logo + report ref, e.g. `PM-A1B2C3D4`), report meta (customer, site, asset, equipment, serial, performed by, next due / downtime, outcome), the PM checklist table or CM parts-replaced table, findings/comments, Service Timing, If Failures Occurred, CSAT ratings, and the sign-off block with both signature images. A "Print / Save as PDF" button at the top (hidden when actually printing).
+
+**`public/pacific-horizon-tek-logo.png`** (new) — the company logo you shared, used in the report header.
+
+**`components/print-button.tsx`** (new) — thin client component wrapping `window.print()`.
+
+**`lib/format.ts`** — added `reportRef(id, "PM" | "CM")`, same short-reference pattern as `ticketRef`/`woRef`.
+
+**Where the download link lives:**
+- Reports page → Preventive/Corrective Maintenance History cards → each row now has a "PDF" button.
+- Right after submitting a report → the asset page's success banner now includes a "View / Download PDF" link (this banner existed before but its `report=submitted` param was never actually read — dead code — now wired up properly).
+
+No new migration needed for this feature.
+
+## Follow-up — true server-generated, permanently-stored PDF reports
+
+Replaces the browser-print-to-PDF approach with what was actually asked for: a real PDF file is generated server-side the moment a PM/CM report is submitted, and stored in Supabase Storage — no more relying on the browser's print dialog.
+
+**How, given no PDF library is installable here:** confirmed (again) that this sandbox's npm registry only allows packages already in `package.json` — installing anything new returns a 403, even though the same install would succeed on Vercel. Rather than add an untested dependency, I hand-wrote a minimal PDF writer and PNG decoder using only Node's built-in `zlib` — zero new dependencies, so there's no install-time risk at all (safer than adding pdf-lib would have been). This was fully tested in this sandbox using `qpdf --check`, `pdfinfo`, `pdftotext`, and `pdftoppm` (rendered to PNG and visually inspected) — including a 3-page report to confirm pagination and table-header-repeat-across-pages both work, and embedded PNG images (logo + signatures, including proper alpha-channel transparency via SMask).
+
+**New files (`ams-web/lib/pdf/`):**
+- `png.ts` — decodes 8-bit RGB/RGBA PNGs (chunks, zlib inflate, per-scanline unfiltering) into raw pixel planes.
+- `writer.ts` — low-level PDF object writer: pages, the 2 standard fonts (Helvetica/Helvetica-Bold, no font embedding needed), filled/stroked rects and lines, and image XObjects (with SMask for transparency). Builds a spec-valid xref table and trailer.
+- `text-metrics.ts` — approximate Helvetica glyph widths for safe word-wrapping.
+- `service-report.ts` — the actual report layout: letterhead with logo, meta grid, checklist/parts table (paginates automatically, repeating the header row if it spans pages), findings paragraph, Service Timing / If Failures Occurred / CSAT blocks, and a sign-off block with both embedded signature images.
+- `generate-and-store.ts` — glue: builds the PDF, uploads it to the `service-reports` bucket, and points `service_records.report_url` at it. Non-fatal on failure — the report itself always saves regardless.
+
+**`schema_step20.sql`** (new) — creates the `service-reports` Storage bucket and its RLS policies via plain SQL (`storage.buckets`/`storage.objects` are just tables — no service-role key or dashboard click-through needed, same SQL-editor workflow as every other migration). Same read shape as `service_records` itself: staff see everything, a client_viewer only sees PDFs tied to their own org's assets.
+
+**`app/api/reports/service-records/[id]/pdf/route.ts`** (new) — the actual download endpoint. Streams the stored PDF back with a proper filename (`PM-XXXXXXXX.pdf` / `CM-XXXXXXXX.pdf`). Falls back to the live HTML view for older reports that predate this feature (no stored PDF yet) instead of a dead link.
+
+**Wiring:** both `createPreventiveReport` and `createCorrectiveReport` now call `generateAndStoreReportPdf()` right after the report (and its checklist items / parts) are saved. The Reports page's "PDF" buttons and the post-submit success banner's "Download PDF" link both now point at the new API route instead of the live-render page.
+
+The live HTML print view (`/reports/service-record/[id]`, from the previous follow-up) is kept as a fallback and for quick viewing without downloading.
+
+## Setup steps
+
+Run `schema_step20.sql` in the Supabase SQL editor. Until it's run, reports will still save fine, but the success banner/Reports page will show an error noting the PDF couldn't be generated, and the "PDF" link will fall back to the live view.
+
+## Verification note
+
+`npx tsc --noEmit` passes clean across the whole project (this also caught and fixed one pre-existing, unrelated type error in `app/work-orders/new/page.tsx` that would have failed a production build). A full `next build` could not be completed in this sandbox — it hangs during static analysis, almost certainly because it tries to reach the live Supabase project at build time and this sandbox's network doesn't allow that (same restriction as the Nominatim geocoding calls earlier in this project). Worth running `npm run build` yourself once after pulling these changes, just to confirm a clean production build before deploying.
+
+## Follow-up — report submission now redirects to the Reports tab
+
+`app/reports/actions.ts` — both `createPreventiveReport` and `createCorrectiveReport` now redirect to `/reports?report=submitted&report_id=…` instead of back to the asset page. `app/reports/page.tsx` shows the same success banner (with a "Download PDF" link) that used to live on the asset page — removed that now-unreachable banner from `app/assets/[id]/page.tsx` to avoid leaving dead code behind.
+
+## Follow-up — Report Logs show Site + Serial No. instead of Asset ID
+
+`app/reports/page.tsx` — the Preventive/Corrective Maintenance History rows under "Exportable Report Logs" now show the site address + serial number (`NAIA Terminal 3, Pasay City · SN 88213`) instead of the asset tag, matching the same site/serial convention used elsewhere (Tickets, Work Orders, Assets). Widened the `service_records` query to pull `serial_number` and `sites(address)`.
+
+## Follow-up — Work Order status now syncs onto its linked Ticket
+
+`app/work-orders/actions.ts` — `updateWorkOrderStatus` now also updates the ticket this work order was created from (if any), mapping `work_order_status` straight onto `ticket_status`: Open → Open, In Progress → In Progress, Completed → Resolved (stamping `resolved_at` the first time that happens, same as the explicit Resolve action). Silently skipped if the work order isn't linked to a ticket, or if `schema_step16.sql` hasn't been run yet.
+
+## Follow-up — unified ticket/work order status vocabulary + Work Orders filter bar
+
+Tickets said "Resolved", work orders said "Completed" — two words for the same terminal state. `schema_step21.sql` renames both onto a shared vocabulary: **Open / In Progress / Parts Pending / Closed**, adding "Parts Pending" as a brand-new status on both `ticket_status` and `work_order_status` (for a job blocked waiting on a part). Run it once in the Supabase SQL editor after `schema.sql` and `schema_step9.sql`.
+
+Because `work_order_status` and `ticket_status` are now the exact same 4 values, `updateWorkOrderStatus` (`app/work-orders/actions.ts`) no longer needs a mapping table — the status just passes straight through onto the linked ticket. The separate `calendar_events.status` enum (still `scheduled`/`completed`/`overdue`) and `inventory_cycles.status` (still `completed`) were deliberately left untouched — only ticket/work-order statuses were renamed.
+
+Other changes:
+- `app/assets/tickets-actions.ts` — new `markTicketPartsPending` action; `resolveTicket` now writes `"closed"` instead of `"resolved"`.
+- `app/assets/[id]/page.tsx` — ticket rows on the Asset page now show a "Mark Parts Pending" button alongside "Start Progress" / "Mark Closed" (renamed from "Mark Resolved").
+- `app/tickets/page.tsx`, `app/work-orders/new/page.tsx`, `app/dashboard/page.tsx`, `app/reports/page.tsx` — every `"resolved"` status check/label updated to `"closed"` (dashboard also adds a Parts Pending KPI count so "active tickets" isn't undercounted).
+- `components/status-badge.tsx` — `STATUS_MAP` gained `closed` and `parts_pending` entries; the old `completed` entry stays as-is since calendar/inventory statuses still use it.
+- `app/work-orders/work-orders-table.tsx` — status dropdown is now Open / In Progress / Parts Pending / Closed. The filter bar above the table changed from All Open/High Priority/In Progress/Completed to **All / Open / In Progress / Parts Pending / Closed / High Priority**, defaulting to **All** — previously the default filter hid completed work orders entirely, which is why they looked like they'd disappeared after being closed. They're still in the table now; just filter to "Closed" to see only those.
+
+Verified with a full `npx tsc --noEmit` (clean). `next build` still can't complete in this sandbox for the same live-Supabase-network reason noted above — same "run it yourself before deploying" caveat applies.
+
+## Follow-up — 3-tier roles: Super Admin / Admin / Client
+
+The flat `internal_staff`/`client_viewer` split is now three tiers: **Super Admin**, **Admin**, **Client**. Admin sees every tab Super Admin does, except Audit Log, which is Super Admin-only.
+
+Run these three files as three SEPARATE runs, in order, each one finishing/committing before the next starts:
+
+1. **`schema_step22.sql`** — renames `internal_staff` → `admin` on the `user_role` enum (every existing staff profile carries over automatically) and adds a brand-new `super_admin` value.
+2. **`schema_step22b.sql`** — updates `is_internal_staff()` (the helper every existing staff-only RLS policy across the whole project already calls) to mean "admin OR super_admin," so none of those other policies needed to change, plus a new `is_super_admin()` helper that gates just the Audit Log table's RLS policy. This has to be a separate file/run from Step 22 — Postgres raises `55P04: unsafe use of new value` if a brand-new enum value is referenced (even just inside a function body being defined) before the `ALTER TYPE` that added it has actually committed. Pasting both as one script hits that error.
+3. **`schema_step23.sql`** — assigns the three accounts: `lal@phtek.com.ph` → Super Admin, `gsc@phtek.com.ph` → Admin (inserts the `profiles` row if it doesn't exist yet — the Supabase Auth user has to already exist first), `client@horizoncare360.com` → unchanged (`client_viewer`).
+
+App side: `lib/supabase/profile.ts` gained `isStaffRole()`/`isSuperAdminRole()` helpers and a `requireSuperAdmin()` guard (mirroring `requireStaff()`). Every inline `profile?.role === "internal_staff"` check across the app (`reports/page.tsx`, `calendar/page.tsx`, `assets/page.tsx`, `assets/[id]/page.tsx`, `dashboard/page.tsx`, `fleet-map/page.tsx`, `components/sidebar.tsx`) now goes through `isStaffRole()` instead. `app/audit-log/page.tsx` swapped `requireStaff()` for `requireSuperAdmin()`. The sidebar nav gained a `superAdminOnly` flag (only set on the Audit Log item) alongside the existing `staffOnly` flag, and the account badge at the bottom now reads "Super Admin" / "Admin" / "Client" instead of just "Staff" / "Client".
+
+Verified with a full `npx tsc --noEmit` (clean).
+
+## Follow-up — client component was importing server-only code
+
+`components/sidebar.tsx` (a `"use client"` component) had started importing `isStaffRole`/`isSuperAdminRole` directly from `lib/supabase/profile.ts`, which transitively imports `next/headers` via `./server` — that broke local dev with "You're importing a component that needs next/headers." Split the pure role-check functions out into a new `lib/supabase/roles.ts` with zero server-only imports; `profile.ts` now re-exports them for server components, and `sidebar.tsx` imports directly from `roles.ts` instead.
+
+## Follow-up — client account showed no data; Tickets tab was fully staff-gated
+
+Two separate issues, both needed for a `client_viewer` to see their fleet's data:
+
+1. **Data scoping.** `schema_step24.sql` upserts `client@horizoncare360.com`'s `profiles` row with `organization_id` pointing at the "Bureau of Customs" organization. Every RLS policy in this project already enforces "only your own org" via `my_organization_id()` (which just reads this column) — nothing showing up was a sign the column was never set, not a missing policy. Run the SELECT at the top of that file first to confirm the exact org id/name before the upsert runs.
+2. **Tickets tab was 100% staff-gated.** Unlike Dashboard/Assets/Reports (client-visible, RLS-scoped), the Tickets page had `requireStaff()` on it and `staffOnly: true` in the sidebar nav — a client_viewer literally couldn't reach `/tickets` at all. Opened it up: `app/tickets/page.tsx` no longer redirects non-staff (RLS's existing "read own org tickets or all if staff" policy already scopes the query correctly with zero extra filtering needed), `components/sidebar.tsx` dropped `staffOnly` from the Tickets nav item, and `app/tickets/tickets-table.tsx` now takes an `isStaff` prop to hide the staff-only "+ Create work order" link and the "+ Request New Service" button from clients (they already have an equivalent path via the "Raise a Service Request" form on each Asset's detail page).
+
+Reports and Dashboard needed no code changes — they were already client-visible and RLS-scoped; they were just as empty as everything else purely because of the missing `organization_id`.
+
+Verified with a full `npx tsc --noEmit` (clean).
+
+## Follow-up — richer client Dashboard: SLA Performance + Active Tickets now client-visible
+
+The client Dashboard only had the top KPI row plus Service Due/Certs Expiring — everything in between (Active Support Tickets, SLA Performance, SLA Historical Performance, Equipment Health, Quick Action Center, Recent Activity) was `isStaff`-gated as one block. `app/dashboard/page.tsx` now splits that gate per-widget instead of all-or-nothing:
+
+- **Active Support Tickets** and **SLA Performance** (the requested SLA % front and center) are now client-visible — the underlying queries were already computed unconditionally and already RLS-scoped to the signed-in org, so this was a pure JSX change, no data-layer risk.
+- **SLA Historical Performance** (the 5-week trend chart) is client-visible too, giving the raw SLA % some context over time. Goes full-width instead of 2/3-width when Equipment Health and Recent Activity aren't there to fill the rest of the row.
+- **Equipment Health** stays staff-only — it just repeats numbers already on the top KPI row, not worth duplicating for a client.
+- **Quick Action Center** stays staff-only — its "Request New Service" button links to the staff-only global ticket form; clients already have an equivalent path via "Raise a Service Request" on each Asset's page.
+- **Recent Activity** stays staff-only — it reads the audit trail, which `schema_step22b.sql` restricted to Super Admin, and isn't something appropriate to show an external client regardless.
+
+Title/subtitle also flex by role now: staff still see "Operations Control Center," clients see "Fleet Overview" with a subtitle about their own fleet instead of the staff-facing "across clients" phrasing.
+
+Verified with a full `npx tsc --noEmit` (clean).
+
+## Follow-up — mobile responsiveness (shell, tables, forms)
+
+Before starting the chat/video-call feature, an audit found the app effectively unusable on a phone: the sidebar was a hard-coded 260px block with no collapse mechanism (eating ~70% of a 375px screen on every page, with no way to dismiss it), every data table used `overflow-hidden` instead of a scroll wrapper (so the whole page dragged into horizontal scroll instead of just the table), and a few forms used fixed 2-column grids with no mobile collapse. Fixed all three:
+
+1. **Sidebar is now a proper off-canvas drawer below the `lg` breakpoint.** New `components/mobile-nav.tsx` holds a small React context (`open`/`setOpen`) so the hamburger button (now in `Topbar`) and the drawer (`Sidebar`) — two separate sibling components under `AppShell` — can share one piece of state without prop-drilling it through every page. `Sidebar` is `fixed` + translated off-screen by default on mobile, slides in with a dark backdrop when opened, gained a close (X) button, and auto-closes on route change (`useEffect` on `pathname`). At `lg` and up it switches back to `sticky` and sits inline in the flex layout exactly as before — desktop is visually unchanged. `AppShell`'s content column got `min-w-0` added (without it, a flex child can't shrink below its content's intrinsic width, which would silently defeat the table scroll fix below) and `main`'s padding is now `p-4 sm:p-6 lg:p-8` instead of a flat `p-8`.
+2. **Every data table now scrolls horizontally instead of squeezing or dragging the whole page.** Changed the wrapper `<div>` around every `<table>` from `overflow-hidden` to `overflow-x-auto` across `assets/page.tsx`, `inspections/page.tsx`, `work-orders/work-orders-table.tsx`, `tickets/tickets-table.tsx`, `audit-log/page.tsx`, `inventory/page.tsx`, `inventory/[id]/page.tsx`, `clients/clients-table.tsx`, `reports/page.tsx` (Recent Service Tickets), and added new scroll wrappers around the two tables in the printable `reports/service-record/[id]/page.tsx` view (which had none at all). Left `overflow-hidden` alone everywhere it's wrapping a card/panel rather than a table (notification bell dropdown, calendar panels, checklist group cards, alert cards) — those are correctly clipping rounded corners, not something that needs to scroll.
+3. **Fixed-2-column forms now collapse to one column below `sm`.** `grid grid-cols-2 gap-4` → `grid grid-cols-1 gap-4 sm:grid-cols-2` in `assets/asset-form.tsx` (6 instances), `work-orders/new/page.tsx`, `reports/corrective-checklist/corrective-form.tsx`, `alerts/new/page.tsx`, and `calendar/new/page.tsx`.
+
+Verified with a full `npx tsc --noEmit` (clean). Couldn't verify visually in this sandbox — `next dev`/`next build` both hang here for the same reason noted earlier in this changelog (reaching the live Supabase project over a network this sandbox blocks). Please pull these changes and check a few pages at a phone width (or your browser's device toolbar) before we start on chat/video-calling — the sidebar drawer in particular is the kind of thing worth eyeballing once for real before building more UI on top of it.

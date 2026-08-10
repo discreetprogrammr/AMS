@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { getProfile, requireStaff } from "@/lib/supabase/profile";
+import { getProfile, requireSuperAdmin } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { changedFields } from "@/lib/audit";
 
@@ -11,7 +11,7 @@ const TABLE_LABEL: Record<string, string> = {
 };
 
 export default async function AuditLogPage() {
-  await requireStaff();
+  await requireSuperAdmin();
   const profile = await getProfile();
 
   const supabase = await createClient();
@@ -36,7 +36,7 @@ export default async function AuditLogPage() {
         </p>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-hairline bg-surface">
+      <div className="overflow-x-auto rounded-xl border border-hairline bg-surface">
         <table className="w-full text-left text-sm">
           <thead className="bg-surface-2 text-xs uppercase tracking-wide text-slate-500">
             <tr>

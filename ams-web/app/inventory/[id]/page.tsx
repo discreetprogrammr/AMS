@@ -94,7 +94,7 @@ export default async function InventoryCycleDetailPage({
         </p>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-hairline bg-surface">
+      <div className="overflow-x-auto rounded-xl border border-hairline bg-surface">
         <table className="w-full text-left text-sm">
           <thead className="bg-surface-2 text-xs uppercase tracking-wide text-slate-500">
             <tr>

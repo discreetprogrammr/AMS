@@ -14,13 +14,13 @@ export default async function NewAssetPage({
 
   const supabase = await createClient();
 
-  const [{ data: organizations }, { data: sites }] = await Promise.all([
-    supabase.from("organizations").select("id, name").order("name"),
-    supabase
-      .from("sites")
-      .select("id, address, organization_id")
-      .order("address"),
-  ]);
+  // Site is now a free-text field resolved server-side in createAsset()
+  // (find-or-create against the sites table), so this page no longer needs
+  // to fetch the sites list just to populate a dropdown.
+  const { data: organizations } = await supabase
+    .from("organizations")
+    .select("id, name")
+    .order("name");
 
   return (
     <AppShell profile={profile} title="Add Asset">
@@ -30,11 +30,7 @@ export default async function NewAssetPage({
             {searchParams.error}
           </p>
         )}
-        <AssetForm
-          organizations={organizations ?? []}
-          sites={sites ?? []}
-          action={createAsset}
-        />
+        <AssetForm organizations={organizations ?? []} action={createAsset} />
       </div>
     </AppShell>
   );

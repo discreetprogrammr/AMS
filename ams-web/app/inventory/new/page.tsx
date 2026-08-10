@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile, requireStaff } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
@@ -71,12 +72,20 @@ export default async function NewInventoryCyclePage({
             />
           </div>
 
-          <button
-            type="submit"
-            className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-ink hover:bg-blue-500"
-          >
-            Start Cycle
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-ink hover:bg-blue-500"
+            >
+              Start Cycle
+            </button>
+            <Link
+              href="/inventory"
+              className="rounded-lg border border-hairline px-5 py-2 text-sm text-ink-soft hover:bg-surface-2"
+            >
+              Cancel
+            </Link>
+          </div>
         </form>
       </div>
     </AppShell>

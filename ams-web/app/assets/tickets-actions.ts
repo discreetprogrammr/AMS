@@ -117,6 +117,9 @@ export async function acknowledgeTicket(assetId: string, ticketId: string) {
 // Staff-only. RLS also enforces this at the database level, but without
 // this check a non-staff call would silently match zero rows and redirect
 // as if it worked — requireStaff() gives a clean redirect instead.
+//
+// ticket_status's terminal value is "closed" as of schema_step21.sql
+// (renamed from "resolved", to match work_order_status's vocabulary).
 export async function resolveTicket(assetId: string, ticketId: string) {
   await requireStaff(`/assets/${assetId}`);
 
@@ -131,12 +134,43 @@ export async function resolveTicket(assetId: string, ticketId: string) {
   const { error } = await supabase
     .from("service_tickets")
     .update({
-      status: "resolved",
-      // A ticket can go straight from open to resolved without an explicit
+      status: "closed",
+      // A ticket can go straight from open to closed without an explicit
       // acknowledgement step — back-fill first_response_at in that case so
       // it isn't left null and excluded from the response-time average.
       first_response_at: ticket?.first_response_at ?? new Date().toISOString(),
       resolved_at: new Date().toISOString(),
+    })
+    .eq("id", ticketId);
+
+  if (error) {
+    redirect(`/assets/${assetId}?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath(`/assets/${assetId}`);
+  redirect(`/assets/${assetId}`);
+}
+
+// Staff-only. New as of schema_step21.sql — a ticket blocked on a part
+// shows this distinctly rather than sitting in "in_progress" indefinitely.
+// Doesn't touch first_response_at/resolved_at; a part-pending ticket isn't
+// closed yet, so neither timestamp is appropriate here.
+export async function markTicketPartsPending(assetId: string, ticketId: string) {
+  await requireStaff(`/assets/${assetId}`);
+
+  const supabase = await createClient();
+
+  const { data: ticket } = await supabase
+    .from("service_tickets")
+    .select("first_response_at")
+    .eq("id", ticketId)
+    .single();
+
+  const { error } = await supabase
+    .from("service_tickets")
+    .update({
+      status: "parts_pending",
+      first_response_at: ticket?.first_response_at ?? new Date().toISOString(),
     })
     .eq("id", ticketId);
 

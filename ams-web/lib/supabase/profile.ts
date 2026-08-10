@@ -1,12 +1,18 @@
 import { redirect } from "next/navigation";
 import { createClient } from "./server";
+import { isStaffRole, isSuperAdminRole, type Role } from "./roles";
 
 export type Profile = {
   id: string;
   full_name: string | null;
-  role: "internal_staff" | "client_viewer";
+  role: Role;
   organization_id: string | null;
 };
+
+// Re-exported so existing server-side imports (`from "@/lib/supabase/profile"`)
+// keep working unchanged. Client components should import these two directly
+// from "./roles" instead — see the comment in roles.ts for why.
+export { isStaffRole, isSuperAdminRole };
 
 // Fetches the signed-in user's profile row, which carries their role and
 // (for client viewers) the organization they're scoped to. Pages use this
@@ -39,8 +45,18 @@ export async function getProfile(): Promise<Profile | null> {
 // redirect instead, before the query even runs.
 export async function requireStaff(redirectTo = "/assets"): Promise<Profile> {
   const profile = await getProfile();
-  if (profile?.role !== "internal_staff") {
+  if (!isStaffRole(profile?.role)) {
     redirect(redirectTo);
   }
-  return profile;
+  return profile as Profile;
+}
+
+// Same idea as requireStaff(), but for the Audit Log page specifically —
+// Admins see every other tab, but Audit Log is Super Admin-only.
+export async function requireSuperAdmin(redirectTo = "/dashboard"): Promise<Profile> {
+  const profile = await getProfile();
+  if (!isSuperAdminRole(profile?.role)) {
+    redirect(redirectTo);
+  }
+  return profile as Profile;
 }

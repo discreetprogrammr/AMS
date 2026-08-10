@@ -35,7 +35,7 @@ export async function GET(
   }
 
   const header = [
-    "Asset Tag",
+    "Asset ID",
     "Equipment Type",
     "Brand",
     "Model",

@@ -2,15 +2,19 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 import type { ReactNode } from "react";
 import type { Profile } from "@/lib/supabase/profile";
+import { isStaffRole, isSuperAdminRole } from "@/lib/supabase/roles";
 import { logout } from "@/app/login/actions";
+import { useMobileNav } from "./mobile-nav";
 
 type NavItem = {
   href: string;
   label: string;
   icon: ReactNode;
   staffOnly?: boolean;
+  superAdminOnly?: boolean;
   clientOnly?: boolean;
   disabled?: boolean;
 };
@@ -56,22 +60,23 @@ const ICONS = {
   chat: "M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z",
   logout:
     "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
+  close: "M18 6 6 18M6 6l12 12",
 };
 
 function buildNav(): NavItem[] {
   return [
     { href: "/dashboard", label: "Dashboard", icon: <Icon d={ICONS.dashboard} /> },
     { href: "/assets", label: "Assets", icon: <Icon d={ICONS.assets} /> },
-    { href: "#", label: "Fleet Map", icon: <Icon d={ICONS.map} />, staffOnly: true, disabled: true },
+    { href: "/fleet-map", label: "Fleet Map", icon: <Icon d={ICONS.map} /> },
     { href: "/clients", label: "Clients", icon: <Icon d={ICONS.clients} />, staffOnly: true },
     { href: "/work-orders", label: "Work Orders", icon: <Icon d={ICONS.workOrders} />, staffOnly: true },
-    { href: "/tickets", label: "Tickets", icon: <Icon d={ICONS.tickets} />, staffOnly: true },
-    { href: "#", label: "Inspections", icon: <Icon d={ICONS.inspections} />, staffOnly: true, disabled: true },
+    { href: "/tickets", label: "Tickets", icon: <Icon d={ICONS.tickets} /> },
+    { href: "/inspections", label: "Inspections", icon: <Icon d={ICONS.inspections} />, staffOnly: true },
     { href: "/inventory", label: "Inventory", icon: <Icon d={ICONS.inventory} />, staffOnly: true },
-    { href: "#", label: "Calendar", icon: <Icon d={ICONS.calendar} />, staffOnly: true, disabled: true },
-    { href: "#", label: "Reports", icon: <Icon d={ICONS.reports} />, staffOnly: true, disabled: true },
-    { href: "#", label: "Alerts", icon: <Icon d={ICONS.alerts} />, staffOnly: true, disabled: true },
-    { href: "/audit-log", label: "Audit Log", icon: <Icon d={ICONS.audit} />, staffOnly: true },
+    { href: "/calendar", label: "Calendar", icon: <Icon d={ICONS.calendar} /> },
+    { href: "/reports", label: "Reports", icon: <Icon d={ICONS.reports} /> },
+    { href: "/alerts", label: "Alerts", icon: <Icon d={ICONS.alerts} />, staffOnly: true },
+    { href: "/audit-log", label: "Audit Log", icon: <Icon d={ICONS.audit} />, staffOnly: true, superAdminOnly: true },
     { href: "#", label: "HorizonCare360 Assist", icon: <Icon d={ICONS.chat} />, staffOnly: true, disabled: true },
   ];
 }
@@ -87,29 +92,71 @@ function initials(name: string | null): string {
 
 export function Sidebar({ profile }: { profile: Profile | null }) {
   const pathname = usePathname();
-  const isStaff = profile?.role === "internal_staff";
-  const nav = buildNav().filter((item) => !item.staffOnly || isStaff);
+  const { open, setOpen } = useMobileNav();
+  const isStaff = isStaffRole(profile?.role);
+  const isSuperAdmin = isSuperAdminRole(profile?.role);
+  const nav = buildNav().filter((item) => {
+    if (item.superAdminOnly) return isSuperAdmin;
+    if (item.staffOnly) return isStaff;
+    return true;
+  });
+
+  // Close the drawer automatically whenever the route changes — otherwise
+  // tapping a nav link on mobile would navigate underneath a still-open
+  // overlay.
+  useEffect(() => {
+    setOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
 
   return (
-    <aside className="flex h-screen w-[260px] shrink-0 flex-col border-r border-hairline bg-surface">
-      <div className="flex items-center gap-3 border-b border-hairline px-5 py-5">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/logo-mark.png"
-          alt="HorizonCare360"
-          className="h-9 w-9 rounded-lg bg-white p-1"
+    <>
+      {/* Backdrop — mobile only, tap to dismiss. Sidebar itself is `fixed`
+          and off-canvas (`-translate-x-full`) below the `lg` breakpoint,
+          sliding in as an overlay when `open`; at `lg` and up it switches
+          to `sticky` and always sits inline in the page's flex layout, same
+          as before this drawer existed. */}
+      {open && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          onClick={() => setOpen(false)}
+          aria-hidden="true"
         />
-        <div>
-          <p className="text-sm font-bold leading-tight text-ink">
-            HorizonCare360
-          </p>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-            By Pacific Horizon Tek
-          </p>
-        </div>
-      </div>
+      )}
 
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex w-[260px] shrink-0 flex-col border-r border-hairline bg-surface transition-transform duration-200 ease-in-out lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 lg:transition-none ${
+          open ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-hairline px-5 py-5">
+          <div className="flex min-w-0 items-center gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo-mark.png"
+              alt="HorizonCare360"
+              className="h-9 w-9 shrink-0 rounded-lg bg-white p-1"
+            />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold leading-tight text-ink">
+                HorizonCare360
+              </p>
+              <p className="truncate text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                By Pacific Horizon Tek
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            aria-label="Close menu"
+            className="shrink-0 rounded-lg p-2 text-slate-500 hover:bg-surface-2 hover:text-ink lg:hidden"
+          >
+            <Icon d={ICONS.close} />
+          </button>
+        </div>
+
+        <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
         {nav.map((item) => {
           const active = !item.disabled && pathname?.startsWith(item.href);
 
@@ -158,7 +205,7 @@ export function Sidebar({ profile }: { profile: Profile | null }) {
               {profile?.full_name ?? "Unknown User"}
             </p>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-400">
-              {isStaff ? "Staff" : "Client"}
+              {isSuperAdmin ? "Super Admin" : isStaff ? "Admin" : "Client"}
             </p>
           </div>
           <form action={logout}>
@@ -172,6 +219,7 @@ export function Sidebar({ profile }: { profile: Profile | null }) {
           </form>
         </div>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile, requireStaff } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
@@ -15,7 +16,7 @@ export default async function NewTicketPage({
 
   const { data: assets } = await supabase
     .from("assets")
-    .select("id, asset_tag, organizations(name)")
+    .select("id, asset_tag, serial_number, sites(address), organizations(name)")
     .order("asset_tag");
 
   return (
@@ -46,10 +47,10 @@ export default async function NewTicketPage({
               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
               {(assets ?? []).map((asset: any) => (
                 <option key={asset.id} value={asset.id}>
-                  {asset.organizations?.name
-                    ? `${asset.organizations.name} — `
-                    : ""}
-                  {asset.asset_tag}
+                  {[asset.organizations?.name, asset.sites?.address]
+                    .filter(Boolean)
+                    .join(" — ")}
+                  {asset.serial_number ? ` · SN ${asset.serial_number}` : ""}
                 </option>
               ))}
             </select>
@@ -83,12 +84,20 @@ export default async function NewTicketPage({
             </select>
           </div>
 
-          <button
-            type="submit"
-            className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-ink hover:bg-blue-500"
-          >
-            Submit Request
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-ink hover:bg-blue-500"
+            >
+              Submit Request
+            </button>
+            <Link
+              href="/tickets"
+              className="rounded-lg border border-hairline px-5 py-2 text-sm text-ink-soft hover:bg-surface-2"
+            >
+              Cancel
+            </Link>
+          </div>
         </form>
       </div>
     </AppShell>

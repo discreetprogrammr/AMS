@@ -1,13 +1,19 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile } from "@/lib/supabase/profile";
+import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { changedFields } from "@/lib/audit";
+import { woRef } from "@/lib/format";
 import { AppShell } from "@/components/app-shell";
 import { StatusBadge } from "@/components/status-badge";
 import { AssetForm } from "../asset-form";
 import { updateAsset } from "../actions";
-import { createTicket, resolveTicket, acknowledgeTicket } from "../tickets-actions";
+import {
+  createTicket,
+  resolveTicket,
+  acknowledgeTicket,
+  markTicketPartsPending,
+} from "../tickets-actions";
 
 const EQUIPMENT_LABEL: Record<string, string> = {
   xray_screening: "X-ray Screening",
@@ -22,29 +28,32 @@ export default async function EditAssetPage({
   searchParams,
 }: {
   params: { id: string };
-  searchParams: { error?: string; ticket?: string };
+  searchParams: { error?: string; ticket?: string; workorder?: string };
 }) {
   const supabase = await createClient();
   const profile = await getProfile();
-  const isStaff = profile?.role === "internal_staff";
+  const isStaff = isStaffRole(profile?.role);
 
   const [
     { data: asset },
     { data: organizations },
-    { data: sites },
     { data: tickets },
     { data: certificates },
     { data: history },
   ] = await Promise.all([
-    supabase.from("assets").select("*").eq("id", params.id).single(),
+    // Joins the site's address in directly — the Site field on the form is
+    // now free text (see asset-form.tsx / resolveSiteId in actions.ts), so
+    // this needs the address string to pre-fill it, not just the raw
+    // site_id foreign key.
+    supabase
+      .from("assets")
+      .select("*, sites(address)")
+      .eq("id", params.id)
+      .single(),
     supabase.from("organizations").select("id, name").order("name"),
     supabase
-      .from("sites")
-      .select("id, address, organization_id")
-      .order("address"),
-    supabase
       .from("service_tickets")
-      .select("id, description, status, priority, created_at")
+      .select("id, description, status, priority, created_at, work_order_id")
       .eq("asset_id", params.id)
       .order("created_at", { ascending: false }),
     supabase
@@ -91,13 +100,20 @@ export default async function EditAssetPage({
             Service request submitted.
           </p>
         )}
+        {searchParams?.workorder === "created" && (
+          <p className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400">
+            Work order created and linked to the ticket.
+          </p>
+        )}
 
         {isStaff ? (
           <AssetForm
             organizations={organizations ?? []}
-            sites={sites ?? []}
             action={boundUpdate}
-            defaultValues={asset}
+            defaultValues={{
+              ...asset,
+              site_address: asset.sites?.address ?? "",
+            }}
             submitLabel="Update Asset"
           />
         ) : (
@@ -149,8 +165,8 @@ export default async function EditAssetPage({
                     </span>
                   </div>
                   <p className="mt-1 text-ink-soft">{t.description}</p>
-                  {isStaff && t.status !== "resolved" && (
-                    <div className="mt-1 flex gap-3">
+                  {isStaff && (
+                    <div className="mt-1 flex flex-wrap items-center gap-3">
                       {t.status === "open" && (
                         <form
                           action={acknowledgeTicket.bind(null, params.id, t.id)}
@@ -163,14 +179,45 @@ export default async function EditAssetPage({
                           </button>
                         </form>
                       )}
-                      <form action={resolveTicket.bind(null, params.id, t.id)}>
-                        <button
-                          type="submit"
-                          className="text-xs text-slate-500 underline hover:text-ink-soft"
+                      {t.status !== "closed" && t.status !== "parts_pending" && (
+                        <form
+                          action={markTicketPartsPending.bind(null, params.id, t.id)}
                         >
-                          Mark Resolved
-                        </button>
-                      </form>
+                          <button
+                            type="submit"
+                            className="text-xs text-slate-500 underline hover:text-ink-soft"
+                          >
+                            Mark Parts Pending
+                          </button>
+                        </form>
+                      )}
+                      {t.status !== "closed" && (
+                        <form action={resolveTicket.bind(null, params.id, t.id)}>
+                          <button
+                            type="submit"
+                            className="text-xs text-slate-500 underline hover:text-ink-soft"
+                          >
+                            Mark Closed
+                          </button>
+                        </form>
+                      )}
+                      {t.work_order_id ? (
+                        <Link
+                          href="/work-orders"
+                          className="text-xs text-blue-400 hover:underline"
+                        >
+                          {woRef(t.work_order_id)} →
+                        </Link>
+                      ) : (
+                        t.status !== "closed" && (
+                          <Link
+                            href={`/work-orders/new?ticket_id=${t.id}`}
+                            className="text-xs text-slate-500 underline hover:text-ink-soft"
+                          >
+                            + Create Work Order
+                          </Link>
+                        )
+                      )}
                     </div>
                   )}
                 </li>

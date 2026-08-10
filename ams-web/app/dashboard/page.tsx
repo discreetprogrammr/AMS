@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile } from "@/lib/supabase/profile";
+import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { StatusBadge } from "@/components/status-badge";
+import { NotificationBell } from "@/components/notification-bell";
+import { SearchBar } from "@/components/search-bar";
 import { ticketRef } from "@/lib/format";
 
 function today(): string {
@@ -33,21 +35,25 @@ function hoursBetween(start: string, end: string): number {
 export default async function DashboardPage() {
   const supabase = await createClient();
   const profile = await getProfile();
-  const isStaff = profile?.role === "internal_staff";
+  const isStaff = isStaffRole(profile?.role);
 
   const [
     { count: totalAssets },
     { count: operationalCount },
-    { count: maintenanceCount },
+    { count: attentionCount },
+    { count: downCount },
     { count: unserviceableCount },
     { data: expiringCerts, count: expiringCertsCount },
     { data: dueAssets },
     { count: openTicketsCount },
     { count: inProgressTicketsCount },
+    { count: partsPendingTicketsCount },
     { count: resolvedTicketsCount },
     { data: slaTickets },
     { data: slaHistoryTickets },
     { data: recentActivity },
+    { count: unreadAlertsCount },
+    { data: latestAlerts },
   ] = await Promise.all([
     supabase.from("assets").select("*", { count: "exact", head: true }),
     supabase
@@ -57,7 +63,11 @@ export default async function DashboardPage() {
     supabase
       .from("assets")
       .select("*", { count: "exact", head: true })
-      .eq("status", "under_maintenance"),
+      .eq("status", "attention"),
+    supabase
+      .from("assets")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "down"),
     supabase
       .from("assets")
       .select("*", { count: "exact", head: true })
@@ -86,7 +96,11 @@ export default async function DashboardPage() {
     supabase
       .from("service_tickets")
       .select("*", { count: "exact", head: true })
-      .eq("status", "resolved"),
+      .eq("status", "parts_pending"),
+    supabase
+      .from("service_tickets")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "closed"),
     supabase
       .from("service_tickets")
       .select("id, created_at, first_response_at, resolved_at")
@@ -108,6 +122,19 @@ export default async function DashboardPage() {
       )
       .order("changed_at", { ascending: false })
       .limit(8),
+    // Same RLS note as audit_log above — alerts is staff-only (Step 10), so
+    // a client_viewer's query just comes back with count 0, no error.
+    supabase
+      .from("alerts")
+      .select("*", { count: "exact", head: true })
+      .eq("is_read", false),
+    // Feeds the bell's dropdown — same RLS note applies (staff-only table,
+    // client_viewer just gets an empty array back).
+    supabase
+      .from("alerts")
+      .select("id, title, severity, is_read, created_at")
+      .order("created_at", { ascending: false })
+      .limit(5),
   ]);
 
   const operationalPct = totalAssets
@@ -223,11 +250,13 @@ export default async function DashboardPage() {
       const verb =
         row.action === "INSERT"
           ? "Ticket Opened"
-          : data.status === "resolved"
-            ? "Ticket Resolved"
-            : data.status === "in_progress"
-              ? "Ticket In Progress"
-              : "Ticket Updated";
+          : data.status === "closed"
+            ? "Ticket Closed"
+            : data.status === "parts_pending"
+              ? "Ticket Parts Pending"
+              : data.status === "in_progress"
+                ? "Ticket In Progress"
+                : "Ticket Updated";
       return {
         ...base,
         label: `${verb} — ${ticketRef(row.record_id)}`,
@@ -269,21 +298,33 @@ export default async function DashboardPage() {
   return (
     <AppShell
       profile={profile}
-      title="Dashboard"
-      subtitle="Fleet status across all clients and sites."
+      title={isStaff ? "Operations Control Center" : "Fleet Overview"}
+      subtitle={
+        isStaff
+          ? "Fleet-wide oversight across clients, machines, and tickets."
+          : "Your fleet's health, support tickets, and SLA performance."
+      }
       actions={
-        <Link
-          href="/assets"
-          className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
-        >
-          View Assets
-        </Link>
+        <>
+          <SearchBar action="/assets" placeholder="Search assets…" />
+          <NotificationBell
+            href="/alerts"
+            count={unreadAlertsCount ?? 0}
+            alerts={latestAlerts ?? []}
+            activities={activityItems.slice(0, 5)}
+          />
+        </>
       }
     >
-      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <KpiCard label="Total Assets" value={totalAssets ?? 0} />
         <KpiCard label="% Operational" value={`${operationalPct}%`} tone="good" />
-        <KpiCard label="Under Maintenance" value={maintenanceCount ?? 0} />
+        <KpiCard label="Attention" value={attentionCount ?? 0} />
+        <KpiCard
+          label="Down"
+          value={downCount ?? 0}
+          tone={downCount ? "warn" : undefined}
+        />
         <KpiCard
           label="Unserviceable"
           value={unserviceableCount ?? 0}
@@ -296,37 +337,52 @@ export default async function DashboardPage() {
         />
       </div>
 
-      {isStaff && (
-        <div className="mb-6 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          <ActiveTicketsCard
-            openCount={openTicketsCount ?? 0}
-            inProgressCount={inProgressTicketsCount ?? 0}
-            resolvedCount={resolvedTicketsCount ?? 0}
-          />
+      {/* Active Support Tickets + SLA Performance are client-visible too —
+          RLS already scopes every underlying query to just their own org,
+          so this is a pure UI-gating decision, not a data one. Equipment
+          Health just repeats the top KPI row (staff-only, not worth the
+          duplication for clients), and Quick Action Center's "Request New
+          Service" link goes to the staff-only global ticket form, so both
+          stay staff-only. */}
+      <div
+        className={`mb-6 grid grid-cols-1 gap-6 sm:grid-cols-2 ${
+          isStaff ? "lg:grid-cols-4" : "lg:grid-cols-2"
+        }`}
+      >
+        <ActiveTicketsCard
+          openCount={openTicketsCount ?? 0}
+          inProgressCount={inProgressTicketsCount ?? 0}
+          partsPendingCount={partsPendingTicketsCount ?? 0}
+          resolvedCount={resolvedTicketsCount ?? 0}
+        />
+        <SlaPerformanceCard
+          slaPct={slaPct}
+          avgResponseHours={avgResponseHours}
+          avgResolutionHours={avgResolutionHours}
+          measuredCount={resolvedInPeriod.length}
+        />
+        {isStaff && (
           <EquipmentHealthCard
             totalAssets={totalAssets ?? 0}
             operationalCount={operationalCount ?? 0}
-            maintenanceCount={maintenanceCount ?? 0}
+            attentionCount={attentionCount ?? 0}
+            downCount={downCount ?? 0}
             unserviceableCount={unserviceableCount ?? 0}
           />
-          <SlaPerformanceCard
-            slaPct={slaPct}
-            avgResponseHours={avgResponseHours}
-            avgResolutionHours={avgResolutionHours}
-            measuredCount={resolvedInPeriod.length}
-          />
-          <QuickActionCenterCard />
-        </div>
-      )}
+        )}
+        {isStaff && <QuickActionCenterCard />}
+      </div>
 
-      {isStaff && (
-        <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            <SlaHistoryCard history={slaHistory} />
-          </div>
-          <RecentActivityCard items={activityItems} />
+      {/* SLA Historical Performance is client-visible too, for the same
+          reason as above — Recent Activity reads the audit trail
+          (schema_step22b.sql restricted that to Super Admin), which isn't
+          appropriate to show an external client regardless. */}
+      <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className={isStaff ? "lg:col-span-2" : "lg:col-span-3"}>
+          <SlaHistoryCard history={slaHistory} />
         </div>
-      )}
+        {isStaff && <RecentActivityCard items={activityItems} />}
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="rounded-xl border border-hairline bg-surface p-5">
@@ -452,13 +508,15 @@ function TicketIcon() {
 function ActiveTicketsCard({
   openCount,
   inProgressCount,
+  partsPendingCount,
   resolvedCount,
 }: {
   openCount: number;
   inProgressCount: number;
+  partsPendingCount: number;
   resolvedCount: number;
 }) {
-  const activeCount = openCount + inProgressCount;
+  const activeCount = openCount + inProgressCount + partsPendingCount;
 
   return (
     <div className="rounded-xl border border-hairline bg-surface p-5">
@@ -481,8 +539,11 @@ function ActiveTicketsCard({
         <span className="inline-flex items-center rounded-full bg-blue-500/15 px-2.5 py-1 text-xs font-semibold text-blue-400">
           {inProgressCount} In Progress
         </span>
+        <span className="inline-flex items-center rounded-full bg-orange-500/15 px-2.5 py-1 text-xs font-semibold text-orange-400">
+          {partsPendingCount} Parts Pending
+        </span>
         <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-400">
-          {resolvedCount} Resolved
+          {resolvedCount} Closed
         </span>
       </div>
 
@@ -515,15 +576,17 @@ function PulseIcon() {
 function EquipmentHealthCard({
   totalAssets,
   operationalCount,
-  maintenanceCount,
+  attentionCount,
+  downCount,
   unserviceableCount,
 }: {
   totalAssets: number;
   operationalCount: number;
-  maintenanceCount: number;
+  attentionCount: number;
+  downCount: number;
   unserviceableCount: number;
 }) {
-  const needsAttention = maintenanceCount + unserviceableCount;
+  const needsAttention = attentionCount + downCount + unserviceableCount;
   const operationalPct = totalAssets
     ? Math.round((operationalCount / totalAssets) * 100)
     : 0;

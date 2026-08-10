@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { StatusBadge } from "@/components/status-badge";
-import { woRef } from "@/lib/format";
+import { ticketRef, woRef } from "@/lib/format";
 import { updateWorkOrderStatus } from "./actions";
 
 export type WorkOrderRow = {
@@ -15,17 +16,30 @@ export type WorkOrderRow = {
   lead_technician: string | null;
   due_date: string | null;
   created_at: string;
-  asset_tag: string | null;
+  site_name: string | null;
   organization_name: string | null;
+  from_ticket_id: string | null;
 };
 
-type FilterKey = "all_open" | "high" | "in_progress" | "completed";
+type FilterKey =
+  | "all"
+  | "open"
+  | "in_progress"
+  | "parts_pending"
+  | "closed"
+  | "high";
 
+// Default is "all" — a closed work order stays in the table for record,
+// it just no longer shows up under the "Open" / "In Progress" / "Parts
+// Pending" filters. Previously the default filter hid completed work
+// orders entirely, which made them look like they'd disappeared.
 const FILTERS: { key: FilterKey; label: string; dotClass?: string }[] = [
-  { key: "all_open", label: "All Open" },
-  { key: "high", label: "High Priority", dotClass: "bg-red-500" },
+  { key: "all", label: "All" },
+  { key: "open", label: "Open", dotClass: "bg-blue-500" },
   { key: "in_progress", label: "In Progress", dotClass: "bg-amber-500" },
-  { key: "completed", label: "Completed", dotClass: "bg-emerald-500" },
+  { key: "parts_pending", label: "Parts Pending", dotClass: "bg-orange-500" },
+  { key: "closed", label: "Closed", dotClass: "bg-emerald-500" },
+  { key: "high", label: "High Priority", dotClass: "bg-red-500" },
 ];
 
 export function WorkOrdersTable({
@@ -33,7 +47,7 @@ export function WorkOrdersTable({
 }: {
   workOrders: WorkOrderRow[];
 }) {
-  const [filter, setFilter] = useState<FilterKey>("all_open");
+  const [filter, setFilter] = useState<FilterKey>("all");
   const [isPending, startTransition] = useTransition();
   const [pendingId, setPendingId] = useState<string | null>(null);
 
@@ -42,13 +56,17 @@ export function WorkOrdersTable({
       switch (filter) {
         case "high":
           return w.priority === "high";
+        case "open":
+          return w.status === "open";
         case "in_progress":
           return w.status === "in_progress";
-        case "completed":
-          return w.status === "completed";
-        case "all_open":
+        case "parts_pending":
+          return w.status === "parts_pending";
+        case "closed":
+          return w.status === "closed";
+        case "all":
         default:
-          return w.status !== "completed";
+          return true;
       }
     });
   }, [workOrders, filter]);
@@ -86,12 +104,12 @@ export function WorkOrdersTable({
         ))}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-hairline bg-surface">
+      <div className="overflow-x-auto rounded-xl border border-hairline bg-surface">
         <table className="w-full text-left text-sm">
           <thead className="bg-surface-2 text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3">Work Order</th>
-              <th className="px-4 py-3">Asset</th>
+              <th className="px-4 py-3">Site</th>
               <th className="px-4 py-3">Task</th>
               <th className="px-4 py-3">Priority</th>
               <th className="px-4 py-3">Status</th>
@@ -108,7 +126,7 @@ export function WorkOrdersTable({
                   {woRef(w.id)}
                 </td>
                 <td className="px-4 py-3 text-ink-soft">
-                  {w.asset_tag ?? "—"}
+                  {w.site_name ?? "—"}
                   {w.organization_name && (
                     <div className="text-xs text-slate-500">
                       {w.organization_name}
@@ -123,6 +141,14 @@ export function WorkOrdersTable({
                     {w.work_type}
                     {w.lead_technician ? ` · ${w.lead_technician}` : ""}
                   </div>
+                  {w.from_ticket_id && (
+                    <Link
+                      href="/tickets"
+                      className="mt-0.5 inline-block text-xs normal-case text-blue-400 hover:underline"
+                    >
+                      From {ticketRef(w.from_ticket_id)}
+                    </Link>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <StatusBadge status={w.priority} />
@@ -136,7 +162,8 @@ export function WorkOrdersTable({
                   >
                     <option value="open">Open</option>
                     <option value="in_progress">In Progress</option>
-                    <option value="completed">Completed</option>
+                    <option value="parts_pending">Parts Pending</option>
+                    <option value="closed">Closed</option>
                   </select>
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-ink-soft">

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getProfile, requireStaff } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { createOrganization } from "../actions";
@@ -48,12 +49,20 @@ export default async function NewClientPage({
             <input name="email" type="email" className={inputClass} />
           </div>
 
-          <button
-            type="submit"
-            className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-ink hover:bg-blue-500"
-          >
-            Add Client
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-ink hover:bg-blue-500"
+            >
+              Add Client
+            </button>
+            <Link
+              href="/clients"
+              className="rounded-lg border border-hairline px-5 py-2 text-sm text-ink-soft hover:bg-surface-2"
+            >
+              Cancel
+            </Link>
+          </div>
         </form>
       </div>
     </AppShell>

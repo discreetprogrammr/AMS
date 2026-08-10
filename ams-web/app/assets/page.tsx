@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile } from "@/lib/supabase/profile";
+import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { StatusBadge } from "@/components/status-badge";
+import { SearchBar } from "@/components/search-bar";
+import { AssetRowActions } from "./asset-row-actions";
 
 const EQUIPMENT_LABEL: Record<string, string> = {
   xray_screening: "X-ray Screening",
@@ -12,25 +14,48 @@ const EQUIPMENT_LABEL: Record<string, string> = {
   other: "Other",
 };
 
-export default async function AssetsPage() {
+export default async function AssetsPage({
+  searchParams,
+}: {
+  searchParams: { q?: string; deleted?: string };
+}) {
   const supabase = await createClient();
   const profile = await getProfile();
-  const isStaff = profile?.role === "internal_staff";
+  const isStaff = isStaffRole(profile?.role);
 
-  const { data: assets, error } = await supabase
+  // Powers the search bar on the dashboard (and this page's own search
+  // box) — a plain ?q= query string, no client JS needed. Matches against
+  // asset_tag/brand/model directly; PostgREST's .or() splits on commas, so
+  // strip any from the input first rather than trying to escape them.
+  const q = (searchParams?.q ?? "").trim().replace(/,/g, "");
+
+  let query = supabase
     .from("assets")
     .select(
-      "id, asset_tag, equipment_type, brand, model, status, next_service_due, sites(address), organizations(name)",
+      "id, asset_tag, equipment_type, brand, model, status, sites(address), organizations(name)",
     )
     .order("created_at", { ascending: false });
+
+  if (q) {
+    query = query.or(
+      `asset_tag.ilike.%${q}%,brand.ilike.%${q}%,model.ilike.%${q}%`,
+    );
+  }
+
+  const { data: assets, error } = await query;
 
   return (
     <AppShell
       profile={profile}
-      title="Assets"
-      subtitle="All equipment tracked across clients and sites."
+      title="Managed Assets"
+      subtitle="Asset registry across all sites."
       actions={
         <>
+          <SearchBar
+            action="/assets"
+            placeholder="Search assets…"
+            defaultValue={q}
+          />
           <a
             href="/api/assets/export"
             className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
@@ -56,22 +81,28 @@ export default async function AssetsPage() {
         </>
       }
     >
+      {searchParams?.deleted === "1" && (
+        <p className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400">
+          Asset deleted.
+        </p>
+      )}
       {error && (
         <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
           {error.message}
         </p>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-hairline bg-surface">
+      <div className="overflow-x-auto rounded-xl border border-hairline bg-surface">
         <table className="w-full text-left text-sm">
           <thead className="bg-surface-2 text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-4 py-3">Asset Tag</th>
+              <th className="px-4 py-3">Asset ID</th>
               <th className="px-4 py-3">Organization</th>
               <th className="px-4 py-3">Equipment Type</th>
               <th className="px-4 py-3">Brand / Model</th>
               <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Next Service Due</th>
+              <th className="px-4 py-3">Site</th>
+              {isStaff && <th className="px-4 py-3 text-right">Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -104,19 +135,29 @@ export default async function AssetsPage() {
                   <StatusBadge status={asset.status} />
                 </td>
                 <td className="px-4 py-3 text-ink-soft">
-                  {asset.next_service_due ?? "—"}
+                  {asset.sites?.address ?? "—"}
                 </td>
+                {isStaff && (
+                  <td className="px-4 py-3 text-right">
+                    <AssetRowActions
+                      assetId={asset.id}
+                      assetTag={asset.asset_tag}
+                    />
+                  </td>
+                )}
               </tr>
             ))}
             {assets?.length === 0 && (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={isStaff ? 7 : 6}
                   className="px-4 py-8 text-center text-slate-500"
                 >
-                  {isStaff
-                    ? 'No assets yet. Click "Add Asset" to create the first one.'
-                    : "No assets on file yet."}
+                  {q
+                    ? `No assets match "${q}".`
+                    : isStaff
+                      ? 'No assets yet. Click "Add Asset" to create the first one.'
+                      : "No assets on file yet."}
                 </td>
               </tr>
             )}

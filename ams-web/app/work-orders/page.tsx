@@ -7,17 +7,22 @@ import { WorkOrdersTable, type WorkOrderRow } from "./work-orders-table";
 export default async function WorkOrdersPage({
   searchParams,
 }: {
-  searchParams: { created?: string };
+  searchParams: { created?: string; error?: string };
 }) {
   await requireStaff();
   const profile = await getProfile();
 
   const supabase = await createClient();
 
-  const { data: workOrders, error } = await supabase
+  // service_tickets(id) here is a reverse embed — service_tickets.work_order_id
+  // is the FK, pointing at this table, not the other way around (see
+  // schema_step16.sql). Supabase/PostgREST can still join across it from
+  // this side; it just comes back as an array (usually 0 or 1 ticket) per
+  // work order rather than a single object.
+  const { data: workOrders, error: fetchError } = await supabase
     .from("work_orders")
     .select(
-      "id, task_title, description, work_type, priority, status, lead_technician, due_date, created_at, assets(asset_tag, organizations(name))",
+      "id, task_title, description, work_type, priority, status, lead_technician, due_date, created_at, assets(asset_tag, sites(address), organizations(name)), service_tickets(id)",
     )
     .order("created_at", { ascending: false });
 
@@ -32,8 +37,9 @@ export default async function WorkOrdersPage({
     lead_technician: w.lead_technician,
     due_date: w.due_date,
     created_at: w.created_at,
-    asset_tag: w.assets?.asset_tag ?? null,
+    site_name: w.assets?.sites?.address ?? null,
     organization_name: w.assets?.organizations?.name ?? null,
+    from_ticket_id: w.service_tickets?.[0]?.id ?? null,
   }));
 
   return (
@@ -50,14 +56,19 @@ export default async function WorkOrdersPage({
         </Link>
       }
     >
-      {searchParams?.created === "1" && (
+      {searchParams?.created === "1" && !searchParams?.error && (
         <p className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400">
           Work order created.
         </p>
       )}
-      {error && (
+      {searchParams?.error && (
+        <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-400">
+          {searchParams.error}
+        </p>
+      )}
+      {fetchError && (
         <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
-          {error.message}
+          {fetchError.message}
         </p>
       )}
       <WorkOrdersTable workOrders={rows} />

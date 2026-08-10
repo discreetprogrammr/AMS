@@ -9,3 +9,10 @@ export function ticketRef(id: string): string {
 export function woRef(id: string): string {
   return `WO-${id.slice(0, 8).toUpperCase()}`;
 }
+
+// Same derivation approach, for service reports (PM/CM). Prefix reflects
+// service_records.service_type at the call site since one function covers
+// both report kinds.
+export function reportRef(id: string, prefix: "PM" | "CM"): string {
+  return `${prefix}-${id.slice(0, 8).toUpperCase()}`;
+}

@@ -54,6 +54,18 @@ type SignalMessage =
   | { type: "decline"; callId: string; fromId: string }
   | { type: "hangup"; callId: string; fromId: string };
 
+// RTCIceCandidateInit (what arrives over the wire) has no `.type` field —
+// only a constructed RTCIceCandidate does, and only after the browser
+// parses it. Pulling "typ host/srflx/relay/prflx" straight out of the raw
+// SDP candidate line is the standard way to inspect a remote candidate's
+// type before/without constructing it.
+function candidateTypeFromInit(candidate: RTCIceCandidateInit): "host" | "srflx" | "relay" | "prflx" | "other" {
+  const line = candidate.candidate ?? "";
+  const m = /\btyp (\w+)\b/.exec(line);
+  const t = m?.[1];
+  return t === "host" || t === "srflx" || t === "relay" || t === "prflx" ? t : "other";
+}
+
 const RING_TIMEOUT_MS = 45_000;
 // If ICE negotiation hasn't reached "connected" within this window, give up
 // and surface an error instead of leaving the UI stuck on "Connecting…"
@@ -114,6 +126,13 @@ export function useCall({
   // smoking gun for that. Surfaced in error messages so it's visible
   // without needing devtools, which matters since this is tested on phones.
   const candidateStatsRef = useRef({ host: 0, srflx: 0, relay: 0, prflx: 0, other: 0 });
+  // Same idea but for candidates RECEIVED from the other side (parsed out
+  // of the raw SDP candidate line, since RTCIceCandidateInit — unlike a
+  // constructed RTCIceCandidate — has no `.type` field). Local relay
+  // candidates alone don't prove connectivity: if the other person's
+  // network can't produce (or deliver) any usable candidate of its own,
+  // there's nothing to pair with regardless of how good our side looks.
+  const remoteCandidateStatsRef = useRef({ host: 0, srflx: 0, relay: 0, prflx: 0, other: 0 });
 
   useEffect(() => {
     statusRef.current = status;
@@ -195,6 +214,7 @@ export function useCall({
         }
         case "ice-candidate": {
           if (msg.callId !== callIdRef.current) return;
+          remoteCandidateStatsRef.current[candidateTypeFromInit(msg.candidate)]++;
           if (pcRef.current?.remoteDescription) {
             pcRef.current.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(() => {});
           } else {
@@ -273,13 +293,15 @@ export function useCall({
   // configured" (that's the iceMode check instead).
   function formatCandidateStats(): string {
     const s = candidateStatsRef.current;
-    return `(local candidates: ${s.host} host, ${s.srflx} srflx, ${s.relay} relay)`;
+    const r = remoteCandidateStatsRef.current;
+    return `(local: ${s.host}h/${s.srflx}s/${s.relay}r, remote: ${r.host}h/${r.srflx}s/${r.relay}r)`;
   }
 
   const createPeerConnection = useCallback(async () => {
     const iceServers = await getIceServers();
     const pc = new RTCPeerConnection({ iceServers });
     candidateStatsRef.current = { host: 0, srflx: 0, relay: 0, prflx: 0, other: 0 };
+    remoteCandidateStatsRef.current = { host: 0, srflx: 0, relay: 0, prflx: 0, other: 0 };
 
     pc.onicecandidate = (e) => {
       if (e.candidate && callIdRef.current) {
@@ -306,66 +328,86 @@ export function useCall({
       });
     };
 
+    // `settled` guards against markConnected/markFailed running twice — both
+    // connectionState AND iceConnectionState changes can fire in close
+    // succession, and the CONNECT_TIMEOUT_MS timer could in theory land in
+    // the same tick as one of them.
+    let settled = false;
+
+    const markConnected = () => {
+      if (settled) return;
+      settled = true;
+      clearConnectTimeout();
+      setStatus("active");
+      if (!startedFiredRef.current) {
+        startedFiredRef.current = true;
+        onCallEvent({ type: "call_started", kind: kindRef.current ?? "audio" });
+      }
+    };
+
+    const markFailed = (reason: string) => {
+      if (settled) return;
+      settled = true;
+      clearConnectTimeout();
+      const k = kindRef.current ?? "audio";
+      const cid = callIdRef.current;
+      const relayNote =
+        iceModeRef.current === "turn"
+          ? " A relay server was available, so this is more likely a network/firewall issue on one side than a missing TURN config."
+          : " No TURN relay was active for this call (ICE mode: " +
+            iceModeRef.current +
+            "), which is required whenever both people aren't on the same network — this is the most likely cause.";
+      setError(`${reason} ${formatCandidateStats()}${relayNote}`);
+      if (cid) send({ type: "hangup", callId: cid, fromId: userId });
+      cleanupCall();
+      setStatus("idle");
+      onCallEvent({ type: "call_missed", kind: k });
+    };
+
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === "connected") {
-        clearConnectTimeout();
-        setStatus("active");
-        if (!startedFiredRef.current) {
-          startedFiredRef.current = true;
-          onCallEvent({ type: "call_started", kind: kindRef.current ?? "audio" });
-        }
+        markConnected();
       } else if (pc.connectionState === "failed") {
         // ICE gave up outright (rather than just being slow) — no need to
         // wait out the rest of CONNECT_TIMEOUT_MS.
-        clearConnectTimeout();
-        const k = kindRef.current ?? "audio";
-        const cid = callIdRef.current;
-        const relayNote =
-          iceModeRef.current === "turn"
-            ? ""
-            : " No TURN relay was active for this call (ICE mode: " +
-              iceModeRef.current +
-              "), which is required whenever both people aren't on the same network.";
-        setError(`The call connection failed. ${formatCandidateStats()}${relayNote}`);
-        if (cid) send({ type: "hangup", callId: cid, fromId: userId });
-        cleanupCall();
-        setStatus("idle");
-        onCallEvent({ type: "call_missed", kind: k });
+        markFailed("The call connection failed.");
+      }
+    };
+
+    // Safari has historically been unreliable about firing
+    // RTCPeerConnection.connectionState changes (sometimes it just never
+    // reports "connected" even once media is genuinely flowing) — the
+    // longer-standing, better-supported signal is iceConnectionState. This
+    // is a redundant success/failure path specifically for that gap, not a
+    // replacement for the handler above.
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
+        markConnected();
+      } else if (pc.iceConnectionState === "failed") {
+        markFailed("The call connection failed.");
       }
     };
 
     // Belt-and-suspenders for the "stuck on Connecting… forever" symptom:
-    // some browsers/networks never fire connectionState "failed" at all and
-    // just sit in "connecting" indefinitely instead. Without this, that's
-    // silent and indistinguishable from "still trying."
+    // some browsers/networks never fire "failed" on EITHER state at all and
+    // just sit in "connecting"/"checking" indefinitely instead. Without
+    // this, that's silent and indistinguishable from "still trying."
     clearConnectTimeout();
     connectTimeoutRef.current = setTimeout(() => {
-      if (pc.connectionState !== "connected") {
-        // eslint-disable-next-line no-console
-        console.error(
-          "[useCall] ICE negotiation timed out after",
-          CONNECT_TIMEOUT_MS,
-          "ms — connectionState:",
-          pc.connectionState,
-          "iceConnectionState:",
-          pc.iceConnectionState,
-          "iceMode:",
-          iceModeRef.current,
-        );
-        const k = kindRef.current ?? "audio";
-        const cid = callIdRef.current;
-        const relayNote =
-          iceModeRef.current === "turn"
-            ? " A relay server was available, so this may be a network or firewall issue rather than a missing TURN config."
-            : " No TURN relay was active for this call (ICE mode: " +
-              iceModeRef.current +
-              "), which is required whenever both people aren't on the same network — this is the most likely cause.";
-        setError(`Couldn't connect the call — negotiation timed out. ${formatCandidateStats()}${relayNote}`);
-        if (cid) send({ type: "hangup", callId: cid, fromId: userId });
-        cleanupCall();
-        setStatus("idle");
-        onCallEvent({ type: "call_missed", kind: k });
-      }
+      // eslint-disable-next-line no-console
+      console.error(
+        "[useCall] ICE negotiation timed out after",
+        CONNECT_TIMEOUT_MS,
+        "ms — connectionState:",
+        pc.connectionState,
+        "iceConnectionState:",
+        pc.iceConnectionState,
+        "iceMode:",
+        iceModeRef.current,
+        "candidates:",
+        formatCandidateStats(),
+      );
+      markFailed("Couldn't connect the call — negotiation timed out.");
     }, CONNECT_TIMEOUT_MS);
 
     pcRef.current = pc;

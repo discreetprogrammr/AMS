@@ -1,10 +1,9 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { StatusBadge } from "@/components/status-badge";
 import { AssetRowActions } from "./asset-row-actions";
-import { AssetDetailModal } from "./asset-detail-modal";
 
 const EQUIPMENT_LABEL: Record<string, string> = {
   xray_screening: "X-ray Screening",
@@ -43,16 +42,12 @@ export function AssetsTable({
   assets,
   isStaff,
   emptyMessage,
-  selectedAssetId,
 }: {
   assets: AssetRow[];
   isStaff: boolean;
   emptyMessage: string;
-  // Read server-side from ?asset=<id> (page.tsx) rather than via
-  // useSearchParams() client-side — avoids needing a <Suspense> boundary
-  // just for this, since the page already has the value at render time.
-  selectedAssetId?: string | null;
 }) {
+  const router = useRouter();
   const [filter, setFilter] = useState<FilterKey>("all");
 
   const rows = useMemo(() => {
@@ -95,15 +90,13 @@ export function AssetsTable({
           </thead>
           <tbody>
             {rows.map((asset) => (
-              <tr key={asset.id} className="border-t border-hairline hover:bg-surface-2">
-                <td className="px-4 py-3">
-                  <Link
-                    href={`/assets?asset=${asset.id}`}
-                    scroll={false}
-                    className="font-medium text-ink hover:underline"
-                  >
-                    {asset.serial_number ? `SN ${asset.serial_number}` : asset.asset_tag}
-                  </Link>
+              <tr
+                key={asset.id}
+                onClick={() => router.push(`/assets/${asset.id}`)}
+                className="cursor-pointer border-t border-hairline hover:bg-surface-2"
+              >
+                <td className="px-4 py-3 font-medium text-ink">
+                  {asset.serial_number ? `SN ${asset.serial_number}` : asset.asset_tag}
                 </td>
                 <td className="px-4 py-3 text-ink-soft">{asset.organization_name ?? "—"}</td>
                 <td className="px-4 py-3 text-ink-soft">
@@ -117,7 +110,7 @@ export function AssetsTable({
                 </td>
                 <td className="px-4 py-3 text-ink-soft">{asset.site_address ?? "—"}</td>
                 {isStaff && (
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                     <AssetRowActions assetId={asset.id} assetTag={asset.asset_tag} />
                   </td>
                 )}
@@ -133,8 +126,6 @@ export function AssetsTable({
           </tbody>
         </table>
       </div>
-
-      {selectedAssetId && <AssetDetailModal assetId={selectedAssetId} />}
     </div>
   );
 }

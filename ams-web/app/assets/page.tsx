@@ -8,7 +8,7 @@ import { AssetsTable, type AssetRow } from "./assets-table";
 export default async function AssetsPage({
   searchParams,
 }: {
-  searchParams: { q?: string; deleted?: string; asset?: string };
+  searchParams: { q?: string; deleted?: string };
 }) {
   const supabase = await createClient();
   const profile = await getProfile();
@@ -99,7 +99,6 @@ export default async function AssetsPage({
       <AssetsTable
         assets={rows}
         isStaff={isStaff}
-        selectedAssetId={searchParams?.asset ?? null}
         emptyMessage={
           q
             ? `No assets match "${q}".`

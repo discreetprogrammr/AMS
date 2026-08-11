@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import {
   useCallback,
   useEffect,
@@ -10,6 +9,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { PH_COASTLINE_PATHS } from "@/lib/philippines-geo";
+import { AssetDetailModal } from "@/app/assets/asset-detail-modal";
 
 // Same 4-value scale as an asset's own status (assets.status, widened in
 // schema_step15.sql) — a site's pin is just the worst status among the
@@ -96,6 +96,11 @@ export function FleetMapView({ sites }: { sites: FleetSite[] }) {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [activeId, setActiveId] = useState<string | null>(null);
   const [pinnedId, setPinnedId] = useState<string | null>(null);
+  // "View Asset" used to navigate to /assets?asset=<id>, leaving the map —
+  // now it opens the same summary popup right on top of the map instead.
+  // "View Full Details" inside that popup is still a real navigation, to
+  // the dedicated /assets/[id] page.
+  const [detailAssetId, setDetailAssetId] = useState<string | null>(null);
   const dragRef = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -339,12 +344,13 @@ export function FleetMapView({ sites }: { sites: FleetSite[] }) {
                   </div>
                 </div>
                 {shown.primaryAssetId && (
-                  <Link
-                    href={`/assets?asset=${shown.primaryAssetId}`}
-                    className="mt-3 flex h-8 items-center justify-center gap-1.5 rounded-lg bg-blue-500/15 text-xs font-medium text-blue-300 ring-1 ring-inset ring-blue-500/25 hover:bg-blue-500/25"
+                  <button
+                    type="button"
+                    onClick={() => setDetailAssetId(shown.primaryAssetId)}
+                    className="mt-3 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-blue-500/15 text-xs font-medium text-blue-300 ring-1 ring-inset ring-blue-500/25 hover:bg-blue-500/25"
                   >
                     View Asset →
-                  </Link>
+                  </button>
                 )}
               </div>
             </div>
@@ -443,6 +449,10 @@ export function FleetMapView({ sites }: { sites: FleetSite[] }) {
           </ul>
         </aside>
       </div>
+
+      {detailAssetId && (
+        <AssetDetailModal assetId={detailAssetId} onClose={() => setDetailAssetId(null)} />
+      )}
     </div>
   );
 }

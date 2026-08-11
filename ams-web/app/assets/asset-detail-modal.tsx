@@ -36,14 +36,22 @@ type LatestTicket = {
   created_at: string;
 };
 
-// Summary popup opened by clicking an asset row (Assets tab) or arriving
-// via a `?asset=<id>` deep link (Fleet Map's "View client" — see
-// fleet-map-view.tsx). Fetches its own data client-side rather than
-// requiring the row data to already have everything, so it works
-// identically from either entry point. Everything not covered here (edit,
-// raise a ticket, full certificate/service history) is one click away via
-// "View Full Details".
-export function AssetDetailModal({ assetId }: { assetId: string }) {
+// Quick-preview summary popup — currently opened from the Fleet Map tab's
+// "View Asset" button (fleet-map-view.tsx), as an overlay on top of the
+// map rather than navigating away from it. Fetches its own data
+// client-side so it only needs an assetId, not the full row data. Anything
+// not covered here (edit, raise a ticket, full certificate/service
+// history) is one click away via "View Full Details", which does a real
+// navigation to the dedicated /assets/[id] page. `onClose` is left to the
+// caller so each entry point can decide what "close" means (e.g. clear
+// local state vs. navigate back).
+export function AssetDetailModal({
+  assetId,
+  onClose,
+}: {
+  assetId: string;
+  onClose: () => void;
+}) {
   const [asset, setAsset] = useState<AssetDetail | null>(null);
   const [latestTicket, setLatestTicket] = useState<LatestTicket | null>(null);
   const [notFoundOrDenied, setNotFoundOrDenied] = useState(false);
@@ -88,21 +96,28 @@ export function AssetDetailModal({ assetId }: { assetId: string }) {
   }, [assetId]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-hairline bg-surface shadow-2xl">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-hairline bg-surface shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between gap-3 border-b border-hairline px-5 py-4">
           <h2 className="text-base font-semibold text-ink">
             {asset ? (asset.serial_number ? `SN ${asset.serial_number}` : asset.asset_tag) : "Asset"}
           </h2>
-          <Link
-            href="/assets"
+          <button
+            type="button"
+            onClick={onClose}
             aria-label="Close"
             className="shrink-0 rounded-lg p-2 text-slate-500 hover:bg-surface-2 hover:text-ink"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
               <path d="M18 6 6 18M6 6l12 12" />
             </svg>
-          </Link>
+          </button>
         </div>
 
         <div className="px-5 py-4">

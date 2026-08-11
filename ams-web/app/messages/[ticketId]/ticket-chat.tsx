@@ -13,6 +13,7 @@ import {
   startRingback,
   stopRingback,
 } from "@/lib/sounds";
+import { MAX_ATTACHMENT_BYTES, makeAttachmentPath, formatFileSize, isImageMime } from "@/lib/attachments";
 
 type Message = {
   id: string;
@@ -21,9 +22,18 @@ type Message = {
   message_type: "text" | "call_started" | "call_ended" | "call_missed" | "call_declined";
   call_kind: "audio" | "video" | null;
   body: string | null;
+  attachment_path: string | null;
+  attachment_name: string | null;
+  attachment_mime: string | null;
+  attachment_size: number | null;
   created_at: string;
   profiles: { full_name: string | null } | null;
 };
+
+// Reused everywhere a message row is fetched/inserted, so the shape stays
+// consistent (schema_step27.sql added the attachment_* columns).
+const MESSAGE_SELECT =
+  "id, ticket_id, sender_id, message_type, call_kind, body, attachment_path, attachment_name, attachment_mime, attachment_size, created_at, profiles(full_name)";
 
 function PhoneIcon({ className = "h-5 w-5" }: { className?: string }) {
   return (
@@ -82,6 +92,31 @@ function CloseIcon({ className = "h-5 w-5" }: { className?: string }) {
   );
 }
 
+function PaperclipIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M21.44 11.05 12.25 20.24a5.5 5.5 0 0 1-7.78-7.78l9.19-9.19a3.67 3.67 0 0 1 5.19 5.19l-9.2 9.19a1.83 1.83 0 0 1-2.59-2.59l8.49-8.48" />
+    </svg>
+  );
+}
+
+function FileIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+      <path d="M14 2v6h6" />
+    </svg>
+  );
+}
+
+function DownloadIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M12 3v12m0 0-4-4m4 4 4-4M4 21h16" />
+    </svg>
+  );
+}
+
 function timeLabel(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
@@ -116,9 +151,26 @@ export function TicketChat({
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [attachError, setAttachError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = useRef(createClient()).current;
   const router = useRouter();
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow picking the same file again later
+    if (!file) return;
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      setAttachError(
+        `"${file.name}" is too large — attachments are limited to ${formatFileSize(MAX_ATTACHMENT_BYTES)}.`,
+      );
+      return;
+    }
+    setAttachError(null);
+    setPendingFile(file);
+  }
 
   // Marks this ticket's thread as read for the current user as of right
   // now (schema_step26.sql's message_reads) — drives the sidebar's
@@ -171,9 +223,7 @@ export function TicketChat({
           }
           const { data } = await supabase
             .from("messages")
-            .select(
-              "id, ticket_id, sender_id, message_type, call_kind, body, created_at, profiles(full_name)",
-            )
+            .select(MESSAGE_SELECT)
             .eq("id", id)
             .single();
           if (data) {
@@ -213,7 +263,7 @@ export function TicketChat({
         message_type: type,
         call_kind: event.kind,
       })
-      .select("id, ticket_id, sender_id, message_type, call_kind, body, created_at, profiles(full_name)")
+      .select(MESSAGE_SELECT)
       .single();
     if (data) {
       setMessages((prev) => (prev.some((m) => m.id === data.id) ? prev : [...prev, data as unknown as Message]));
@@ -244,18 +294,49 @@ export function TicketChat({
 
   async function sendMessage() {
     const body = draft.trim();
-    if (!body || sending) return;
+    const file = pendingFile;
+    if ((!body && !file) || sending) return;
     setSending(true);
     setDraft("");
+    setPendingFile(null);
+    setAttachError(null);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const insertRow: Record<string, any> = {
+      ticket_id: ticketId,
+      sender_id: currentUserId,
+      message_type: "text",
+      body: body || null,
+    };
+
+    if (file) {
+      const path = makeAttachmentPath(ticketId, file.name);
+      const { error: uploadError } = await supabase.storage
+        .from("chat-attachments")
+        .upload(path, file, { contentType: file.type || "application/octet-stream" });
+      if (uploadError) {
+        setSending(false);
+        setAttachError(`Couldn't attach "${file.name}" — ${uploadError.message}`);
+        setDraft(body); // give the caption back so it isn't lost
+        return;
+      }
+      insertRow.attachment_path = path;
+      insertRow.attachment_name = file.name;
+      insertRow.attachment_mime = file.type || null;
+      insertRow.attachment_size = file.size;
+    }
+
     const { data, error } = await supabase
       .from("messages")
-      .insert({ ticket_id: ticketId, sender_id: currentUserId, message_type: "text", body })
-      .select("id, ticket_id, sender_id, message_type, call_kind, body, created_at, profiles(full_name)")
+      .insert(insertRow)
+      .select(MESSAGE_SELECT)
       .single();
     setSending(false);
     if (!error && data) {
       setMessages((prev) => (prev.some((m) => m.id === data.id) ? prev : [...prev, data as unknown as Message]));
       playSentTone();
+    } else if (error) {
+      setAttachError(error.message);
     }
   }
 
@@ -375,7 +456,17 @@ export function TicketChat({
                     {m.profiles?.full_name ?? "Support"}
                   </p>
                 )}
-                <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                {m.attachment_path && (
+                  <AttachmentBubble
+                    supabase={supabase}
+                    path={m.attachment_path}
+                    name={m.attachment_name}
+                    mime={m.attachment_mime}
+                    size={m.attachment_size}
+                    mine={mine}
+                  />
+                )}
+                {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
                 <p className={`mt-1 text-[10px] ${mine ? "text-blue-100/70" : "text-slate-500"}`}>
                   {timeLabel(m.created_at)}
                 </p>
@@ -386,34 +477,72 @@ export function TicketChat({
       </div>
 
       {/* Composer */}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          sendMessage();
-        }}
-        className="flex items-end gap-2 border-t border-hairline p-3 sm:p-4"
-      >
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              sendMessage();
-            }
+      <div className="border-t border-hairline">
+        {attachError && (
+          <p className="border-b border-red-500/30 bg-red-500/10 px-4 py-2 text-xs text-red-400 sm:px-6">
+            {attachError}
+          </p>
+        )}
+        {pendingFile && (
+          <div className="flex items-center gap-2 border-b border-hairline bg-surface-2 px-4 py-2 text-xs text-ink-soft sm:px-6">
+            <FileIcon className="h-4 w-4 shrink-0" />
+            <span className="truncate">{pendingFile.name}</span>
+            <span className="shrink-0 text-slate-500">{formatFileSize(pendingFile.size)}</span>
+            <button
+              type="button"
+              onClick={() => setPendingFile(null)}
+              className="ml-auto shrink-0 rounded p-1 text-slate-500 hover:bg-surface hover:text-ink"
+              aria-label="Remove attachment"
+            >
+              <CloseIcon className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            sendMessage();
           }}
-          rows={1}
-          placeholder="Type a message…"
-          className="max-h-32 flex-1 resize-none rounded-lg border border-hairline bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-        />
-        <button
-          type="submit"
-          disabled={!draft.trim() || sending}
-          className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-ink hover:bg-blue-500 disabled:opacity-40"
+          className="flex items-end gap-2 p-3 sm:p-4"
         >
-          Send
-        </button>
-      </form>
+          <input
+            ref={fileInputRef}
+            type="file"
+            onChange={handleFileChange}
+            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-hairline text-ink-soft hover:bg-surface-2 hover:text-ink"
+            title="Attach a file or photo"
+            aria-label="Attach a file or photo"
+          >
+            <PaperclipIcon className="h-4 w-4" />
+          </button>
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+              }
+            }}
+            rows={1}
+            placeholder="Type a message…"
+            className="max-h-32 flex-1 resize-none rounded-lg border border-hairline bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={(!draft.trim() && !pendingFile) || sending}
+            className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-ink hover:bg-blue-500 disabled:opacity-40"
+          >
+            {sending ? "Sending…" : "Send"}
+          </button>
+        </form>
+      </div>
 
       {/* In-call overlay — covers the thread while calling/connecting/active */}
       {inCallOverlay && (
@@ -537,5 +666,93 @@ function CallOverlay({
         </button>
       </div>
     </div>
+  );
+}
+
+// A message's attachment_path is a private-bucket object path
+// (schema_step27.sql), not a servable URL — this fetches a short-lived
+// signed URL on mount (RLS-gated by the storage policies keyed off the
+// ticket, so this naturally 403s for anyone who can't already see the
+// message) and renders an inline preview for images, or a download chip
+// for anything else.
+function AttachmentBubble({
+  supabase,
+  path,
+  name,
+  mime,
+  size,
+  mine,
+}: {
+  supabase: ReturnType<typeof createClient>;
+  path: string;
+  name: string | null;
+  mime: string | null;
+  size: number | null;
+  mine: boolean;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase.storage
+      .from("chat-attachments")
+      .createSignedUrl(path, 3600)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error || !data) {
+          setFailed(true);
+          return;
+        }
+        setUrl(data.signedUrl);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path]);
+
+  if (failed) {
+    return (
+      <p className="mb-1.5 text-xs text-red-400">
+        Couldn't load attachment{name ? ` "${name}"` : ""}.
+      </p>
+    );
+  }
+
+  if (isImageMime(mime)) {
+    return (
+      <a
+        href={url ?? undefined}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mb-1.5 block overflow-hidden rounded-lg border border-hairline/50"
+      >
+        {url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={url} alt={name ?? "Attached photo"} className="max-h-64 w-full object-cover" />
+        ) : (
+          <div className="flex h-32 w-48 items-center justify-center bg-surface-2 text-xs text-slate-500">
+            Loading…
+          </div>
+        )}
+      </a>
+    );
+  }
+
+  return (
+    <a
+      href={url ?? undefined}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`mb-1.5 flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
+        mine ? "border-blue-400/30 bg-blue-500/10" : "border-hairline bg-surface"
+      }`}
+    >
+      <FileIcon className="h-4 w-4 shrink-0" />
+      <span className="min-w-0 flex-1 truncate font-medium">{name ?? "Attachment"}</span>
+      <span className="shrink-0 text-slate-500">{formatFileSize(size)}</span>
+      <DownloadIcon className="h-4 w-4 shrink-0" />
+    </a>
   );
 }

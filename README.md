@@ -1145,3 +1145,21 @@ Also added an **Equipment Needing Attention** card to the client dashboard — t
 While in the dashboard's Quick Action Center, also swapped the stale "Start Live Call — Coming soon" placeholder (from before chat/calling existed) for a real link into `/messages`.
 
 Verified with a full `npx tsc --noEmit` (clean).
+
+## Follow-up — file/photo attachments in chat
+
+Any participant on a ticket's thread — super admin, admin, or client — can now attach a document or photo to a message, with or without a caption. Same component for everyone (`ticket-chat.tsx`), so no role-specific work was needed beyond building it once.
+
+**Schema (`schema_step27.sql` — needs to be run in Supabase):**
+- Four new nullable columns on `messages`: `attachment_path`, `attachment_name`, `attachment_mime`, `attachment_size`. A message can carry a caption, an attachment, or both — no new table needed.
+- New private Storage bucket `chat-attachments`, same pattern as the existing `service-reports` bucket (schema_step20.sql): staff get full access, everyone else is scoped to their own org. The scoping check here is a path-prefix check rather than a table join, because the uploaded file has to land in Storage *before* the `messages` row referencing it can be inserted — there's nothing to join against yet at upload time. Every object is stored at `{ticket_id}/{random}-{filename}`, and the RLS policies read the ticket id straight off that path.
+
+**Upload/display (`ticket-chat.tsx`, new `lib/attachments.ts`):**
+- A paperclip button next to the message box opens the device's native file/photo picker (`image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt`) — on mobile this naturally offers the camera as one of the options, no extra work needed.
+- Picked files show as a removable chip above the composer before sending; a 20MB cap is enforced client-side with a clear error if exceeded.
+- Everything happens directly from the browser (upload to Storage, then the message insert) — same pattern the rest of chat already uses, with Storage's RLS as the real access boundary rather than a server route.
+- In the thread, images render as an inline preview (tap to open full-size); anything else renders as a filename + size chip that opens/downloads in a new tab. Both use short-lived signed URLs generated on render, not the private object path directly.
+- The inbox list's preview line now shows "📎 Photo" or "📎 filename.pdf" for the latest message when it's attachment-only (no caption), instead of a blank line.
+- Received-message tone and the unread dot/badge both already keyed off "any inbound text-type message" (previous follow-up), so attachment messages trigger them automatically — no extra wiring needed there.
+
+Verified with a full `npx tsc --noEmit` (clean). **`schema_step27.sql` needs to be run in Supabase before attachments will work** (same as `schema_step26.sql`, if that hasn't been run yet either).

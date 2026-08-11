@@ -27,7 +27,9 @@ export default async function MessagesPage() {
   const { data: messages } = ticketIds.length
     ? await supabase
         .from("messages")
-        .select("id, ticket_id, sender_id, message_type, call_kind, body, created_at")
+        .select(
+          "id, ticket_id, sender_id, message_type, call_kind, body, attachment_name, attachment_mime, created_at",
+        )
         .in("ticket_id", ticketIds)
         .order("created_at", { ascending: false })
     : { data: [] };
@@ -125,7 +127,12 @@ function previewText(m: any): string {
   const kindLabel = m.call_kind === "video" ? "Video" : "Voice";
   switch (m.message_type) {
     case "text":
-      return m.body ?? "";
+      if (m.body) return m.body;
+      if (m.attachment_name) {
+        const isImage = (m.attachment_mime as string | null)?.startsWith("image/");
+        return `📎 ${isImage ? "Photo" : m.attachment_name}`;
+      }
+      return "";
     case "call_started":
       return `${kindLabel} call`;
     case "call_ended":

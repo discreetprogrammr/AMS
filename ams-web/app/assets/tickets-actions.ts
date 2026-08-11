@@ -40,12 +40,14 @@ export async function createTicket(assetId: string, formData: FormData) {
   redirect(`/assets/${assetId}?ticket=submitted`);
 }
 
-// Staff-only. Same insert as createTicket, but for the global "Request New
-// Service" quick action, where the asset is picked from a dropdown on the
-// form itself instead of being bound from the page you're already on.
+// Client- and staff-accessible. Same insert as createTicket, but for the
+// global "Request New Service" form (/tickets/new), where the asset is
+// picked from a dropdown on the form itself instead of being bound from
+// the asset detail page you're already on. RLS is the real gate here —
+// "clients can raise tickets on own assets" restricts a client_viewer to
+// their own org regardless of what asset_id gets submitted; "staff manage
+// tickets" lets staff raise one for any org.
 export async function createGlobalTicket(formData: FormData) {
-  await requireStaff("/tickets");
-
   const supabase = await createClient();
 
   const {

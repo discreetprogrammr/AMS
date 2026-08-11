@@ -54,6 +54,7 @@ export default async function DashboardPage() {
     { data: recentActivity },
     { count: unreadAlertsCount },
     { data: latestAlerts },
+    { data: attentionAssets },
   ] = await Promise.all([
     supabase.from("assets").select("*", { count: "exact", head: true }),
     supabase
@@ -135,6 +136,17 @@ export default async function DashboardPage() {
       .select("id, title, severity, is_read, created_at")
       .order("created_at", { ascending: false })
       .limit(5),
+    // Client-facing "Equipment Alerts" card — unlike the `alerts` table
+    // above (staff-only, manually raised triage alerts), this is derived
+    // straight from asset status, which a client can already see on
+    // /assets. RLS ("read own org assets or all if staff") scopes this to
+    // just the signed-in org for a client; only rendered for clients
+    // below, so the fleet-wide result for staff is simply unused.
+    supabase
+      .from("assets")
+      .select("id, asset_tag, status, sites(address)")
+      .in("status", ["down", "attention"])
+      .order("status"),
   ]);
 
   const operationalPct = totalAssets
@@ -307,6 +319,14 @@ export default async function DashboardPage() {
       actions={
         <>
           <SearchBar action="/assets" placeholder="Search assets…" />
+          {!isStaff && (
+            <Link
+              href="/tickets/new"
+              className="whitespace-nowrap rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-ink hover:bg-blue-500"
+            >
+              + Request Service
+            </Link>
+          )}
           <NotificationBell
             href="/alerts"
             count={unreadAlertsCount ?? 0}
@@ -384,7 +404,8 @@ export default async function DashboardPage() {
         {isStaff && <RecentActivityCard items={activityItems} />}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className={`grid gap-6 ${isStaff ? "lg:grid-cols-2" : "lg:grid-cols-3"}`}>
+        {!isStaff && <EquipmentAlertsCard assets={attentionAssets ?? []} />}
         <div className="rounded-xl border border-hairline bg-surface p-5">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-soft">
             Service Due — Next 30 Days
@@ -485,6 +506,44 @@ function KpiCard({
       >
         {value}
       </p>
+    </div>
+  );
+}
+
+// Client-only — see the query comment above for why this reads straight
+// from `assets` instead of the staff `alerts` table.
+function EquipmentAlertsCard({
+  assets,
+}: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  assets: any[];
+}) {
+  return (
+    <div className="rounded-xl border border-hairline bg-surface p-5">
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-soft">
+        Equipment Needing Attention
+      </h2>
+      {assets.length ? (
+        <ul className="divide-y divide-hairline text-sm">
+          {assets.map((a) => (
+            <li key={a.id} className="flex items-center justify-between gap-3 py-2">
+              <div className="min-w-0">
+                <Link href={`/assets/${a.id}`} className="font-medium text-ink hover:underline">
+                  {a.asset_tag}
+                </Link>
+                <p className="truncate text-xs text-slate-500">
+                  {a.sites?.address ?? "—"}
+                </p>
+              </div>
+              <StatusBadge status={a.status} />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-slate-500">
+          All your equipment is operational.
+        </p>
+      )}
     </div>
   );
 }
@@ -977,18 +1036,13 @@ function QuickActionCenterCard() {
           <TicketQueueIcon />
           Open Support Ticket
         </Link>
-        <div
-          title="Coming soon — live chat/call support isn't built yet"
-          className="flex cursor-not-allowed items-center justify-between gap-2 rounded-lg border border-hairline px-4 py-2.5 text-sm font-medium text-slate-600"
+        <Link
+          href="/messages"
+          className="flex items-center gap-2 rounded-lg border border-hairline bg-surface-2 px-4 py-2.5 text-sm font-medium text-ink hover:bg-surface"
         >
-          <span className="flex items-center gap-2">
-            <PhoneIcon />
-            Start Live Call
-          </span>
-          <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-500">
-            Soon
-          </span>
-        </div>
+          <PhoneIcon />
+          Chat / Start Live Call
+        </Link>
       </div>
     </div>
   );

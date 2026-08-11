@@ -1,15 +1,21 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile, requireStaff } from "@/lib/supabase/profile";
+import { getProfile } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { createGlobalTicket } from "../../assets/tickets-actions";
 
+// Client-visible, same as /tickets and /messages — a client_viewer needs a
+// way to raise a new service request too, not just staff on a client's
+// behalf. No extra filtering needed here: RLS ("read own org assets or
+// all if staff", schema.sql) already scopes the asset dropdown below to
+// just the signed-in org for a client, and the insert itself is covered
+// by "clients can raise tickets on own assets" — so even a tampered
+// asset_id in the submitted form would be rejected at the database level.
 export default async function NewTicketPage({
   searchParams,
 }: {
   searchParams: { error?: string };
 }) {
-  await requireStaff("/tickets");
   const profile = await getProfile();
 
   const supabase = await createClient();

@@ -8,8 +8,9 @@ import { TicketsTable, type TicketRow } from "./tickets-table";
 // their own fleet's tickets, same as Dashboard/Assets/Reports. RLS ("read
 // own org tickets or all if staff" in schema.sql) already scopes the query
 // below to just their org's tickets with zero extra filtering needed here.
-// Staff-only actions (raising a ticket on any org's behalf, creating a
-// work order from a ticket) stay gated behind `isStaff` in the JSX/table.
+// "+ Request New Service" is open to clients too (/tickets/new, RLS-scoped
+// to their own assets) — only creating a work order from a ticket stays
+// staff-only, gated behind `isStaff` in the table.
 export default async function TicketsPage({
   searchParams,
 }: {
@@ -50,14 +51,12 @@ export default async function TicketsPage({
           : "Service tickets raised on your fleet."
       }
       actions={
-        isStaff ? (
-          <Link
-            href="/tickets/new"
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-ink hover:bg-blue-500"
-          >
-            + Request New Service
-          </Link>
-        ) : undefined
+        <Link
+          href="/tickets/new"
+          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-ink hover:bg-blue-500"
+        >
+          + Request New Service
+        </Link>
       }
     >
       {searchParams?.created === "1" && (

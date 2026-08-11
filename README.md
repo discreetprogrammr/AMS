@@ -1131,3 +1131,17 @@ With calling confirmed working end-to-end, five polish items:
 5. **Mobile: Accept/Decline weren't reachable without scrolling.** The incoming-call banner used to be the first element inside the chat card — reasonable in theory, but on a phone the page header (title, subtitle, back link) pushed the card far enough down that the banner started below the fold. Changed it to a `position: fixed` bar pinned to the very top of the viewport (with iOS safe-area padding for the notch), so Accept/Decline are visible the instant a call comes in, regardless of scroll position or how tall anything above it is.
 
 Verified with a full `npx tsc --noEmit` (clean). **`schema_step26.sql` needs to be run in Supabase before the unread dot/badges will work** — everything else (close button, rename, received tone, fixed call banner) works as soon as it's deployed.
+
+## Follow-up — client self-service ticket requests + equipment alerts
+
+Turns out the hard part of client-side ticket requests already existed: `service_tickets` has had a `"clients can raise tickets on own assets"` RLS insert policy since early on (schema.sql), and there was already an ungated "Raise a Service Request" form buried at the bottom of each asset's detail page. What was missing was a proper, visible entry point — the global "Request New Service" form (`/tickets/new`) and its quick-action links were all `requireStaff()`-gated for no data reason, just an oversight from when it was first built staff-first.
+
+Fixed by removing that gate — `/tickets/new` and its server action (`createGlobalTicket`, `app/assets/tickets-actions.ts`) are now open to clients, with RLS as the actual security boundary (a client can only ever create a ticket against their own org's assets, even if the submitted asset_id were tampered with — the database rejects it, not just the UI). Added two visible entry points for clients specifically:
+- **Tickets tab**: the "+ Request New Service" button, previously staff-only, now shows for everyone.
+- **Dashboard**: a "+ Request Service" button next to the search bar (client view only).
+
+Also added an **Equipment Needing Attention** card to the client dashboard — this is new, not just un-gating: it reads directly from each client's own assets (RLS-scoped) for anything in Down or Attention status, so a client can see at a glance which of their machines needs a look, with a link straight to that asset's page (and from there, straight into raising a ticket or opening the chat). This is separate from the staff `alerts` table (manually raised internal triage alerts) — deliberately kept simple by deriving from asset status directly rather than building a parallel alerting pipeline.
+
+While in the dashboard's Quick Action Center, also swapped the stale "Start Live Call — Coming soon" placeholder (from before chat/calling existed) for a real link into `/messages`.
+
+Verified with a full `npx tsc --noEmit` (clean).

@@ -47,7 +47,7 @@ export default async function EditAssetPage({
     // site_id foreign key.
     supabase
       .from("assets")
-      .select("*, sites(address)")
+      .select("*, sites(address), organizations(name)")
       .eq("id", params.id)
       .single(),
     supabase.from("organizations").select("id, name").order("name"),
@@ -76,10 +76,22 @@ export default async function EditAssetPage({
   const boundUpdate = updateAsset.bind(null, params.id);
   const boundCreateTicket = createTicket.bind(null, params.id);
 
+  // Header used to read "Asset Details — XRY-0010" (the internal asset
+  // tag) — replaced with who/where instead, since that's what's actually
+  // meaningful to a client looking at their own equipment. Falls back to
+  // the asset tag only if somehow neither a client nor a site is on file,
+  // so the title never comes back blank.
+  const clientLabel = asset.organizations?.name ?? null;
+  const siteLabel = asset.sites?.address ?? null;
+  const titleSuffix =
+    clientLabel && siteLabel
+      ? `${clientLabel} — ${siteLabel}`
+      : clientLabel ?? siteLabel ?? asset.asset_tag;
+
   return (
     <AppShell
       profile={profile}
-      title={`${isStaff ? "Edit Asset" : "Asset Details"} — ${asset.asset_tag}`}
+      title={`${isStaff ? "Edit Asset" : "Asset Details"} — ${titleSuffix}`}
       actions={
         <Link
           href="/assets"

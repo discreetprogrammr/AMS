@@ -1199,3 +1199,9 @@ Real-world testing surfaced a production-only bug: submitting a CM report saved 
 **Fix**: the logo is now embedded directly in the code as a base64 string (`lib/pdf/logo-base64.ts`, auto-generated from the PNG, verified byte-for-byte identical via a SHA-256 round-trip check) and decoded with `Buffer.from(..., "base64")` instead of read from disk. This has zero filesystem dependency, so it works identically in local dev, Vercel, or anywhere else — no Next.js config or deployment-specific tracing rules to get right or accidentally break later. Grepped the rest of the codebase for the same `readFileSync`/`process.cwd()` pattern — this was the only occurrence.
 
 Verified with `npx tsc --noEmit` (clean). No schema changes, no migration needed — just push and the next report submission should generate its PDF successfully.
+
+## Follow-up — moved Quick Action Center from staff to client dashboard
+
+Per your call after seeing the Super Admin dashboard: staff already have the full sidebar (Tickets, Work Orders) to create things directly, so a dashboard shortcut card was redundant for them — and clients, who are the ones actually requesting support, didn't have an equivalent. Swapped which role sees it (`app/dashboard/page.tsx`) — no changes needed inside the card itself, since "Request New Service," "Open Support Ticket," and "Chat / Start Live Call" already point to pages clients can use (from earlier follow-ups). Both roles now land on 3 cards in that row either way, so the grid simplified to a flat 3-column layout instead of switching between 2 and 4 by role.
+
+Verified with `npx tsc --noEmit` (clean). No schema changes.

@@ -360,15 +360,14 @@ export default async function DashboardPage() {
       {/* Active Support Tickets + SLA Performance are client-visible too —
           RLS already scopes every underlying query to just their own org,
           so this is a pure UI-gating decision, not a data one. Equipment
-          Health just repeats the top KPI row (staff-only, not worth the
-          duplication for clients), and Quick Action Center's "Request New
-          Service" link goes to the staff-only global ticket form, so both
-          stay staff-only. */}
-      <div
-        className={`mb-6 grid grid-cols-1 gap-6 sm:grid-cols-2 ${
-          isStaff ? "lg:grid-cols-4" : "lg:grid-cols-2"
-        }`}
-      >
+          Health just repeats the top KPI row, which is staff-only, so it
+          stays staff-only too — not worth the duplication for clients.
+          Quick Action Center moved to the CLIENT side only: staff already
+          have the full sidebar (Tickets, Work Orders) for creating things
+          directly, so a dashboard shortcut is redundant for them, while a
+          client's fastest path to "get help" is exactly what this card is
+          for. Both roles land on 3 cards either way. */}
+      <div className="mb-6 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         <ActiveTicketsCard
           openCount={openTicketsCount ?? 0}
           inProgressCount={inProgressTicketsCount ?? 0}
@@ -390,7 +389,7 @@ export default async function DashboardPage() {
             unserviceableCount={unserviceableCount ?? 0}
           />
         )}
-        {isStaff && <QuickActionCenterCard />}
+        {!isStaff && <QuickActionCenterCard />}
       </div>
 
       {/* SLA Historical Performance is client-visible too, for the same

@@ -183,3 +183,63 @@ export async function markTicketPartsPending(assetId: string, ticketId: string) 
   revalidatePath(`/assets/${assetId}`);
   redirect(`/assets/${assetId}`);
 }
+
+// Staff-only. Called directly from the ticket detail modal's status
+// <select> (tickets-table.tsx / ticket-detail-modal.tsx) — same
+// no-redirect, throw-on-error pattern as updateWorkOrderStatus
+// (app/work-orders/actions.ts), since this is invoked from a client-side
+// event handler rather than a <form action>. Also mirrors the change onto
+// a linked work order, the reverse direction of what updateWorkOrderStatus
+// already does — keeps a ticket and its work order from drifting apart
+// regardless of which side someone changes the status from.
+export async function updateTicketStatus(ticketId: string, status: string) {
+  await requireStaff("/tickets");
+
+  const supabase = await createClient();
+
+  const { data: ticket } = await supabase
+    .from("service_tickets")
+    .select("first_response_at, resolved_at, work_order_id")
+    .eq("id", ticketId)
+    .single();
+
+  const { error } = await supabase
+    .from("service_tickets")
+    .update({
+      status,
+      // Any status change beyond "open" counts as a first response if one
+      // hasn't been recorded yet — same rule the other status-changing
+      // actions on this page already apply.
+      first_response_at:
+        status === "open" ? (ticket?.first_response_at ?? null) : (ticket?.first_response_at ?? new Date().toISOString()),
+      resolved_at:
+        status === "closed" ? (ticket?.resolved_at ?? new Date().toISOString()) : ticket?.resolved_at,
+    })
+    .eq("id", ticketId);
+
+  if (error) throw new Error(error.message);
+
+  if (ticket?.work_order_id) {
+    const { data: linkedWo } = await supabase
+      .from("work_orders")
+      .select("closed_at")
+      .eq("id", ticket.work_order_id)
+      .single();
+    await supabase
+      .from("work_orders")
+      .update({
+        status,
+        closed_at:
+          status === "closed" ? (linkedWo?.closed_at ?? new Date().toISOString()) : linkedWo?.closed_at,
+      })
+      .eq("id", ticket.work_order_id);
+    await supabase
+      .from("calendar_events")
+      .update({ status: status === "closed" ? "completed" : "scheduled" })
+      .eq("work_order_id", ticket.work_order_id);
+  }
+
+  revalidatePath("/tickets");
+  revalidatePath("/work-orders");
+  revalidatePath("/calendar");
+}

@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getProfile, requireStaff } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { StatusBadge } from "@/components/status-badge";
+import { assetLabel } from "@/lib/format";
 import { updateOrganization, createSite, updateSiteLocation } from "../actions";
 
 const inputClass =
@@ -36,7 +37,7 @@ export default async function ClientDetailPage({
         .order("address"),
       supabase
         .from("assets")
-        .select("id, asset_tag, equipment_type, brand, model, status")
+        .select("id, asset_tag, equipment_type, brand, model, status, serial_number, sites(address)")
         .eq("organization_id", params.id)
         .order("asset_tag"),
     ]);
@@ -278,7 +279,8 @@ export default async function ClientDetailPage({
                       href={`/assets/${asset.id}`}
                       className="font-medium text-ink hover:underline"
                     >
-                      {asset.asset_tag}
+                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                      {assetLabel(asset as any)}
                     </Link>
                     <p className="text-xs text-slate-500">
                       {[asset.brand, asset.model].filter(Boolean).join(" / ") ||

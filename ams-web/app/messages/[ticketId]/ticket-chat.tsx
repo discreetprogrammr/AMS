@@ -14,6 +14,7 @@ import {
   stopRingback,
 } from "@/lib/sounds";
 import { MAX_ATTACHMENT_BYTES, makeAttachmentPath, formatFileSize, isImageMime } from "@/lib/attachments";
+import { ticketRef } from "@/lib/format";
 
 type Message = {
   id: string;
@@ -141,11 +142,17 @@ export function TicketChat({
   ticketId,
   currentUserId,
   currentUserName,
+  isStaff,
+  siteAddress,
+  serialNumber,
   initialMessages,
 }: {
   ticketId: string;
   currentUserId: string;
   currentUserName: string;
+  isStaff?: boolean;
+  siteAddress?: string | null;
+  serialNumber?: string | null;
   initialMessages: Message[];
 }) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
@@ -387,7 +394,11 @@ export function TicketChat({
 
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-2 border-b border-hairline px-4 py-3 sm:px-6">
-        <span className="text-sm font-medium text-ink-soft">Conversation</span>
+        <span className="truncate text-sm font-medium text-ink-soft">
+          {ticketRef(ticketId)}
+          {siteAddress ? ` · ${siteAddress}` : ""}
+          {serialNumber ? ` · SN ${serialNumber}` : ""}
+        </span>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -445,15 +456,19 @@ export function TicketChat({
               <div className={`max-w-[80%] rounded-xl px-3.5 py-2 text-sm sm:max-w-[65%] ${mine ? "bg-blue-600 text-ink" : "bg-surface-2 text-ink"}`}>
                 {!mine && (
                   <p className="mb-0.5 text-xs font-semibold text-blue-300">
-                    {/* A client_viewer can only read their OWN profiles row
-                        (schema.sql's "read own profile or all if staff"
-                        policy) — so a staff sender's name comes back null
-                        here for a client, same as intended: falls back to
-                        a generic "Support" label rather than exposing
-                        individual staff names to clients. Staff viewing
-                        client messages always see the real name, since
-                        is_internal_staff() bypasses that restriction. */}
-                    {m.profiles?.full_name ?? "Support"}
+                    {/* schema_step28.sql added a "anyone can read staff
+                        profiles" policy specifically so a client can see
+                        the real name of the staff member replying to
+                        them — labeled "Tech Support — <name>" rather than
+                        just the bare name, so it still reads as an
+                        official support reply. A client's own org-mates'
+                        names aren't exposed this way (that policy only
+                        covers admin/super_admin rows); staff viewing a
+                        client's messages always see the plain real name,
+                        since is_internal_staff() already covers that. */}
+                    {isStaff
+                      ? (m.profiles?.full_name ?? "Client")
+                      : `Tech Support — ${m.profiles?.full_name ?? "Support"}`}
                   </p>
                 )}
                 {m.attachment_path && (

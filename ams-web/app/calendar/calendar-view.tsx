@@ -2,6 +2,8 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { markEventCompleted } from "./actions";
+import { assetLabel } from "@/lib/format";
+import { CalendarEventModal } from "./calendar-event-modal";
 
 export type CalendarEventRow = {
   id: string;
@@ -10,8 +12,17 @@ export type CalendarEventRow = {
   event_date: string; // ISO yyyy-mm-dd
   status: string;
   notes: string | null;
-  asset_tag: string | null;
+  asset_id: string | null;
+  site_address: string | null;
+  serial_number: string | null;
   organization_name: string | null;
+  work_order: {
+    status: string;
+    task_title: string;
+    description: string | null;
+    lead_technician: string | null;
+    priority: string;
+  } | null;
 };
 
 const MONTHS = [
@@ -27,7 +38,7 @@ function toISO(d: Date): string {
 // "overdue" is computed for display rather than trusted from the stored
 // status — a scheduled event just needs its date to pass, no separate job
 // needs to flip a column for that to be true.
-function effectiveStatus(ev: CalendarEventRow): "scheduled" | "completed" | "overdue" {
+export function effectiveStatus(ev: CalendarEventRow): "scheduled" | "completed" | "overdue" {
   if (ev.status === "completed") return "completed";
   return ev.event_date < toISO(new Date()) ? "overdue" : "scheduled";
 }
@@ -64,6 +75,7 @@ export function CalendarView({
   });
   const [isPending, startTransition] = useTransition();
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<CalendarEventRow | null>(null);
 
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
@@ -190,18 +202,21 @@ export function CalendarView({
                 <div className="space-y-1">
                   {dayEvents.map((ev) => {
                     const t = toneFor(ev);
+                    const label = assetLabel({ serial_number: ev.serial_number, sites: { address: ev.site_address } });
                     return (
-                      <div
+                      <button
                         key={ev.id}
-                        title={`${ev.title}${ev.asset_tag ? ` · ${ev.asset_tag}` : ""}`}
-                        className={`flex items-center gap-1 truncate rounded px-1.5 py-1 text-[10px] ${t.ring}`}
+                        type="button"
+                        onClick={() => setSelected(ev)}
+                        title={`${ev.title}${ev.site_address ? ` · ${label}` : ""}`}
+                        className={`flex w-full items-center gap-1 truncate rounded px-1.5 py-1 text-left text-[10px] ${t.ring} hover:opacity-80`}
                       >
                         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${t.dot}`} />
                         <span className="truncate">
                           {ev.title}
-                          {ev.asset_tag ? ` · ${ev.asset_tag}` : ""}
+                          {ev.site_address ? ` · ${label}` : ""}
                         </span>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -225,8 +240,14 @@ export function CalendarView({
             const t = toneFor(ev);
             const busy = isPending && pendingId === ev.id;
             const parts = fmtShort(ev.event_date).split(" ");
+            const label = assetLabel({ serial_number: ev.serial_number, sites: { address: ev.site_address } });
             return (
-              <div key={ev.id} className="flex gap-3 px-6 py-4">
+              <button
+                key={ev.id}
+                type="button"
+                onClick={() => setSelected(ev)}
+                className="flex w-full gap-3 px-6 py-4 text-left hover:bg-surface-2"
+              >
                 <div className="w-12 shrink-0">
                   <div className="text-[10px] font-semibold tracking-widest text-slate-500">
                     {parts[0]?.toUpperCase()}
@@ -244,26 +265,32 @@ export function CalendarView({
                     </div>
                   </div>
                   <div className="mt-0.5 truncate text-xs text-slate-500">
-                    {ev.asset_tag}
-                    {ev.asset_tag && ev.organization_name ? " · " : ""}
-                    {ev.organization_name}
+                    {ev.site_address ? label : "—"}
+                    {ev.organization_name ? ` · ${ev.organization_name}` : ""}
                   </div>
                   {isStaff && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => handleComplete(ev.id)}
-                      className="mt-1 text-xs text-blue-400 hover:underline disabled:opacity-50"
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!busy) handleComplete(ev.id);
+                      }}
+                      className="mt-1 inline-block text-xs text-blue-400 hover:underline"
                     >
-                      Mark Completed
-                    </button>
+                      {busy ? "Marking…" : "Mark Completed"}
+                    </span>
                   )}
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
       </div>
+
+      {selected && (
+        <CalendarEventModal event={selected} onClose={() => setSelected(null)} />
+      )}
     </div>
   );
 }

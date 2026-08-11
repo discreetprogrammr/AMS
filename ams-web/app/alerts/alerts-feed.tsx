@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { markAlertRead, resolveAlert } from "./actions";
+import { assetLabel } from "@/lib/format";
 
 export type AlertRow = {
   id: string;
@@ -11,7 +12,8 @@ export type AlertRow = {
   is_read: boolean;
   resolved_at: string | null;
   created_at: string;
-  asset_tag: string | null;
+  site_address: string | null;
+  serial_number: string | null;
   organization_name: string | null;
 };
 
@@ -193,10 +195,10 @@ export function AlertsFeed({ alerts }: { alerts: AlertRow[] }) {
                       {a.description}
                     </p>
                   )}
-                  {(a.asset_tag || a.organization_name) && (
+                  {(a.site_address || a.organization_name) && (
                     <p className="mt-1 text-xs text-slate-500">
-                      {a.asset_tag}
-                      {a.asset_tag && a.organization_name ? " · " : ""}
+                      {a.site_address ? assetLabel({ serial_number: a.serial_number, sites: { address: a.site_address } }) : ""}
+                      {a.site_address && a.organization_name ? " · " : ""}
                       {a.organization_name}
                     </p>
                   )}

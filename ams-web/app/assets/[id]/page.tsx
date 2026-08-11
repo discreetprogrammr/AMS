@@ -3,7 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { changedFields } from "@/lib/audit";
-import { woRef } from "@/lib/format";
+import { woRef, dateTimeLabel } from "@/lib/format";
 import { AppShell } from "@/components/app-shell";
 import { StatusBadge } from "@/components/status-badge";
 import { AssetForm } from "../asset-form";
@@ -53,7 +53,7 @@ export default async function EditAssetPage({
     supabase.from("organizations").select("id, name").order("name"),
     supabase
       .from("service_tickets")
-      .select("id, description, status, priority, created_at, work_order_id")
+      .select("id, description, status, priority, created_at, resolved_at, work_order_id")
       .eq("asset_id", params.id)
       .order("created_at", { ascending: false }),
     supabase
@@ -161,10 +161,15 @@ export default async function EditAssetPage({
                       <StatusBadge status={t.priority} />
                     </span>
                     <span className="text-xs text-slate-500">
-                      {new Date(t.created_at).toLocaleDateString()}
+                      Raised {dateTimeLabel(t.created_at)}
                     </span>
                   </div>
                   <p className="mt-1 text-ink-soft">{t.description}</p>
+                  {t.resolved_at && (
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Resolved {dateTimeLabel(t.resolved_at)}
+                    </p>
+                  )}
                   <div className="mt-1">
                     <Link
                       href={`/messages/${t.id}`}

@@ -2,22 +2,13 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
-import { StatusBadge } from "@/components/status-badge";
 import { SearchBar } from "@/components/search-bar";
-import { AssetRowActions } from "./asset-row-actions";
-
-const EQUIPMENT_LABEL: Record<string, string> = {
-  xray_screening: "X-ray Screening",
-  people_threat_screening: "People/Threat Screening",
-  water_generation: "Water Generation",
-  pump: "Pump",
-  other: "Other",
-};
+import { AssetsTable, type AssetRow } from "./assets-table";
 
 export default async function AssetsPage({
   searchParams,
 }: {
-  searchParams: { q?: string; deleted?: string };
+  searchParams: { q?: string; deleted?: string; asset?: string };
 }) {
   const supabase = await createClient();
   const profile = await getProfile();
@@ -32,7 +23,7 @@ export default async function AssetsPage({
   let query = supabase
     .from("assets")
     .select(
-      "id, asset_tag, equipment_type, brand, model, status, sites(address), organizations(name)",
+      "id, asset_tag, serial_number, equipment_type, brand, model, status, sites(address), organizations(name)",
     )
     .order("created_at", { ascending: false });
 
@@ -43,6 +34,19 @@ export default async function AssetsPage({
   }
 
   const { data: assets, error } = await query;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows: AssetRow[] = (assets ?? []).map((a: any) => ({
+    id: a.id,
+    asset_tag: a.asset_tag,
+    serial_number: a.serial_number,
+    equipment_type: a.equipment_type,
+    brand: a.brand,
+    model: a.model,
+    status: a.status,
+    site_address: a.sites?.address ?? null,
+    organization_name: a.organizations?.name ?? null,
+  }));
 
   return (
     <AppShell
@@ -92,78 +96,18 @@ export default async function AssetsPage({
         </p>
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-hairline bg-surface">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-surface-2 text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-4 py-3">Asset ID</th>
-              <th className="px-4 py-3">Organization</th>
-              <th className="px-4 py-3">Equipment Type</th>
-              <th className="px-4 py-3">Brand / Model</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Site</th>
-              {isStaff && <th className="px-4 py-3 text-right">Actions</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-            {assets?.map((asset: any) => (
-              <tr
-                key={asset.id}
-                className="border-t border-hairline hover:bg-surface-2"
-              >
-                <td className="px-4 py-3">
-                  <Link
-                    href={`/assets/${asset.id}`}
-                    className="font-medium text-ink hover:underline"
-                  >
-                    {asset.asset_tag}
-                  </Link>
-                </td>
-                <td className="px-4 py-3 text-ink-soft">
-                  {asset.organizations?.name ?? "—"}
-                </td>
-                <td className="px-4 py-3 text-ink-soft">
-                  {EQUIPMENT_LABEL[asset.equipment_type] ??
-                    asset.equipment_type}
-                </td>
-                <td className="px-4 py-3 text-ink-soft">
-                  {[asset.brand, asset.model].filter(Boolean).join(" / ") ||
-                    "—"}
-                </td>
-                <td className="px-4 py-3">
-                  <StatusBadge status={asset.status} />
-                </td>
-                <td className="px-4 py-3 text-ink-soft">
-                  {asset.sites?.address ?? "—"}
-                </td>
-                {isStaff && (
-                  <td className="px-4 py-3 text-right">
-                    <AssetRowActions
-                      assetId={asset.id}
-                      assetTag={asset.asset_tag}
-                    />
-                  </td>
-                )}
-              </tr>
-            ))}
-            {assets?.length === 0 && (
-              <tr>
-                <td
-                  colSpan={isStaff ? 7 : 6}
-                  className="px-4 py-8 text-center text-slate-500"
-                >
-                  {q
-                    ? `No assets match "${q}".`
-                    : isStaff
-                      ? 'No assets yet. Click "Add Asset" to create the first one.'
-                      : "No assets on file yet."}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <AssetsTable
+        assets={rows}
+        isStaff={isStaff}
+        selectedAssetId={searchParams?.asset ?? null}
+        emptyMessage={
+          q
+            ? `No assets match "${q}".`
+            : isStaff
+              ? 'No assets yet. Click "Add Asset" to create the first one.'
+              : "No assets on file yet."
+        }
+      />
     </AppShell>
   );
 }

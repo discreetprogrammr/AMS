@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/status-badge";
-import { ticketRef, woRef } from "@/lib/format";
+import { ticketRef, woRef, dateTimeLabel } from "@/lib/format";
+import { TicketDetailModal } from "./ticket-detail-modal";
 
 export type TicketRow = {
   id: string;
@@ -11,8 +13,10 @@ export type TicketRow = {
   status: string;
   priority: string;
   created_at: string;
+  resolved_at: string | null;
   work_order_id: string | null;
   asset_id: string | null;
+  serial_number: string | null;
   site_address: string | null;
   organization_name: string | null;
 };
@@ -47,9 +51,48 @@ export function TicketsTable({
   isStaff: boolean;
 }) {
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [allTickets, setAllTickets] = useState<TicketRow[]>(tickets);
+  const [selected, setSelected] = useState<TicketRow | null>(null);
+  const supabase = useRef(createClient()).current;
+
+  useEffect(() => {
+    setAllTickets(tickets);
+  }, [tickets]);
+
+  // Live status updates (schema_step28.sql adds service_tickets to the
+  // realtime publication) — same component renders both the staff and
+  // client Tickets view, so a status change made here (or via the linked
+  // work order) shows up for a client without them needing to reload.
+  useEffect(() => {
+    const channel = supabase
+      .channel("tickets-status-watch")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "service_tickets" },
+        (payload) => {
+          const id = payload.new.id as string;
+          const status = payload.new.status as string;
+          const resolvedAt = payload.new.resolved_at as string | null;
+          const workOrderId = payload.new.work_order_id as string | null;
+          setAllTickets((prev) =>
+            prev.map((t) =>
+              t.id === id ? { ...t, status, resolved_at: resolvedAt, work_order_id: workOrderId } : t,
+            ),
+          );
+          setSelected((prev) =>
+            prev && prev.id === id ? { ...prev, status, resolved_at: resolvedAt, work_order_id: workOrderId } : prev,
+          );
+        },
+      )
+      .subscribe();
+    return () => {
+      channel.unsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const rows = useMemo(() => {
-    return tickets.filter((t) => {
+    return allTickets.filter((t) => {
       switch (filter) {
         case "high":
           return t.priority === "high";
@@ -66,7 +109,11 @@ export function TicketsTable({
           return true;
       }
     });
-  }, [tickets, filter]);
+  }, [allTickets, filter]);
+
+  function handleStatusChange(ticketId: string, status: string, resolvedAt: string | null) {
+    setAllTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, status, resolved_at: resolvedAt } : t)));
+  }
 
   return (
     <div>
@@ -107,15 +154,21 @@ export function TicketsTable({
             {rows.map((t) => (
               <tr
                 key={t.id}
-                className="border-t border-hairline hover:bg-surface-2"
+                onClick={isStaff ? () => setSelected(t) : undefined}
+                className={`border-t border-hairline hover:bg-surface-2 ${isStaff ? "cursor-pointer" : ""}`}
               >
                 <td className="px-4 py-3">
-                  <Link
-                    href={`/assets/${t.asset_id}`}
-                    className="font-medium text-ink hover:underline"
-                  >
-                    {ticketRef(t.id)}
-                  </Link>
+                  {isStaff ? (
+                    <span className="font-medium text-ink">{ticketRef(t.id)}</span>
+                  ) : (
+                    <Link
+                      href={`/assets/${t.asset_id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="font-medium text-ink hover:underline"
+                    >
+                      {ticketRef(t.id)}
+                    </Link>
+                  )}
                   <div className="mt-0.5 max-w-xs truncate text-xs text-slate-500">
                     {t.description}
                   </div>
@@ -139,6 +192,7 @@ export function TicketsTable({
                     isStaff ? (
                       <Link
                         href="/work-orders"
+                        onClick={(e) => e.stopPropagation()}
                         className="text-blue-400 hover:underline"
                       >
                         {woRef(t.work_order_id)} →
@@ -151,6 +205,7 @@ export function TicketsTable({
                   ) : isStaff && t.status !== "closed" ? (
                     <Link
                       href={`/work-orders/new?ticket_id=${t.id}`}
+                      onClick={(e) => e.stopPropagation()}
                       className="text-ink-soft hover:text-ink hover:underline"
                     >
                       + Create
@@ -160,11 +215,12 @@ export function TicketsTable({
                   )}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-ink-soft">
-                  {new Date(t.created_at).toLocaleDateString()}
+                  {dateTimeLabel(t.created_at)}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-right">
                   <Link
                     href={`/messages/${t.id}`}
+                    onClick={(e) => e.stopPropagation()}
                     className="text-xs text-blue-400 hover:underline"
                   >
                     Message
@@ -185,6 +241,14 @@ export function TicketsTable({
           </tbody>
         </table>
       </div>
+
+      {isStaff && selected && (
+        <TicketDetailModal
+          ticket={selected}
+          onClose={() => setSelected(null)}
+          onStatusChange={handleStatusChange}
+        />
+      )}
     </div>
   );
 }

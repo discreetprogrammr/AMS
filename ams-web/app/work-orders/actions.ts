@@ -150,9 +150,23 @@ export async function updateWorkOrderStatus(id: string, status: string) {
   await requireStaff("/work-orders");
 
   const supabase = await createClient();
+
+  const { data: current } = await supabase
+    .from("work_orders")
+    .select("closed_at")
+    .eq("id", id)
+    .single();
+
   const { error } = await supabase
     .from("work_orders")
-    .update({ status, updated_at: new Date().toISOString() })
+    .update({
+      status,
+      updated_at: new Date().toISOString(),
+      // Stamped once, the first time this reaches "closed" — same pattern
+      // as service_tickets.resolved_at. Never cleared if later reopened,
+      // so the record of when it was first closed stays intact.
+      closed_at: status === "closed" ? (current?.closed_at ?? new Date().toISOString()) : current?.closed_at,
+    })
     .eq("id", id);
 
   if (error) {

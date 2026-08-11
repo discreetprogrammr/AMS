@@ -17,7 +17,7 @@ export default async function AlertsPage({
   const { data: alerts, error } = await supabase
     .from("alerts")
     .select(
-      "id, title, description, severity, is_read, resolved_at, created_at, assets(asset_tag, organizations(name))",
+      "id, title, description, severity, is_read, resolved_at, created_at, assets(serial_number, sites(address), organizations(name))",
     )
     .order("created_at", { ascending: false });
 
@@ -30,7 +30,8 @@ export default async function AlertsPage({
     is_read: a.is_read,
     resolved_at: a.resolved_at,
     created_at: a.created_at,
-    asset_tag: a.assets?.asset_tag ?? null,
+    site_address: a.assets?.sites?.address ?? null,
+    serial_number: a.assets?.serial_number ?? null,
     organization_name: a.assets?.organizations?.name ?? null,
   }));
 

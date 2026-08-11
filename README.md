@@ -1163,3 +1163,29 @@ Any participant on a ticket's thread — super admin, admin, or client — can n
 - Received-message tone and the unread dot/badge both already keyed off "any inbound text-type message" (previous follow-up), so attachment messages trigger them automatically — no extra wiring needed there.
 
 Verified with a full `npx tsc --noEmit` (clean). **`schema_step27.sql` needs to be run in Supabase before attachments will work** (same as `schema_step26.sql`, if that hasn't been run yet either).
+
+## Follow-up — 10-item usability pass (asset popup, timestamps, ticket detail view, and more)
+
+`schema_step28.sql` — **run this in Supabase before any of the below.** Adds: `work_orders.closed_at`; `service_records.ticket_id` (lets a PM/CM report be tied to the ticket that prompted it); adds `service_tickets` to the realtime publication (live status sync); and a `profiles` policy letting any signed-in user read a STAFF profile's name specifically (needed for the chat sender-name change below — doesn't expose client profiles to each other).
+
+1. **Asset detail popup.** Clicking a row on the Assets tab now opens a summary modal (site/location, install date, next PM date, warranty end, status, latest ticket) instead of navigating away — X closes it back to the list. Built as `?asset=<id>` on the Assets URL rather than local-only state, specifically so it's linkable.
+
+2. **Fleet Map → Assets popup.** The map's site popup button (previously "View client", going to the staff-only client page) now opens that exact same asset popup via the `?asset=` link — works for clients too, who couldn't reach the old destination anyway.
+
+3. **Ticket raised/resolved timestamps.** Tickets now show date *and* time (not just date) everywhere they appear — the Tickets table, the ticket detail modal (below), and the asset page's ticket list, which also now shows a Resolved timestamp once one exists.
+
+4. **Work order created/closed timestamps.** Same idea — Work Orders table gained Created and Closed columns. Closed didn't exist as a concept before; `closed_at` is stamped the first time a work order reaches "closed" and never overwritten after (so reopening/reclosing doesn't lose the original close time).
+
+5. **Site + serial instead of the internal asset code.** Replaced the asset_tag ("AST-0004"-style internal code) with "Site — SN Serial" wherever an asset is the primary thing being identified in a list: the Dashboard's three asset widgets, Calendar, Alerts, and the Clients detail page's asset list. The Assets table itself now leads with Serial Number (Site already has its own column there, so repeating it would be redundant).
+
+6. **Filters on the Assets tab.** Same pill-filter pattern as Tickets/Work Orders, now on Assets too (All / Operational / Attention / Down / Unserviceable) — for both staff and clients.
+
+7. **HorizonCare360 Assist inbox timestamps.** Each conversation row now shows both when it started (the ticket's created_at) and when it was last updated (the latest message), not just a single date.
+
+8. **Chat header + real staff names for clients.** The toolbar label ("Conversation") is now the ticket ID, site, and serial number. And — this needed the new profiles RLS policy above — a client now sees "Tech Support — Jane Dela Cruz" instead of a generic "Support" for staff replies, while staff still see a client's real name as before.
+
+9. **Calendar entry summary popup.** Clicking any entry (month grid or the Upcoming list) opens a small summary — status (using the real Open/In Progress/Parts Pending/Closed vocabulary when the entry is tied to an actual work order, falling back to the calendar's own scheduled/completed/overdue otherwise), type, date, site/equipment, lead technician, and notes.
+
+10. **Ticket detail view for staff, with status changes and a linked PM/CM report.** Clicking a ticket row (Super Admin/Admin only — clients keep the old asset-page link) opens a detail modal: full description, a status dropdown that calls a new `updateTicketStatus` action, raised/resolved timestamps, and a "PM / CM Report" section that shows the report if one's been logged for this ticket, or links to log one if not. Per your note during scoping, rather than a raw file-upload button in the modal, the PM/CM report forms themselves (`/reports/preventive-checklist`, `/reports/corrective-checklist`) gained a "Related Service Ticket" selector (or an auto-filled banner when arriving via a link from the ticket modal) — so the report generation flow is the one place a report ever gets tied to a ticket, same as it's already the one place a report gets tied to an asset. Status changes go out over Realtime, so **a client sitting on their own Tickets page sees the status update live**, without refreshing — same mechanism chat messages already use.
+
+Verified with a full `npx tsc --noEmit` (clean) across every file touched. Not visually tested in this sandbox (same standing limitation as everything else chat/realtime-related) — please run `schema_step28.sql` first, then push and try each of the 10 through their real flows.

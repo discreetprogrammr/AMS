@@ -5,7 +5,7 @@ import { AppShell } from "@/components/app-shell";
 import { StatusBadge } from "@/components/status-badge";
 import { NotificationBell } from "@/components/notification-bell";
 import { SearchBar } from "@/components/search-bar";
-import { ticketRef } from "@/lib/format";
+import { ticketRef, assetLabel } from "@/lib/format";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -75,14 +75,14 @@ export default async function DashboardPage() {
       .eq("status", "unserviceable"),
     supabase
       .from("compliance_certificates")
-      .select("id, certificate_type, expiry_date, assets(asset_tag)", {
+      .select("id, certificate_type, expiry_date, assets(asset_tag, serial_number, sites(address))", {
         count: "exact",
       })
       .lte("expiry_date", daysFromNow(30))
       .order("expiry_date", { ascending: true }),
     supabase
       .from("assets")
-      .select("id, asset_tag, next_service_due")
+      .select("id, asset_tag, serial_number, next_service_due, sites(address)")
       .not("next_service_due", "is", null)
       .lte("next_service_due", daysFromNow(30))
       .order("next_service_due", { ascending: true }),
@@ -144,7 +144,7 @@ export default async function DashboardPage() {
     // below, so the fleet-wide result for staff is simply unused.
     supabase
       .from("assets")
-      .select("id, asset_tag, status, sites(address)")
+      .select("id, asset_tag, serial_number, status, sites(address)")
       .in("status", ["down", "attention"])
       .order("status"),
   ]);
@@ -422,7 +422,7 @@ export default async function DashboardPage() {
                     href={`/assets/${a.id}`}
                     className="font-medium text-ink hover:underline"
                   >
-                    {a.asset_tag}
+                    {assetLabel(a)}
                   </Link>
                   <span
                     className={
@@ -456,7 +456,7 @@ export default async function DashboardPage() {
                   className="flex items-center justify-between py-2"
                 >
                   <span className="text-ink-soft">
-                    {c.assets?.asset_tag ?? "—"} — {c.certificate_type}
+                    {assetLabel(c.assets)} — {c.certificate_type}
                   </span>
                   <span
                     className={
@@ -528,12 +528,9 @@ function EquipmentAlertsCard({
           {assets.map((a) => (
             <li key={a.id} className="flex items-center justify-between gap-3 py-2">
               <div className="min-w-0">
-                <Link href={`/assets/${a.id}`} className="font-medium text-ink hover:underline">
-                  {a.asset_tag}
+                <Link href={`/assets/${a.id}`} className="truncate font-medium text-ink hover:underline">
+                  {assetLabel(a)}
                 </Link>
-                <p className="truncate text-xs text-slate-500">
-                  {a.sites?.address ?? "—"}
-                </p>
               </div>
               <StatusBadge status={a.status} />
             </li>

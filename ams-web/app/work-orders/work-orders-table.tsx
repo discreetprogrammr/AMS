@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { StatusBadge } from "@/components/status-badge";
-import { ticketRef, woRef } from "@/lib/format";
+import { ticketRef, woRef, dateTimeLabel } from "@/lib/format";
 import { updateWorkOrderStatus } from "./actions";
 
 export type WorkOrderRow = {
@@ -16,6 +16,7 @@ export type WorkOrderRow = {
   lead_technician: string | null;
   due_date: string | null;
   created_at: string;
+  closed_at: string | null;
   site_name: string | null;
   organization_name: string | null;
   from_ticket_id: string | null;
@@ -114,6 +115,8 @@ export function WorkOrdersTable({
               <th className="px-4 py-3">Priority</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Due</th>
+              <th className="px-4 py-3">Created</th>
+              <th className="px-4 py-3">Closed</th>
             </tr>
           </thead>
           <tbody>
@@ -171,12 +174,18 @@ export function WorkOrdersTable({
                     ? new Date(w.due_date).toLocaleDateString()
                     : "—"}
                 </td>
+                <td className="px-4 py-3 whitespace-nowrap text-ink-soft">
+                  {dateTimeLabel(w.created_at)}
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap text-ink-soft">
+                  {dateTimeLabel(w.closed_at)}
+                </td>
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={8}
                   className="px-4 py-8 text-center text-slate-500"
                 >
                   No work orders match this filter.

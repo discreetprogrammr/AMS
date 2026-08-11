@@ -25,6 +25,7 @@ export async function createPreventiveReport(formData: FormData) {
   } = await supabase.auth.getUser();
 
   const assetId = String(formData.get("asset_id") ?? "");
+  const ticketId = String(formData.get("ticket_id") ?? "").trim() || null;
   const datePerformed = String(formData.get("date_performed") ?? "");
   const performedBy = String(formData.get("performed_by") ?? "").trim();
   const nextDueDate = String(formData.get("next_due_date") ?? "");
@@ -66,6 +67,7 @@ export async function createPreventiveReport(formData: FormData) {
     .from("service_records")
     .insert({
       asset_id: assetId,
+      ticket_id: ticketId,
       service_type: "preventive_maintenance",
       date_performed: datePerformed,
       performed_by: performedBy || null,
@@ -133,6 +135,7 @@ export async function createPreventiveReport(formData: FormData) {
 
   revalidatePath("/reports");
   revalidatePath(`/assets/${assetId}`);
+  if (ticketId) revalidatePath("/tickets");
 
   if (!pdfResult.ok) {
     redirect(
@@ -156,6 +159,7 @@ export async function createCorrectiveReport(formData: FormData) {
   } = await supabase.auth.getUser();
 
   const assetId = String(formData.get("asset_id") ?? "");
+  const ticketId = String(formData.get("ticket_id") ?? "").trim() || null;
   const datePerformed = String(formData.get("date_performed") ?? "");
   const performedBy = String(formData.get("performed_by") ?? "").trim();
   const faultDescription = String(formData.get("fault_description") ?? "").trim();
@@ -197,6 +201,7 @@ export async function createCorrectiveReport(formData: FormData) {
     .from("service_records")
     .insert({
       asset_id: assetId,
+      ticket_id: ticketId,
       service_type: "repair",
       date_performed: datePerformed,
       performed_by: performedBy || null,
@@ -265,6 +270,7 @@ export async function createCorrectiveReport(formData: FormData) {
 
   revalidatePath("/reports");
   revalidatePath(`/assets/${assetId}`);
+  if (ticketId) revalidatePath("/tickets");
 
   if (!pdfResult.ok) {
     redirect(

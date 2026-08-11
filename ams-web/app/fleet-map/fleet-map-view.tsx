@@ -29,6 +29,7 @@ export type FleetSite = {
   attention: number;
   down: number;
   unserviceable: number;
+  primaryAssetId: string | null;
 };
 
 const STATUS_STYLE: Record<
@@ -337,12 +338,12 @@ export function FleetMapView({ sites }: { sites: FleetSite[] }) {
                     </div>
                   </div>
                 </div>
-                {shown.organizationId && (
+                {shown.primaryAssetId && (
                   <Link
-                    href={`/clients/${shown.organizationId}`}
+                    href={`/assets?asset=${shown.primaryAssetId}`}
                     className="mt-3 flex h-8 items-center justify-center gap-1.5 rounded-lg bg-blue-500/15 text-xs font-medium text-blue-300 ring-1 ring-inset ring-blue-500/25 hover:bg-blue-500/25"
                   >
-                    View client →
+                    View Asset →
                   </Link>
                 )}
               </div>

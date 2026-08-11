@@ -24,7 +24,7 @@ export default async function TicketsPage({
   const { data: tickets, error } = await supabase
     .from("service_tickets")
     .select(
-      "id, description, status, priority, created_at, work_order_id, assets(id, sites(address), organizations(name))",
+      "id, description, status, priority, created_at, resolved_at, work_order_id, assets(id, serial_number, sites(address), organizations(name))",
     )
     .order("created_at", { ascending: false });
 
@@ -35,8 +35,10 @@ export default async function TicketsPage({
     status: t.status,
     priority: t.priority,
     created_at: t.created_at,
+    resolved_at: t.resolved_at,
     work_order_id: t.work_order_id,
     asset_id: t.assets?.id ?? null,
+    serial_number: t.assets?.serial_number ?? null,
     site_address: t.assets?.sites?.address ?? null,
     organization_name: t.assets?.organizations?.name ?? null,
   }));

@@ -75,6 +75,11 @@ export default async function FleetMapPage() {
       attention,
       down,
       unserviceable,
+      // Used by "View Client" (fleet-map-view.tsx) to jump straight into
+      // that asset's detail popup on the Assets page instead of the org
+      // page — just the first asset at the site when there's more than
+      // one; there's no single "primary" one to prefer.
+      primaryAssetId: mine[0]?.id ?? null,
     };
   });
 

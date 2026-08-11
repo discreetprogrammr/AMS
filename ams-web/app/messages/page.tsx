@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { StatusBadge } from "@/components/status-badge";
-import { ticketRef } from "@/lib/format";
+import { ticketRef, dateTimeLabel } from "@/lib/format";
 import { computeUnreadTicketIds } from "@/lib/messages/unread";
 
 // Client-visible, same as Tickets/Reports/Dashboard — RLS on both
@@ -107,11 +107,14 @@ export default async function MessagesPage() {
               <p className={`mt-1 truncate text-sm ${t.unread ? "font-semibold text-ink" : "text-slate-500"}`}>
                 {previewText(t.latest)}
               </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Started {dateTimeLabel(t.created_at)}
+              </p>
             </div>
             <div className="flex shrink-0 flex-col items-end gap-1.5">
               {t.unread && <span className="h-2.5 w-2.5 rounded-full bg-red-500" aria-label="Unread" />}
               <span className="whitespace-nowrap text-xs text-slate-500">
-                {new Date(t.latest?.created_at ?? t.created_at).toLocaleDateString()}
+                Updated {dateTimeLabel(t.latest?.created_at ?? t.created_at)}
               </span>
             </div>
           </Link>

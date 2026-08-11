@@ -22,7 +22,7 @@ export default async function WorkOrdersPage({
   const { data: workOrders, error: fetchError } = await supabase
     .from("work_orders")
     .select(
-      "id, task_title, description, work_type, priority, status, lead_technician, due_date, created_at, assets(asset_tag, sites(address), organizations(name)), service_tickets(id)",
+      "id, task_title, description, work_type, priority, status, lead_technician, due_date, created_at, closed_at, assets(asset_tag, sites(address), organizations(name)), service_tickets(id)",
     )
     .order("created_at", { ascending: false });
 
@@ -37,6 +37,7 @@ export default async function WorkOrdersPage({
     lead_technician: w.lead_technician,
     due_date: w.due_date,
     created_at: w.created_at,
+    closed_at: w.closed_at,
     site_name: w.assets?.sites?.address ?? null,
     organization_name: w.assets?.organizations?.name ?? null,
     from_ticket_id: w.service_tickets?.[0]?.id ?? null,

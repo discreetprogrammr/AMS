@@ -6,6 +6,7 @@ import { createPreventiveReport } from "../actions";
 import { CustomerSurvey } from "@/components/customer-survey";
 import { SignaturePad } from "@/components/signature-pad";
 import { SiteVisitVerification } from "@/components/site-visit-verification";
+import { ticketRef } from "@/lib/format";
 
 type Status = "ok" | "attention" | "fail";
 type Item = { section: string; item_label: string; status: Status; remarks: string };
@@ -46,9 +47,16 @@ const labelClass = "block text-sm font-medium text-ink-soft";
 
 export function PreventiveChecklistForm({
   assets,
+  prefilledAssetId,
+  prefilledTicketId,
+  linkableTickets,
 }: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   assets: any[];
+  prefilledAssetId?: string | null;
+  prefilledTicketId?: string | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  linkableTickets?: any[];
 }) {
   const [items, setItems] = useState<Item[]>(initialItems);
 
@@ -71,10 +79,41 @@ export function PreventiveChecklistForm({
           FormData, same as any other field on submit. */}
       <input type="hidden" name="items" value={JSON.stringify(items)} />
 
+      {prefilledTicketId ? (
+        <input type="hidden" name="ticket_id" value={prefilledTicketId} />
+      ) : (
+        linkableTickets &&
+        linkableTickets.length > 0 && (
+          <div className="rounded-xl border border-hairline bg-surface p-6">
+            <label className={labelClass}>Related Service Ticket (optional)</label>
+            <select name="ticket_id" defaultValue="" className={inputClass}>
+              <option value="">— None —</option>
+              {linkableTickets.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {[ticketRef(t.id), t.assets?.sites?.address]
+                    .filter(Boolean)
+                    .join(" — ")}
+                  {t.assets?.serial_number ? ` · SN ${t.assets.serial_number}` : ""}{" "}
+                  — {(t.description ?? "").slice(0, 60)}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-slate-500">
+              Ties this report to that ticket so it shows up in the ticket's detail view once generated.
+            </p>
+          </div>
+        )
+      )}
+
       <div className="grid grid-cols-1 gap-4 rounded-xl border border-hairline bg-surface p-6 sm:grid-cols-3">
         <div>
           <label className={labelClass}>Asset</label>
-          <select name="asset_id" required className={inputClass}>
+          <select
+            name="asset_id"
+            required
+            defaultValue={prefilledAssetId ?? ""}
+            className={inputClass}
+          >
             <option value="" disabled>
               Select asset…
             </option>

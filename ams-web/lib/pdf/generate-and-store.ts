@@ -6,15 +6,25 @@
 // block the user from seeing their submission succeed. The caller decides
 // how to surface a failure (both actions here append a soft warning to
 // their success redirect rather than erroring outright).
-import { readFileSync } from "fs";
-import path from "path";
 import { buildServiceReportPdf, type ServiceReportInput } from "./service-report";
 import { reportRef } from "@/lib/format";
+import { LOGO_BASE64 } from "./logo-base64";
 
+// Embedded as base64 (logo-base64.ts) rather than read from
+// public/pacific-horizon-tek-logo.png via fs.readFileSync at runtime —
+// that worked in local dev but threw `ENOENT: no such file or directory,
+// open '/var/task/ams-web/public/pacific-horizon-tek-logo.png'` on Vercel.
+// Vercel's serverless functions don't include /public in the function's
+// own filesystem bundle (Next.js serves /public straight from its CDN
+// instead), so any code path that tries to fs.readFileSync a /public
+// asset at request time — as opposed to importing it as a normal
+// module/asset — breaks in production even though it works perfectly
+// during `next dev`. Decoding a bundled base64 string sidesteps the
+// filesystem entirely, so it works the same everywhere.
 let cachedLogo: Buffer | null = null;
 function loadLogo(): Buffer {
   if (!cachedLogo) {
-    cachedLogo = readFileSync(path.join(process.cwd(), "public", "pacific-horizon-tek-logo.png"));
+    cachedLogo = Buffer.from(LOGO_BASE64, "base64");
   }
   return cachedLogo;
 }

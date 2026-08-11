@@ -105,6 +105,15 @@ export function useCall({
   // different networks. Surfaced in the timeout error message below so
   // it's visible right on the call screen, no devtools needed.
   const iceModeRef = useRef<string>("unknown");
+  // Counts by RTCIceCandidate.type ("host" = direct LAN address, "srflx" =
+  // STUN-discovered public address, "relay" = actually routed through
+  // TURN). Having TURN *credentials* (iceModeRef === "turn") doesn't
+  // guarantee a relay candidate was successfully negotiated — the TURN
+  // server itself can still be unreachable (blocked port/protocol on one
+  // side's network). Zero relay candidates despite iceMode "turn" is the
+  // smoking gun for that. Surfaced in error messages so it's visible
+  // without needing devtools, which matters since this is tested on phones.
+  const candidateStatsRef = useRef({ host: 0, srflx: 0, relay: 0, prflx: 0, other: 0 });
 
   useEffect(() => {
     statusRef.current = status;
@@ -256,12 +265,30 @@ export function useCall({
     }
   }
 
+  // Renders the gathered-candidate counts as a short diagnostic suffix,
+  // e.g. "(local candidates: 2 host, 1 srflx, 0 relay)". Zero relay
+  // candidates is the tell for "TURN credentials were fetched fine, but
+  // the TURN server itself was never actually reachable" (blocked port,
+  // wrong protocol for this network, etc.) — distinct from "TURN was never
+  // configured" (that's the iceMode check instead).
+  function formatCandidateStats(): string {
+    const s = candidateStatsRef.current;
+    return `(local candidates: ${s.host} host, ${s.srflx} srflx, ${s.relay} relay)`;
+  }
+
   const createPeerConnection = useCallback(async () => {
     const iceServers = await getIceServers();
     const pc = new RTCPeerConnection({ iceServers });
+    candidateStatsRef.current = { host: 0, srflx: 0, relay: 0, prflx: 0, other: 0 };
 
     pc.onicecandidate = (e) => {
       if (e.candidate && callIdRef.current) {
+        const t = e.candidate.type;
+        if (t === "host" || t === "srflx" || t === "relay" || t === "prflx") {
+          candidateStatsRef.current[t]++;
+        } else {
+          candidateStatsRef.current.other++;
+        }
         send({
           type: "ice-candidate",
           callId: callIdRef.current,
@@ -299,7 +326,7 @@ export function useCall({
             : " No TURN relay was active for this call (ICE mode: " +
               iceModeRef.current +
               "), which is required whenever both people aren't on the same network.";
-        setError(`The call connection failed.${relayNote}`);
+        setError(`The call connection failed. ${formatCandidateStats()}${relayNote}`);
         if (cid) send({ type: "hangup", callId: cid, fromId: userId });
         cleanupCall();
         setStatus("idle");
@@ -333,7 +360,7 @@ export function useCall({
             : " No TURN relay was active for this call (ICE mode: " +
               iceModeRef.current +
               "), which is required whenever both people aren't on the same network — this is the most likely cause.";
-        setError(`Couldn't connect the call — negotiation timed out.${relayNote}`);
+        setError(`Couldn't connect the call — negotiation timed out. ${formatCandidateStats()}${relayNote}`);
         if (cid) send({ type: "hangup", callId: cid, fromId: userId });
         cleanupCall();
         setStatus("idle");

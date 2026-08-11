@@ -55,6 +55,12 @@ type SignalMessage =
   | { type: "hangup"; callId: string; fromId: string };
 
 const RING_TIMEOUT_MS = 45_000;
+// If ICE negotiation hasn't reached "connected" within this window, give up
+// and surface an error instead of leaving the UI stuck on "Connecting…"
+// forever. Previously there was no timeout at all — a call that could never
+// traverse NAT (e.g. two different networks with no working TURN relay)
+// just hung indefinitely with zero feedback.
+const CONNECT_TIMEOUT_MS = 20_000;
 const FALLBACK_ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
 // Drives a single WebRTC call (audio or video) scoped to one ticket.
@@ -89,9 +95,16 @@ export function useCall({
   const callIdRef = useRef<string | null>(null);
   const kindRef = useRef<CallKind | null>(null);
   const ringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const startedFiredRef = useRef(false);
   const localStreamRef = useRef<MediaStream | null>(null);
+  // Which branch /api/turn-credentials took (see X-Ice-Mode header there) —
+  // "turn" means a real relay is active, anything else means STUN-only,
+  // which is the #1 cause of a call stuck on "Connecting…" across two
+  // different networks. Surfaced in the timeout error message below so
+  // it's visible right on the call screen, no devtools needed.
+  const iceModeRef = useRef<string>("unknown");
 
   useEffect(() => {
     statusRef.current = status;
@@ -103,6 +116,13 @@ export function useCall({
     if (ringTimeoutRef.current) {
       clearTimeout(ringTimeoutRef.current);
       ringTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearConnectTimeout = useCallback(() => {
+    if (connectTimeoutRef.current) {
+      clearTimeout(connectTimeoutRef.current);
+      connectTimeoutRef.current = null;
     }
   }, []);
 
@@ -123,9 +143,10 @@ export function useCall({
     pendingCandidatesRef.current = [];
     startedFiredRef.current = false;
     clearRingTimeout();
+    clearConnectTimeout();
     setMuted(false);
     setCameraOff(false);
-  }, [clearRingTimeout]);
+  }, [clearRingTimeout, clearConnectTimeout]);
 
   const handleSignal = useCallback(
     (msg: SignalMessage) => {
@@ -220,10 +241,17 @@ export function useCall({
   async function getIceServers(): Promise<RTCIceServer[]> {
     try {
       const res = await fetch("/api/turn-credentials");
-      if (!res.ok) return FALLBACK_ICE_SERVERS;
+      if (!res.ok) {
+        iceModeRef.current = `http-${res.status}`;
+        return FALLBACK_ICE_SERVERS;
+      }
+      iceModeRef.current = res.headers.get("X-Ice-Mode") ?? "unknown";
+      // eslint-disable-next-line no-console
+      console.log("[useCall] ICE mode:", iceModeRef.current);
       const servers = await res.json();
       return Array.isArray(servers) && servers.length ? servers : FALLBACK_ICE_SERVERS;
     } catch {
+      iceModeRef.current = "fetch-failed";
       return FALLBACK_ICE_SERVERS;
     }
   }
@@ -253,18 +281,70 @@ export function useCall({
 
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === "connected") {
+        clearConnectTimeout();
         setStatus("active");
         if (!startedFiredRef.current) {
           startedFiredRef.current = true;
           onCallEvent({ type: "call_started", kind: kindRef.current ?? "audio" });
         }
+      } else if (pc.connectionState === "failed") {
+        // ICE gave up outright (rather than just being slow) — no need to
+        // wait out the rest of CONNECT_TIMEOUT_MS.
+        clearConnectTimeout();
+        const k = kindRef.current ?? "audio";
+        const cid = callIdRef.current;
+        const relayNote =
+          iceModeRef.current === "turn"
+            ? ""
+            : " No TURN relay was active for this call (ICE mode: " +
+              iceModeRef.current +
+              "), which is required whenever both people aren't on the same network.";
+        setError(`The call connection failed.${relayNote}`);
+        if (cid) send({ type: "hangup", callId: cid, fromId: userId });
+        cleanupCall();
+        setStatus("idle");
+        onCallEvent({ type: "call_missed", kind: k });
       }
     };
+
+    // Belt-and-suspenders for the "stuck on Connecting… forever" symptom:
+    // some browsers/networks never fire connectionState "failed" at all and
+    // just sit in "connecting" indefinitely instead. Without this, that's
+    // silent and indistinguishable from "still trying."
+    clearConnectTimeout();
+    connectTimeoutRef.current = setTimeout(() => {
+      if (pc.connectionState !== "connected") {
+        // eslint-disable-next-line no-console
+        console.error(
+          "[useCall] ICE negotiation timed out after",
+          CONNECT_TIMEOUT_MS,
+          "ms — connectionState:",
+          pc.connectionState,
+          "iceConnectionState:",
+          pc.iceConnectionState,
+          "iceMode:",
+          iceModeRef.current,
+        );
+        const k = kindRef.current ?? "audio";
+        const cid = callIdRef.current;
+        const relayNote =
+          iceModeRef.current === "turn"
+            ? " A relay server was available, so this may be a network or firewall issue rather than a missing TURN config."
+            : " No TURN relay was active for this call (ICE mode: " +
+              iceModeRef.current +
+              "), which is required whenever both people aren't on the same network — this is the most likely cause.";
+        setError(`Couldn't connect the call — negotiation timed out.${relayNote}`);
+        if (cid) send({ type: "hangup", callId: cid, fromId: userId });
+        cleanupCall();
+        setStatus("idle");
+        onCallEvent({ type: "call_missed", kind: k });
+      }
+    }, CONNECT_TIMEOUT_MS);
 
     pcRef.current = pc;
     return pc;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [send, userId, onCallEvent]);
+  }, [send, userId, onCallEvent, cleanupCall, clearConnectTimeout]);
 
   async function getLocalMedia(wantVideo: boolean): Promise<MediaStream> {
     // navigator.mediaDevices is only exposed in a "secure context" (HTTPS,

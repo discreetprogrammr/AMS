@@ -25,10 +25,17 @@ export async function GET() {
   const appName = process.env.METERED_APP_NAME;
   const apiKey = process.env.METERED_API_KEY;
 
+  // X-Ice-Mode isn't part of the WebRTC contract (RTCPeerConnection just
+  // wants the JSON array) — it's purely a diagnostic breadcrumb so
+  // use-call.ts can log/surface WHY a call is TURN-less, instead of a call
+  // silently falling back to STUN-only with zero visible signal. A call
+  // stuck on "Connecting…" forever is exactly what STUN-only + two
+  // different networks (e.g. wifi + cellular) looks like.
   if (!appName || !apiKey) {
-    return NextResponse.json([
-      { urls: "stun:stun.l.google.com:19302" },
-    ]);
+    return NextResponse.json(
+      [{ urls: "stun:stun.l.google.com:19302" }],
+      { headers: { "X-Ice-Mode": "stun-fallback-unconfigured" } },
+    );
   }
 
   try {
@@ -42,12 +49,15 @@ export async function GET() {
     }
 
     const iceServers = await res.json();
-    return NextResponse.json(iceServers);
-  } catch {
+    return NextResponse.json(iceServers, { headers: { "X-Ice-Mode": "turn" } });
+  } catch (err) {
     // Same graceful fallback as the "not configured" case above — a
     // transient Metered outage shouldn't hard-block same-network calls.
-    return NextResponse.json([
-      { urls: "stun:stun.l.google.com:19302" },
-    ]);
+    // eslint-disable-next-line no-console
+    console.error("[turn-credentials] Metered fetch failed, falling back to STUN-only:", err);
+    return NextResponse.json(
+      [{ urls: "stun:stun.l.google.com:19302" }],
+      { headers: { "X-Ice-Mode": "stun-fallback-error" } },
+    );
   }
 }

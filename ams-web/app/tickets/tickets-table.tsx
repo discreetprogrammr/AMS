@@ -154,21 +154,11 @@ export function TicketsTable({
             {rows.map((t) => (
               <tr
                 key={t.id}
-                onClick={isStaff ? () => setSelected(t) : undefined}
-                className={`border-t border-hairline hover:bg-surface-2 ${isStaff ? "cursor-pointer" : ""}`}
+                onClick={() => setSelected(t)}
+                className="cursor-pointer border-t border-hairline hover:bg-surface-2"
               >
                 <td className="px-4 py-3">
-                  {isStaff ? (
-                    <span className="font-medium text-ink">{ticketRef(t.id)}</span>
-                  ) : (
-                    <Link
-                      href={`/assets/${t.asset_id}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="font-medium text-ink hover:underline"
-                    >
-                      {ticketRef(t.id)}
-                    </Link>
-                  )}
+                  <span className="font-medium text-ink">{ticketRef(t.id)}</span>
                   <div className="mt-0.5 max-w-xs truncate text-xs text-slate-500">
                     {t.description}
                   </div>
@@ -242,9 +232,10 @@ export function TicketsTable({
         </table>
       </div>
 
-      {isStaff && selected && (
+      {selected && (
         <TicketDetailModal
           ticket={selected}
+          isStaff={isStaff}
           onClose={() => setSelected(null)}
           onStatusChange={handleStatusChange}
         />

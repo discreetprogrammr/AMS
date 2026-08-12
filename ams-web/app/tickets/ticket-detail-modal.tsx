@@ -22,18 +22,24 @@ const STATUS_OPTIONS = [
   { value: "closed", label: "Closed" },
 ];
 
-// Staff-only ticket detail view — opened by clicking a row in
-// tickets-table.tsx. Shows everything at a glance (site/serial, raised/
-// resolved timestamps, work order, linked PM/CM report) plus lets staff
-// change the status directly instead of navigating to the asset page.
-// Status changes go out over supabase_realtime (schema_step28.sql), so
-// they show up live in the client's own Tickets view too, not just here.
+// Ticket detail view — opened by clicking a row in tickets-table.tsx, for
+// both staff and clients now (previously staff-only; clients only had a
+// small "asset" link on the ticket number). Shows everything at a glance
+// (site/serial, raised/resolved timestamps, linked PM/CM report) — staff
+// additionally get an editable status dropdown, the work order link/create
+// action, and the ability to log a new PM/CM report; clients get a
+// read-only status badge, no work order link, and can only download a
+// report once one's been logged, not create one. Status changes go out
+// over supabase_realtime (schema_step28.sql), so they show up live in the
+// client's own Tickets view (and this modal, if open) without a reload.
 export function TicketDetailModal({
   ticket,
+  isStaff,
   onClose,
   onStatusChange,
 }: {
   ticket: TicketRow;
+  isStaff: boolean;
   onClose: () => void;
   onStatusChange: (ticketId: string, status: string, resolvedAt: string | null) => void;
 }) {
@@ -111,25 +117,29 @@ export function TicketDetailModal({
           <div className="flex flex-wrap items-center gap-3">
             <div>
               <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">Status</p>
-              <select
-                value={status}
-                disabled={saving}
-                onChange={(e) => handleStatusChange(e.target.value)}
-                className="rounded-lg border border-hairline bg-surface-2 px-3 py-1.5 text-sm text-ink focus:border-blue-500 focus:outline-none disabled:opacity-50"
-              >
-                {STATUS_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
+              {isStaff ? (
+                <select
+                  value={status}
+                  disabled={saving}
+                  onChange={(e) => handleStatusChange(e.target.value)}
+                  className="rounded-lg border border-hairline bg-surface-2 px-3 py-1.5 text-sm text-ink focus:border-blue-500 focus:outline-none disabled:opacity-50"
+                >
+                  {STATUS_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <StatusBadge status={status} />
+              )}
             </div>
             <div>
               <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">Priority</p>
               <StatusBadge status={ticket.priority} />
             </div>
           </div>
-          {error && <p className="text-xs text-red-400">{error}</p>}
+          {isStaff && error && <p className="text-xs text-red-400">{error}</p>}
 
           <div>
             <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">Description</p>
@@ -154,20 +164,21 @@ export function TicketDetailModal({
             <Link href={`/messages/${ticket.id}`} className="text-blue-400 hover:underline">
               Message →
             </Link>
-            {ticket.work_order_id ? (
-              <Link href="/work-orders" className="text-blue-400 hover:underline">
-                {woRef(ticket.work_order_id)} →
-              </Link>
-            ) : (
-              status !== "closed" && (
-                <Link
-                  href={`/work-orders/new?ticket_id=${ticket.id}`}
-                  className="text-blue-400 hover:underline"
-                >
-                  + Create Work Order
+            {isStaff &&
+              (ticket.work_order_id ? (
+                <Link href="/work-orders" className="text-blue-400 hover:underline">
+                  {woRef(ticket.work_order_id)} →
                 </Link>
-              )
-            )}
+              ) : (
+                status !== "closed" && (
+                  <Link
+                    href={`/work-orders/new?ticket_id=${ticket.id}`}
+                    className="text-blue-400 hover:underline"
+                  >
+                    + Create Work Order
+                  </Link>
+                )
+              ))}
           </div>
 
           <div className="border-t border-hairline pt-4">
@@ -175,25 +186,30 @@ export function TicketDetailModal({
               PM / CM Report
             </p>
             {reports === null && <p className="text-sm text-slate-500">Loading…</p>}
-            {reports?.length === 0 && (
-              <div className="space-y-2">
-                <p className="text-sm text-slate-500">No report has been logged for this ticket yet.</p>
-                <div className="flex flex-wrap gap-3 text-sm">
-                  <Link
-                    href={`/reports/preventive-checklist?ticket_id=${ticket.id}`}
-                    className="text-blue-400 hover:underline"
-                  >
-                    Log PM Report →
-                  </Link>
-                  <Link
-                    href={`/reports/corrective-checklist?ticket_id=${ticket.id}`}
-                    className="text-blue-400 hover:underline"
-                  >
-                    Log CM Report →
-                  </Link>
+            {reports?.length === 0 &&
+              (isStaff ? (
+                <div className="space-y-2">
+                  <p className="text-sm text-slate-500">No report has been logged for this ticket yet.</p>
+                  <div className="flex flex-wrap gap-3 text-sm">
+                    <Link
+                      href={`/reports/preventive-checklist?ticket_id=${ticket.id}`}
+                      className="text-blue-400 hover:underline"
+                    >
+                      Log PM Report →
+                    </Link>
+                    <Link
+                      href={`/reports/corrective-checklist?ticket_id=${ticket.id}`}
+                      className="text-blue-400 hover:underline"
+                    >
+                      Log CM Report →
+                    </Link>
+                  </div>
                 </div>
-              </div>
-            )}
+              ) : (
+                <p className="text-sm text-slate-500">
+                  No report has been uploaded for this ticket yet.
+                </p>
+              ))}
             {reports && reports.length > 0 && (
               <ul className="divide-y divide-hairline text-sm">
                 {reports.map((r) => (

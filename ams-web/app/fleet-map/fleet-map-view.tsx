@@ -69,13 +69,14 @@ const STATUS_STYLE: Record<
 const PH_CENTER: [number, number] = [12.8, 121.8];
 const PH_DEFAULT_ZOOM = 5.4;
 
-// CartoDB's free "dark matter" basemap — built on OpenStreetMap data, same
-// as plain OSM tiles, but dark-themed to match the rest of this app instead
-// of the usual bright/colorful OSM style. No API key or account needed for
-// this volume of traffic (a small internal/demo tool), unlike Mapbox or
-// Google Maps. Swapping to Mapbox or Google later is a one-line change here
-// if/when that becomes worth it.
-const TILE_URL = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+// CartoDB's free basemaps — built on OpenStreetMap data, same as plain OSM
+// tiles, but available in matching dark/light styles instead of just OSM's
+// one bright/colorful default. No API key or account needed for this
+// volume of traffic (a small internal/demo tool), unlike Mapbox or Google
+// Maps. Swapping to Mapbox or Google later is a one-line change here if/
+// when that becomes worth it.
+const DARK_TILE_URL = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+const LIGHT_TILE_URL = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
 const TILE_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
@@ -84,6 +85,24 @@ export function FleetMapView({ sites }: { sites: FleetSite[] }) {
   const markerRefs = useRef<Record<string, L.Marker>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailAssetId, setDetailAssetId] = useState<string | null>(null);
+
+  // The theme toggle (theme-toggle.tsx) lives in the topbar, a totally
+  // separate component with no shared React state or context — it flips
+  // the app's look purely by toggling a `.light` class on <html> (see
+  // globals.css). Every other themed color in the app already reads CSS
+  // variables that flip automatically with that class, but the map's
+  // raster tiles are actual images, not CSS — so this watches the class
+  // directly via a MutationObserver to know when to swap tile sets.
+  const [isLight, setIsLight] = useState(false);
+  useEffect(() => {
+    const root = document.documentElement;
+    setIsLight(root.classList.contains("light"));
+    const observer = new MutationObserver(() => {
+      setIsLight(root.classList.contains("light"));
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
 
   // One L.DivIcon per status, built once — a plain colored dot with the
   // same pulse/ping ring the old hand-rolled SVG map used, just rendered as
@@ -193,7 +212,11 @@ export function FleetMapView({ sites }: { sites: FleetSite[] }) {
             zoomControl={false}
             style={{ height: "100%", width: "100%" }}
           >
-            <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} />
+            <TileLayer
+              key={isLight ? "light" : "dark"}
+              attribution={TILE_ATTRIBUTION}
+              url={isLight ? LIGHT_TILE_URL : DARK_TILE_URL}
+            />
             {sitesWithCoords.map((site) => (
               <Marker
                 key={site.id}

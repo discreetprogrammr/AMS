@@ -31,17 +31,20 @@ export function SignaturePad({
     const ctx = c.getContext("2d");
     if (!ctx) return;
     ctx.scale(ratio, ratio);
-    ctx.lineWidth = 2;
+    // This used to follow the app's theme "ink" color (light gray in dark
+    // mode, for on-screen legibility against the dark surface) — but that
+    // color gets baked directly into the exported PNG, and a light-gray
+    // stroke on the white PDF page it ends up on reads as a barely-visible,
+    // washed-out signature. A signature is conventionally black ink on
+    // paper regardless of the app's theme, so this is now fixed black on a
+    // fixed white background always, independent of dark/light mode — both
+    // clearly legible on-screen while signing and properly dark in the
+    // generated PDF (service-report.ts embeds this PNG as-is).
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, rect.width, rect.height);
+    ctx.lineWidth = 2.25;
     ctx.lineCap = "round";
-    // Canvas strokeStyle doesn't reliably resolve CSS var()/color-mix(), so
-    // read the resolved --c-ink channel triplet (e.g. "226 232 240") at
-    // draw time instead — keeps the pen color legible in both the dark
-    // and light theme (see globals.css) without hardcoding either one.
-    const inkChannels = getComputedStyle(document.documentElement)
-      .getPropertyValue("--c-ink")
-      .trim();
-    ctx.strokeStyle = inkChannels ? `rgb(${inkChannels})` : "#e2e8f0";
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    ctx.strokeStyle = "#0a0a0a";
   }, []);
 
   function pos(e: React.PointerEvent) {
@@ -77,6 +80,12 @@ export function SignaturePad({
     const c = canvasRef.current!;
     const ctx = c.getContext("2d")!;
     ctx.clearRect(0, 0, c.width, c.height);
+    // Repaint white rather than leaving it transparent — keeps the "blank
+    // paper" look consistent instead of showing the dark card background
+    // through the canvas until the next stroke is drawn.
+    const ratio = window.devicePixelRatio || 1;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, c.width / ratio, c.height / ratio);
     setHasInk(false);
     setDataUrl("");
   }

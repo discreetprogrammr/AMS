@@ -1,14 +1,9 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type PointerEvent as ReactPointerEvent,
-} from "react";
-import { PH_COASTLINE_PATHS } from "@/lib/philippines-geo";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import { MapContainer, Marker, Popup, TileLayer } from "react-leaflet";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AssetDetailModal } from "@/app/assets/asset-detail-modal";
 
 // Same 4-value scale as an asset's own status (assets.status, widened in
@@ -34,156 +29,135 @@ export type FleetSite = {
 
 const STATUS_STYLE: Record<
   FleetSite["status"],
-  { dot: string; ring: string; text: string; pill: string; label: string }
+  { dot: string; ring: string; pill: string; label: string }
 > = {
   operational: {
     dot: "bg-emerald-500",
     ring: "bg-emerald-500/25",
-    text: "text-emerald-300",
     pill: "bg-emerald-500/10 text-emerald-300 ring-1 ring-inset ring-emerald-500/25",
     label: "Operational",
   },
   attention: {
     dot: "bg-amber-500",
     ring: "bg-amber-500/25",
-    text: "text-amber-300",
     pill: "bg-amber-500/10 text-amber-300 ring-1 ring-inset ring-amber-500/25",
     label: "Attention",
   },
   down: {
     dot: "bg-orange-500",
     ring: "bg-orange-500/30",
-    text: "text-orange-300",
     pill: "bg-orange-500/10 text-orange-300 ring-1 ring-inset ring-orange-500/25",
     label: "Down",
   },
   unserviceable: {
     dot: "bg-red-500",
     ring: "bg-red-500/30",
-    text: "text-red-300",
     pill: "bg-red-500/10 text-red-300 ring-1 ring-inset ring-red-500/25",
     label: "Unserviceable",
   },
   no_data: {
     dot: "bg-slate-500",
     ring: "bg-slate-500/20",
-    text: "text-slate-300",
     pill: "bg-slate-500/10 text-slate-300 ring-1 ring-inset ring-slate-500/20",
     label: "No Assets",
   },
 };
 
-// Philippines archipelago bounding box (degrees) — matches the projection
-// the coastline path data (lib/philippines-geo.ts) was generated against.
-const LNG_MIN = 116.4;
-const LNG_MAX = 127.2;
-const LAT_MIN = 4.3;
-const LAT_MAX = 21.4;
-const SPAN_LNG = LNG_MAX - LNG_MIN;
-const SPAN_LAT = LAT_MAX - LAT_MIN;
+// Philippines-wide default view, used before any per-site fitBounds runs
+// (and as the "Reset view" target when there's more than one site spread
+// far enough apart that re-fitting to a single site wouldn't make sense).
+const PH_CENTER: [number, number] = [12.8, 121.8];
+const PH_DEFAULT_ZOOM = 5.4;
 
-const MIN_ZOOM = 0.8;
-const MAX_ZOOM = 12;
-
-function clamp(v: number, lo: number, hi: number) {
-  return Math.min(hi, Math.max(lo, v));
-}
+// CartoDB's free "dark matter" basemap — built on OpenStreetMap data, same
+// as plain OSM tiles, but dark-themed to match the rest of this app instead
+// of the usual bright/colorful OSM style. No API key or account needed for
+// this volume of traffic (a small internal/demo tool), unlike Mapbox or
+// Google Maps. Swapping to Mapbox or Google later is a one-line change here
+// if/when that becomes worth it.
+const TILE_URL = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+const TILE_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
 export function FleetMapView({ sites }: { sites: FleetSite[] }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ w: 1000, h: 700 });
-  const [zoom, setZoom] = useState(1);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [pinnedId, setPinnedId] = useState<string | null>(null);
-  // "View Asset" used to navigate to /assets?asset=<id>, leaving the map —
-  // now it opens the same summary popup right on top of the map instead.
-  // "View Full Details" inside that popup is still a real navigation, to
-  // the dedicated /assets/[id] page.
+  const mapRef = useRef<L.Map | null>(null);
+  const markerRefs = useRef<Record<string, L.Marker>>({});
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailAssetId, setDetailAssetId] = useState<string | null>(null);
-  const dragRef = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
-  const [dragging, setDragging] = useState(false);
 
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
-      setSize({ w: el.clientWidth, h: el.clientHeight });
+  // One L.DivIcon per status, built once — a plain colored dot with the
+  // same pulse/ping ring the old hand-rolled SVG map used, just rendered as
+  // real DOM (via a divIcon) instead of an SVG circle. Deliberately NOT
+  // using Leaflet's default L.Icon/L.Marker icon: that default reaches for
+  // marker-icon.png etc. from leaflet/dist/images, which is the classic
+  // "broken marker image" issue under webpack/Next.js bundling. Passing an
+  // explicit icon to every <Marker> sidesteps that entirely.
+  const icons = useMemo(() => {
+    const entries = (Object.keys(STATUS_STYLE) as FleetSite["status"][]).map((status) => {
+      const st = STATUS_STYLE[status];
+      const pulseClass =
+        status === "down" || status === "unserviceable" ? "animate-ping" : "animate-pulse";
+      const html = `
+        <span class="relative flex h-7 w-7 items-center justify-center">
+          <span class="absolute h-5 w-5 rounded-full ${st.ring} ${pulseClass}"></span>
+          <span class="relative h-2.5 w-2.5 rounded-full ${st.dot} ring-2 ring-[#060b17]/80"></span>
+        </span>`;
+      const icon = L.divIcon({
+        html,
+        className: "",
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+        popupAnchor: [0, -14],
+      });
+      return [status, icon] as const;
     });
-    ro.observe(el);
-    setSize({ w: el.clientWidth, h: el.clientHeight });
-    return () => ro.disconnect();
+    return Object.fromEntries(entries) as Record<FleetSite["status"], L.DivIcon>;
   }, []);
 
-  // Uniform (non-distorting) fit of the archipelago inside the container.
-  const fit = useMemo(() => {
-    const scale = Math.min(size.w / SPAN_LNG, size.h / SPAN_LAT);
-    return {
-      scale,
-      padX: (size.w - SPAN_LNG * scale) / 2,
-      padY: (size.h - SPAN_LAT * scale) / 2,
-    };
-  }, [size.w, size.h]);
-
-  const project = useCallback(
-    (lat: number, lng: number) => ({
-      x: (lng - LNG_MIN) * fit.scale + fit.padX,
-      y: (LAT_MAX - lat) * fit.scale + fit.padY,
-    }),
-    [fit],
+  const sitesWithCoords = useMemo(
+    () => sites.filter((s) => Number.isFinite(s.latitude) && Number.isFinite(s.longitude)),
+    [sites],
   );
 
-  const zoomAt = useCallback((factor: number, px: number, py: number) => {
-    setZoom((z) => {
-      const next = clamp(z * factor, MIN_ZOOM, MAX_ZOOM);
-      const k = next / z;
-      setOffset((o) => ({ x: px - (px - o.x) * k, y: py - (py - o.y) * k }));
-      return next;
-    });
-  }, []);
-
-  const zoomAtRef = useRef(zoomAt);
-  zoomAtRef.current = zoomAt;
-
+  // Auto-fit to wherever the actual sites are, once, on first load — an
+  // improvement over the old fixed "fit the whole archipelago" behavior,
+  // since it zooms straight to the data instead of a lot of empty ocean if
+  // every site happens to be clustered in, say, Metro Manila.
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1);
-      const rect = el.getBoundingClientRect();
-      zoomAtRef.current(
-        Math.exp(-dy * 0.0018),
-        e.clientX - rect.left,
-        e.clientY - rect.top,
-      );
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
+    const map = mapRef.current;
+    if (!map || sitesWithCoords.length === 0) return;
+    if (sitesWithCoords.length === 1) {
+      const s = sitesWithCoords[0];
+      map.setView([s.latitude, s.longitude], 12);
+      return;
+    }
+    const bounds = L.latLngBounds(sitesWithCoords.map((s) => [s.latitude, s.longitude]));
+    map.fitBounds(bounds, { padding: [48, 48] });
+    // Only on mount — afterwards the user is in control of pan/zoom.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const onPointerDown = (e: ReactPointerEvent) => {
-    dragRef.current = { x: e.clientX, y: e.clientY, ox: offset.x, oy: offset.y };
-    setDragging(true);
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  };
-  const onPointerMove = (e: ReactPointerEvent) => {
-    const d = dragRef.current;
-    if (!d) return;
-    setOffset({ x: d.ox + (e.clientX - d.x), y: d.oy + (e.clientY - d.y) });
-  };
-  const endDrag = () => {
-    dragRef.current = null;
-    setDragging(false);
-  };
+  function focusSite(site: FleetSite) {
+    const map = mapRef.current;
+    if (!map) return;
+    map.flyTo([site.latitude, site.longitude], Math.max(map.getZoom(), 10), { duration: 0.6 });
+    markerRefs.current[site.id]?.openPopup();
+    setSelectedId(site.id);
+  }
 
-  const reset = () => {
-    setZoom(1);
-    setOffset({ x: 0, y: 0 });
-  };
-
-  const shownId = pinnedId ?? activeId;
-  const shown = sites.find((s) => s.id === shownId) ?? null;
+  function resetView() {
+    const map = mapRef.current;
+    if (!map) return;
+    if (sitesWithCoords.length === 1) {
+      const s = sitesWithCoords[0];
+      map.setView([s.latitude, s.longitude], 12);
+    } else if (sitesWithCoords.length > 1) {
+      const bounds = L.latLngBounds(sitesWithCoords.map((s) => [s.latitude, s.longitude]));
+      map.fitBounds(bounds, { padding: [48, 48] });
+    } else {
+      map.setView(PH_CENTER, PH_DEFAULT_ZOOM);
+    }
+  }
 
   const totals = {
     sites: sites.length,
@@ -211,166 +185,95 @@ export function FleetMapView({ sites }: { sites: FleetSite[] }) {
     <div>
       <div className="flex h-[calc(100vh-14rem)] min-h-[520px] flex-col gap-4 xl:flex-row">
         {/* Map surface */}
-        <div
-          ref={containerRef}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={endDrag}
-          onPointerCancel={endDrag}
-          className={`relative min-h-[380px] flex-1 overflow-hidden rounded-xl border border-hairline bg-[#060b17] ${
-            dragging ? "cursor-grabbing" : "cursor-grab"
-          }`}
-          style={{ touchAction: "none" }}
-        >
-          <div
-            className="absolute inset-0 opacity-[0.16]"
-            style={{
-              backgroundImage:
-                "linear-gradient(to right, rgba(148,163,184,.28) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,.28) 1px, transparent 1px)",
-              backgroundSize: `${48 * zoom}px ${48 * zoom}px`,
-              backgroundPosition: `${offset.x}px ${offset.y}px`,
-            }}
-          />
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(37,99,235,0.14),transparent_72%)]" />
-
-          <svg
-            className="absolute inset-0 h-full w-full"
-            aria-hidden="true"
-            shapeRendering="geometricPrecision"
+        <div className="relative min-h-[380px] flex-1 overflow-hidden rounded-xl border border-hairline">
+          <MapContainer
+            ref={mapRef}
+            center={PH_CENTER}
+            zoom={PH_DEFAULT_ZOOM}
+            zoomControl={false}
+            style={{ height: "100%", width: "100%" }}
           >
-            <g
-              transform={
-                `translate(${offset.x} ${offset.y}) scale(${zoom}) ` +
-                `translate(${fit.padX} ${fit.padY}) scale(${fit.scale}) ` +
-                `translate(${-LNG_MIN} ${LAT_MAX})`
-              }
-            >
-              {PH_COASTLINE_PATHS.map((d, i) => (
-                <path
-                  key={i}
-                  d={d}
-                  fill="#16233d"
-                  stroke="rgba(96,165,250,0.55)"
-                  strokeWidth={1}
-                  strokeLinejoin="round"
-                  vectorEffect="non-scaling-stroke"
-                />
-              ))}
-            </g>
-          </svg>
-
-          {sites.map((site) => {
-            const base = project(site.latitude, site.longitude);
-            const x = offset.x + base.x * zoom;
-            const y = offset.y + base.y * zoom;
-            if (x < -40 || y < -40 || x > size.w + 40 || y > size.h + 40) return null;
-            const st = STATUS_STYLE[site.status];
-            const isActive = shownId === site.id;
-            return (
-              <button
+            <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} />
+            {sitesWithCoords.map((site) => (
+              <Marker
                 key={site.id}
-                type="button"
-                onPointerDown={(e) => e.stopPropagation()}
-                onMouseEnter={() => setActiveId(site.id)}
-                onMouseLeave={() => setActiveId((cur) => (cur === site.id ? null : cur))}
-                onClick={() => setPinnedId((cur) => (cur === site.id ? null : site.id))}
-                aria-label={`${site.address ?? "Site"} — ${st.label}`}
-                className="absolute grid h-7 w-7 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-                style={{ left: x, top: y, zIndex: isActive ? 15 : 10 }}
+                position={[site.latitude, site.longitude]}
+                icon={icons[site.status]}
+                ref={(m: L.Marker | null) => {
+                  if (m) markerRefs.current[site.id] = m;
+                }}
+                eventHandlers={{
+                  click: () => setSelectedId(site.id),
+                  popupclose: () =>
+                    setSelectedId((cur) => (cur === site.id ? null : cur)),
+                }}
               >
-                <span
-                  className={`absolute h-5 w-5 rounded-full ${st.ring} ${
-                    site.status === "down" || site.status === "unserviceable"
-                      ? "animate-ping"
-                      : "animate-pulse"
-                  }`}
-                />
-                <span
-                  className={`relative h-2.5 w-2.5 rounded-full ${st.dot} ring-2 ring-[#060b17]/80 ${
-                    isActive ? "scale-150" : ""
-                  } transition-transform`}
-                />
-              </button>
-            );
-          })}
-
-          {shown && (
-            <div
-              className="absolute z-20 w-64"
-              style={{
-                left: clamp(
-                  offset.x + project(shown.latitude, shown.longitude).x * zoom + 18,
-                  12,
-                  Math.max(12, size.w - 272),
-                ),
-                top: clamp(
-                  offset.y + project(shown.latitude, shown.longitude).y * zoom - 60,
-                  12,
-                  Math.max(12, size.h - 200),
-                ),
-              }}
-              onPointerDown={(e) => e.stopPropagation()}
-            >
-              <div className="rounded-xl border border-hairline bg-surface/95 p-3 shadow-2xl shadow-black/50 backdrop-blur">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-semibold text-ink">
-                      {shown.address ?? "Site"}
-                    </div>
-                    {shown.organizationName && (
-                      <div className="truncate text-[10px] tracking-wide text-slate-500">
-                        {shown.organizationName}
+                <Popup closeButton>
+                  <div className="w-64 rounded-xl border border-hairline bg-surface/95 p-3 shadow-2xl shadow-black/50 backdrop-blur">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-ink">
+                          {site.address ?? "Site"}
+                        </div>
+                        {site.organizationName && (
+                          <div className="truncate text-[10px] tracking-wide text-slate-500">
+                            {site.organizationName}
+                          </div>
+                        )}
                       </div>
+                      <span
+                        className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${STATUS_STYLE[site.status].pill}`}
+                      >
+                        {STATUS_STYLE[site.status].label}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-lg bg-surface-2 px-2.5 py-2">
+                        <div className="text-slate-500">Assets</div>
+                        <div className="mt-0.5 font-semibold text-ink">
+                          {site.operational}/{site.total}
+                        </div>
+                      </div>
+                      <div className="rounded-lg bg-surface-2 px-2.5 py-2">
+                        <div className="text-slate-500">Needs Attention</div>
+                        <div className="mt-0.5 font-semibold text-ink">
+                          {site.attention + site.down + site.unserviceable}
+                        </div>
+                      </div>
+                    </div>
+                    {site.primaryAssetId && (
+                      <button
+                        type="button"
+                        onClick={() => setDetailAssetId(site.primaryAssetId)}
+                        className="mt-3 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-blue-500/15 text-xs font-medium text-blue-300 ring-1 ring-inset ring-blue-500/25 hover:bg-blue-500/25"
+                      >
+                        View Asset →
+                      </button>
                     )}
                   </div>
-                  <span
-                    className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${STATUS_STYLE[shown.status].pill}`}
-                  >
-                    {STATUS_STYLE[shown.status].label}
-                  </span>
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                  <div className="rounded-lg bg-surface-2 px-2.5 py-2">
-                    <div className="text-slate-500">Assets</div>
-                    <div className="mt-0.5 font-semibold text-ink">
-                      {shown.operational}/{shown.total}
-                    </div>
-                  </div>
-                  <div className="rounded-lg bg-surface-2 px-2.5 py-2">
-                    <div className="text-slate-500">Needs Attention</div>
-                    <div className="mt-0.5 font-semibold text-ink">
-                      {shown.attention + shown.down + shown.unserviceable}
-                    </div>
-                  </div>
-                </div>
-                {shown.primaryAssetId && (
-                  <button
-                    type="button"
-                    onClick={() => setDetailAssetId(shown.primaryAssetId)}
-                    className="mt-3 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-blue-500/15 text-xs font-medium text-blue-300 ring-1 ring-inset ring-blue-500/25 hover:bg-blue-500/25"
-                  >
-                    View Asset →
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
+                </Popup>
+              </Marker>
+            ))}
+          </MapContainer>
 
-          {/* Zoom controls */}
-          <div className="absolute right-3 top-3 z-30 flex flex-col gap-1.5">
-            <MapBtn label="Zoom in" onClick={() => zoomAt(1.4, size.w / 2, size.h / 2)}>
+          {/* Zoom controls — Leaflet's built-in zoomControl is disabled
+              above so this can match the rest of the app's styling, and so
+              "Reset view" (which Leaflet has no equivalent for) can sit
+              alongside +/-. */}
+          <div className="absolute right-3 top-3 z-[500] flex flex-col gap-1.5">
+            <MapBtn label="Zoom in" onClick={() => mapRef.current?.zoomIn()}>
               +
             </MapBtn>
-            <MapBtn label="Zoom out" onClick={() => zoomAt(1 / 1.4, size.w / 2, size.h / 2)}>
+            <MapBtn label="Zoom out" onClick={() => mapRef.current?.zoomOut()}>
               −
             </MapBtn>
-            <MapBtn label="Reset view" onClick={reset}>
+            <MapBtn label="Reset view" onClick={resetView}>
               ⟲
             </MapBtn>
           </div>
 
           {/* Legend */}
-          <div className="absolute bottom-3 left-3 z-30 rounded-xl border border-hairline bg-surface/90 px-3 py-2.5 backdrop-blur">
+          <div className="absolute bottom-3 left-3 z-[500] rounded-xl border border-hairline bg-surface/90 px-3 py-2.5 backdrop-blur">
             <div className="mb-1.5 text-[10px] font-semibold tracking-widest text-slate-500">
               LEGEND
             </div>
@@ -390,10 +293,6 @@ export function FleetMapView({ sites }: { sites: FleetSite[] }) {
                 </li>
               ))}
             </ul>
-          </div>
-
-          <div className="absolute bottom-3 right-3 z-30 text-[10px] text-slate-500">
-            Scroll to zoom · drag to pan · {Math.round(zoom * 100)}%
           </div>
         </div>
 
@@ -421,14 +320,12 @@ export function FleetMapView({ sites }: { sites: FleetSite[] }) {
           <ul className="mt-2 space-y-1.5">
             {sites.map((site) => {
               const st = STATUS_STYLE[site.status];
-              const selected = shownId === site.id;
+              const selected = selectedId === site.id;
               return (
                 <li key={site.id}>
                   <button
                     type="button"
-                    onMouseEnter={() => setActiveId(site.id)}
-                    onMouseLeave={() => setActiveId((cur) => (cur === site.id ? null : cur))}
-                    onClick={() => setPinnedId((cur) => (cur === site.id ? null : site.id))}
+                    onClick={() => focusSite(site)}
                     className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${
                       selected ? "bg-surface-2" : "hover:bg-surface-2"
                     }`}

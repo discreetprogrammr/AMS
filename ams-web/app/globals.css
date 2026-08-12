@@ -79,3 +79,30 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgb(var(--c-hairline-strong));
 }
+
+/* Fleet Map (Leaflet + OpenStreetMap/CartoDB, fleet-map-view.tsx). Leaflet's
+   default popup chrome is a plain white rounded box — stripped down here so
+   the Tailwind-styled card we render inside each Popup shows through
+   cleanly instead of sitting in a mismatched light box, regardless of
+   light/dark theme. */
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+.leaflet-popup-content {
+  margin: 0;
+  width: 256px !important;
+}
+.leaflet-popup-close-button {
+  color: rgb(var(--c-ink-soft)) !important;
+  padding: 6px 8px 0 0 !important;
+}
+.leaflet-popup-close-button:hover {
+  color: rgb(var(--c-ink)) !important;
+}
+.leaflet-container {
+  background: rgb(var(--c-base));
+  font-family: inherit;
+}

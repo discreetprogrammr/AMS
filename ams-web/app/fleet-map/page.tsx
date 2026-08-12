@@ -2,7 +2,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { backfillMissingSiteLocations } from "@/lib/site-location";
-import { FleetMapView, type FleetSite } from "./fleet-map-view";
+import { FleetMapClient } from "./fleet-map-client";
+import type { FleetSite } from "./fleet-map-view";
 
 export default async function FleetMapPage() {
   const supabase = await createClient();
@@ -89,7 +90,7 @@ export default async function FleetMapPage() {
       title="Live Fleet Map"
       subtitle="Geo-spatial readiness across every client site."
     >
-      <FleetMapView sites={fleetSites} />
+      <FleetMapClient sites={fleetSites} />
     </AppShell>
   );
 }

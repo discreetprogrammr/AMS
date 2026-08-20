@@ -1205,3 +1205,31 @@ Verified with `npx tsc --noEmit` (clean). No schema changes, no migration needed
 Per your call after seeing the Super Admin dashboard: staff already have the full sidebar (Tickets, Work Orders) to create things directly, so a dashboard shortcut card was redundant for them — and clients, who are the ones actually requesting support, didn't have an equivalent. Swapped which role sees it (`app/dashboard/page.tsx`) — no changes needed inside the card itself, since "Request New Service," "Open Support Ticket," and "Chat / Start Live Call" already point to pages clients can use (from earlier follow-ups). Both roles now land on 3 cards in that row either way, so the grid simplified to a flat 3-column layout instead of switching between 2 and 4 by role.
 
 Verified with `npx tsc --noEmit` (clean). No schema changes.
+
+## Follow-up — Automated PM ticket generation
+
+First item off the improvements list: instead of relying on someone remembering to check `next_service_due`, a daily job now does it automatically.
+
+**`schema_step29.sql`** (new) — **run this in Supabase before deploying.** Two additions:
+- `calendar_events.ticket_id` — lets an auto-generated calendar event point back to the ticket that prompted it (closes a gap: calendar events already linked to work orders, but not to tickets).
+- `pm_auto_runs` — a new bookkeeping table, one row per (asset, due date) the job has already acted on. This is what actually prevents duplicate tickets if the job runs twice for the same day (retry, manual re-trigger) — the `unique(asset_id, due_date)` constraint enforces it at the database level, not just in app logic. Staff-readable, but nothing writes to it except the job itself.
+
+**How it works (`lib/pm-automation.ts`):** once a day, checks every asset whose `next_service_due` falls within a lead window (default 7 days, configurable — see below), skips any it's already handled (via `pm_auto_runs`), and for everything left, creates: a service ticket (marked high priority if already overdue, medium if upcoming), a calendar event on the due date linked to that ticket, and a caution-level alert — the same three things a staff member would otherwise create by hand. Assets already marked `unserviceable` are skipped (nothing to schedule PM for on retired equipment).
+
+**Running it (`app/api/cron/pm-due/route.ts`):** wired to Vercel Cron (`vercel.json`, daily at 01:00 UTC / 9am PH time) via a `CRON_SECRET` bearer token — the standard pattern for authenticating a cron job that has no user session to check RLS against. Also callable manually by a signed-in Super Admin (same URL, just visit it while logged in) for demos or testing without waiting for the scheduled run.
+
+**New environment variables — set these in `.env.local` and in Vercel's Project Settings → Environment Variables:**
+- `SUPABASE_SERVICE_ROLE_KEY` — from Supabase dashboard → Project Settings → API. Needed because the cron job has no logged-in user, so it can't go through the usual cookie-session client; this one bypasses RLS entirely (`lib/supabase/service-role.ts`), so it's server-only and must never reach the browser.
+- `CRON_SECRET` — any random string (e.g. `openssl rand -hex 32`), must match on both sides.
+- `PM_REMINDER_LEAD_DAYS` — optional, defaults to 7 if unset.
+
+**Scope note:** the "heads-up notification" is the existing in-app Alerts feed, not email — a real email notification would be a separate follow-up if you want it.
+
+Verified with `npx tsc --noEmit` (clean).
+
+## Setup steps
+
+1. Run `schema_step29.sql` in Supabase.
+2. Add `SUPABASE_SERVICE_ROLE_KEY` and `CRON_SECRET` to `.env.local` (copy the new lines from `.env.local.example`) and to Vercel's environment variables.
+3. Push to GitHub — Vercel will pick up `vercel.json` and register the daily cron automatically (visible under the project's Cron Jobs tab once deployed).
+4. To test without waiting a day: set an existing asset's `next_service_due` to a date within the next 7 days (or in the past), sign in as Super Admin, and visit `/api/cron/pm-due` directly in the browser. Confirm a new ticket, calendar event, and alert appear for that asset, then reload the same URL and confirm it does *not* create duplicates the second time.

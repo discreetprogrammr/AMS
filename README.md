@@ -1233,3 +1233,27 @@ Verified with `npx tsc --noEmit` (clean).
 2. Add `SUPABASE_SERVICE_ROLE_KEY` and `CRON_SECRET` to `.env.local` (copy the new lines from `.env.local.example`) and to Vercel's environment variables.
 3. Push to GitHub — Vercel will pick up `vercel.json` and register the daily cron automatically (visible under the project's Cron Jobs tab once deployed).
 4. To test without waiting a day: set an existing asset's `next_service_due` to a date within the next 7 days (or in the past), sign in as Super Admin, and visit `/api/cron/pm-due` directly in the browser. Confirm a new ticket, calendar event, and alert appear for that asset, then reload the same URL and confirm it does *not* create duplicates the second time.
+
+## Follow-up — SLA breach escalation
+
+Second item off the improvements list: tickets now get proactively flagged as they approach or blow through their SLA window, instead of only showing up as a bad number on the dashboard after the fact.
+
+**`schema_step30.sql`** (new) — **run this in Supabase before deploying.** One addition: `sla_escalations`, the same idempotency/audit-ledger pattern as `pm_auto_runs` — one row per (ticket, event) already escalated, so re-running the check never double-fires the same alert or re-bumps priority. A ticket can accumulate up to 4 rows over its life (response approaching → response breached, resolution approaching → resolution breached), each firing exactly once.
+
+**How it works (`lib/sla-escalation.ts`, targets now shared via `lib/sla.ts`):** once a day, checks every ticket that isn't closed against the same two SLA targets the dashboard already uses (8h first response, 48h resolution — `lib/sla.ts` is now the single source for both, so they can't drift apart). Each ticket is checked on two independent dimensions:
+- **Response** — only while nobody's responded yet (`first_response_at` still null).
+- **Resolution** — any ticket still open, regardless of response state.
+
+For each dimension, hitting 80% of the target with no `sla_escalations` row yet raises a **caution** alert ("approaching," no other change). Hitting 100% raises a **critical** alert and bumps the ticket's priority to **High** if it wasn't already — so an overdue ticket actually surfaces higher in every priority-sorted view instead of quietly sitting at whatever priority it was raised with.
+
+**Running it (`app/api/cron/sla-check/route.ts`):** same dual-auth pattern as the PM job — Vercel Cron via `CRON_SECRET`, or a signed-in Super Admin visiting the URL directly for demos/testing. No new environment variables needed; reuses `CRON_SECRET` and `SUPABASE_SERVICE_ROLE_KEY` from the PM automation follow-up above.
+
+**Known limitation, not a bug:** Vercel's Hobby plan caps cron jobs at once per day. An 8-hour response SLA checked once every ~24h means a breach might not get flagged until close to a day after it actually happened — a real gap between "proactive" and "instant." Two ways to close it if it matters before a Pro upgrade: point an external scheduler (e.g. cron-job.org, GitHub Actions on a schedule) at `/api/cron/sla-check` with the `CRON_SECRET` header on whatever cadence you want (hourly, say) — no code change needed, the route doesn't care who calls it as long as the secret matches. Otherwise, upgrading the Vercel project to Pro lifts the once-daily cap directly.
+
+Verified with `npx tsc --noEmit` (clean).
+
+## Setup steps
+
+1. Run `schema_step30.sql` in Supabase.
+2. Push to GitHub — `vercel.json` now has two cron entries; Vercel will register both on the next successful deploy.
+3. To test without waiting: open any ticket with no reply yet and manually back-date its `created_at` in Supabase's Table Editor to 7+ hours ago (for a response breach) or edit an old open ticket to 48+ hours ago (for a resolution breach). Sign in as Super Admin and visit `/api/cron/sla-check` directly. Confirm the alert appears and, for a breach, that the ticket's priority is now High. Reload the same URL and confirm it does *not* fire a duplicate alert.

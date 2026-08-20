@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/pm-due",
       "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/sla-check",
+      "schedule": "0 3 * * *"
     }
   ]
 }

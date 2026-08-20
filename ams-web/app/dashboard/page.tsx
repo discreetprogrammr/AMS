@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { NotificationBell } from "@/components/notification-bell";
 import { SearchBar } from "@/components/search-bar";
 import { ticketRef, assetLabel } from "@/lib/format";
+import { SLA_RESPONSE_TARGET_HOURS, SLA_RESOLUTION_TARGET_HOURS, hoursBetween } from "@/lib/sla";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -21,15 +22,6 @@ function daysAgo(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() - days);
   return d.toISOString();
-}
-
-// SLA targets — not a contractual figure yet, just the working target we're
-// building the dashboard against until a real client SLA is signed.
-const SLA_RESPONSE_TARGET_HOURS = 8;
-const SLA_RESOLUTION_TARGET_HOURS = 48;
-
-function hoursBetween(start: string, end: string): number {
-  return (new Date(end).getTime() - new Date(start).getTime()) / 3_600_000;
 }
 
 export default async function DashboardPage() {

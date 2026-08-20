@@ -222,3 +222,42 @@ export async function updateWorkOrderStatus(id: string, status: string) {
   revalidatePath("/work-orders");
   revalidatePath("/calendar");
 }
+
+// Logs a part consumed against this work order — inserts into
+// work_order_parts, which decrements parts.quantity_on_hand via the
+// work_order_parts_decrement_stock trigger (schema_step31.sql). No
+// redirect, same pattern as updateWorkOrderStatus above — called directly
+// from log-parts-modal.tsx's submit handler.
+export async function logPartUsage(workOrderId: string, partId: string, quantityUsed: number) {
+  await requireStaff("/work-orders");
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { data: part } = await supabase
+    .from("parts")
+    .select("name")
+    .eq("id", partId)
+    .single();
+
+  if (!part) {
+    throw new Error("That part couldn't be found — it may have been deleted.");
+  }
+
+  const { error } = await supabase.from("work_order_parts").insert({
+    work_order_id: workOrderId,
+    part_id: partId,
+    part_name_snapshot: part.name,
+    quantity_used: quantityUsed,
+    logged_by: user?.id ?? null,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  revalidatePath("/work-orders");
+  revalidatePath("/parts");
+}

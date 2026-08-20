@@ -45,6 +45,12 @@ const STATUS_MAP: Record<string, { label: string; tone: Tone }> = {
   attention: { label: "Attention", tone: "amber" },
   scheduled: { label: "Scheduled", tone: "blue" },
   overdue: { label: "Overdue", tone: "red" },
+  // Parts stock (schema_step31.sql) — derived client-side from
+  // quantity_on_hand vs reorder_level, not a stored enum value, but
+  // StatusBadge just needs a matching key either way.
+  in_stock: { label: "In Stock", tone: "green" },
+  low_stock: { label: "Low Stock", tone: "amber" },
+  out_of_stock: { label: "Out of Stock", tone: "red" },
 };
 
 export function StatusBadge({ status }: { status: string }) {

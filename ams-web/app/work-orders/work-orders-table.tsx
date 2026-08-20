@@ -5,6 +5,7 @@ import { useMemo, useState, useTransition } from "react";
 import { StatusBadge } from "@/components/status-badge";
 import { ticketRef, woRef, dateTimeLabel } from "@/lib/format";
 import { updateWorkOrderStatus } from "./actions";
+import { LogPartsModal, type PartOption } from "./log-parts-modal";
 
 export type WorkOrderRow = {
   id: string;
@@ -20,6 +21,7 @@ export type WorkOrderRow = {
   site_name: string | null;
   organization_name: string | null;
   from_ticket_id: string | null;
+  parts_used: { quantity_used: number; part_name_snapshot: string }[];
 };
 
 type FilterKey =
@@ -45,12 +47,15 @@ const FILTERS: { key: FilterKey; label: string; dotClass?: string }[] = [
 
 export function WorkOrdersTable({
   workOrders,
+  parts,
 }: {
   workOrders: WorkOrderRow[];
+  parts: PartOption[];
 }) {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [isPending, startTransition] = useTransition();
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [logPartsFor, setLogPartsFor] = useState<WorkOrderRow | null>(null);
 
   const rows = useMemo(() => {
     return workOrders.filter((w) => {
@@ -117,6 +122,7 @@ export function WorkOrdersTable({
               <th className="px-4 py-3">Due</th>
               <th className="px-4 py-3">Created</th>
               <th className="px-4 py-3">Closed</th>
+              <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody>
@@ -152,6 +158,18 @@ export function WorkOrdersTable({
                       From {ticketRef(w.from_ticket_id)}
                     </Link>
                   )}
+                  {w.parts_used.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {w.parts_used.map((p, i) => (
+                        <span
+                          key={i}
+                          className="inline-flex items-center rounded-full bg-slate-500/15 px-2 py-0.5 text-[11px] normal-case text-ink-soft"
+                        >
+                          {p.quantity_used}× {p.part_name_snapshot}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <StatusBadge status={w.priority} />
@@ -180,12 +198,21 @@ export function WorkOrdersTable({
                 <td className="px-4 py-3 whitespace-nowrap text-ink-soft">
                   {dateTimeLabel(w.closed_at)}
                 </td>
+                <td className="px-4 py-3 whitespace-nowrap text-right">
+                  <button
+                    type="button"
+                    onClick={() => setLogPartsFor(w)}
+                    className="text-xs text-blue-400 hover:underline"
+                  >
+                    Log Parts
+                  </button>
+                </td>
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="px-4 py-8 text-center text-slate-500"
                 >
                   No work orders match this filter.
@@ -195,6 +222,15 @@ export function WorkOrdersTable({
           </tbody>
         </table>
       </div>
+
+      {logPartsFor && (
+        <LogPartsModal
+          workOrderId={logPartsFor.id}
+          woRefLabel={`${woRef(logPartsFor.id)} — ${logPartsFor.task_title}`}
+          parts={parts}
+          onClose={() => setLogPartsFor(null)}
+        />
+      )}
     </div>
   );
 }

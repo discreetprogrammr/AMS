@@ -18,13 +18,21 @@ export default async function WorkOrdersPage({
   // is the FK, pointing at this table, not the other way around (see
   // schema_step16.sql). Supabase/PostgREST can still join across it from
   // this side; it just comes back as an array (usually 0 or 1 ticket) per
-  // work order rather than a single object.
-  const { data: workOrders, error: fetchError } = await supabase
-    .from("work_orders")
-    .select(
-      "id, task_title, description, work_type, priority, status, lead_technician, due_date, created_at, closed_at, assets(asset_tag, sites(address), organizations(name)), service_tickets(id)",
-    )
-    .order("created_at", { ascending: false });
+  // work order rather than a single object. work_order_parts is the same
+  // kind of reverse embed, added in schema_step31.sql, for the "parts
+  // logged" tags shown under the task.
+  const [{ data: workOrders, error: fetchError }, { data: partsCatalog }] = await Promise.all([
+    supabase
+      .from("work_orders")
+      .select(
+        "id, task_title, description, work_type, priority, status, lead_technician, due_date, created_at, closed_at, assets(asset_tag, sites(address), organizations(name)), service_tickets(id), work_order_parts(id, quantity_used, part_name_snapshot)",
+      )
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("parts")
+      .select("id, name, unit, quantity_on_hand")
+      .order("name"),
+  ]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rows: WorkOrderRow[] = (workOrders ?? []).map((w: any) => ({
@@ -41,6 +49,11 @@ export default async function WorkOrdersPage({
     site_name: w.assets?.sites?.address ?? null,
     organization_name: w.assets?.organizations?.name ?? null,
     from_ticket_id: w.service_tickets?.[0]?.id ?? null,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    parts_used: (w.work_order_parts ?? []).map((wp: any) => ({
+      quantity_used: wp.quantity_used,
+      part_name_snapshot: wp.part_name_snapshot,
+    })),
   }));
 
   return (
@@ -72,7 +85,7 @@ export default async function WorkOrdersPage({
           {fetchError.message}
         </p>
       )}
-      <WorkOrdersTable workOrders={rows} />
+      <WorkOrdersTable workOrders={rows} parts={partsCatalog ?? []} />
     </AppShell>
   );
 }

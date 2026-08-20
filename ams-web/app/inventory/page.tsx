@@ -20,8 +20,8 @@ export default async function InventoryPage() {
   return (
     <AppShell
       profile={profile}
-      title="Inventory Cycles"
-      subtitle="COA-style physical inventory counts, per site."
+      title="Asset Verification"
+      subtitle="COA-style physical asset counts, per site — renamed from 'Inventory' so that label could move to parts stock instead."
       actions={
         <Link
           href="/inventory/new"

@@ -1258,6 +1258,42 @@ Verified with `npx tsc --noEmit` (clean).
 2. Push to GitHub — `vercel.json` now has two cron entries; Vercel will register both on the next successful deploy.
 3. To test without waiting: open any ticket with no reply yet and manually back-date its `created_at` in Supabase's Table Editor to 7+ hours ago (for a response breach) or edit an old open ticket to 48+ hours ago (for a resolution breach). Sign in as Super Admin and visit `/api/cron/sla-check` directly. Confirm the alert appears and, for a breach, that the ticket's priority is now High. Reload the same URL and confirm it does *not* fire a duplicate alert.
 
+## Follow-up — Parts & Consumables inventory
+
+Third item off the improvements list: a real spare-parts stock catalog, plus a way to log what got used against a work order — separate from two things already in the app that sound similar but aren't this:
+
+- **Inventory** (sidebar, `inventory_cycles` — Step 5) verifies that **assets** physically exist and are serviceable. An annual physical count, nothing to do with parts.
+- **`service_record_parts`** (schema.sql, still used by the CM report's "Parts Replaced" field) is a free-text "what did you use" log with no catalog behind it and no stock tracking — just a list of names per report.
+
+This is the real thing: a canonical parts list with an actual on-hand quantity, a reorder threshold, and a usage log tied to work orders that automatically decrements stock every time something gets logged.
+
+**`schema_step31.sql`** (new) — **run this in Supabase before deploying.** Two tables:
+- `parts` — the catalog: name, SKU, category, unit, quantity on hand, reorder threshold, unit cost, notes.
+- `work_order_parts` — one row per "this part was used on this work order," snapshotting the part's name at the time (so the log stays readable even if the catalog entry is later renamed or removed) and who logged it.
+
+A database trigger (`decrement_part_stock`) is what actually keeps stock in sync — every insert into `work_order_parts` decrements the matching `parts.quantity_on_hand` automatically, so a usage log and a stock change can never happen one without the other. It's allowed to go negative on purpose (over-logged usage vs. what's actually on the shelf is itself useful signal, same as a "Low Stock" flag).
+
+**What's new in the app:**
+- **Parts tab** (sidebar, staff-only, separate entry from Inventory) — catalog list with All / Low Stock / Out of Stock filter pills, `/parts/new` to add a part, and a detail/edit page per part showing its full usage history (which work orders consumed it, when, how much).
+- **Work Orders** — each row now has a **Log Parts** button opening a small modal: pick a part, enter a quantity, submit. Logged parts show up as small tags under the task ("2× O-ring, 1× Filter Cartridge") right on the Work Orders table, so usage is visible without needing a full work-order detail page (which still doesn't exist — this modal is a deliberately lightweight substitute for that one action, not a first step toward building one).
+
+Verified with `npx tsc --noEmit` (clean).
+
+## Setup steps
+
+1. Run `schema_step31.sql` in Supabase.
+2. Push to GitHub.
+3. Sign in as staff, go to **Parts** in the sidebar, add a test part with a reorder threshold (e.g. quantity 10, reorder at 5) — confirm it shows "In Stock."
+4. Edit it down to 5 or below directly and confirm it flips to "Low Stock"; down to 0 and confirm "Out of Stock." (Or more realistically: leave it at 10, and instead—)
+5. Go to **Work Orders**, click **Log Parts** on any row, pick your test part, log a quantity of 6, submit. Confirm: the tag "6× [part name]" appears under that work order's task, and back on the Parts tab, the part's on-hand count dropped to 4 and its status is now "Low Stock."
+6. Click into the part's detail page and confirm the usage history shows that work order, quantity, and timestamp.
+
+## Follow-up — renamed "Inventory" to spare parts, old feature is now "Asset Verification"
+
+Per your call: "Inventory" now means the spare-parts/consumables stock tab (the more common everyday reading of the word) — the original inventory-cycles feature that used to own that label and route (`/inventory`, unchanged) is now labeled **Asset Verification** in the sidebar and on its own page instead. No routes, data, or schema changed — this is a label-only swap: `/inventory` (asset counts) ↔ `/parts` (stock levels, sidebar label "Inventory"). No SQL to run.
+
+Verified with `npx tsc --noEmit` (clean).
+
 ## Follow-up — hourly SLA checks via GitHub Actions (Vercel Hobby workaround)
 
 Since you're staying on Vercel's Hobby plan for now, added `.github/workflows/sla-check.yml`: a scheduled GitHub Actions workflow that calls `/api/cron/sla-check` every hour, on top of (not instead of) Vercel's own once-daily cron. Same endpoint, same `CRON_SECRET`, same idempotent `sla_escalations` ledger — it's safe for both to call it; nothing double-fires. This closes the "up to 24h late" gap from the plan's cron limit without paying for Pro.

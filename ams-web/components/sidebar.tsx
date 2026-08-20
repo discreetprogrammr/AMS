@@ -50,6 +50,8 @@ const ICONS = {
     "M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2m-5 9 2 2 4-4",
   inventory:
     "M20 7 12 3 4 7m16 0-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4",
+  parts:
+    "M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.73V8ZM3.3 7 12 12l8.7-5M12 22V12",
   calendar:
     "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z",
   reports:
@@ -73,7 +75,12 @@ function buildNav(): NavItem[] {
     { href: "/work-orders", label: "Work Orders", icon: <Icon d={ICONS.workOrders} />, staffOnly: true },
     { href: "/tickets", label: "Tickets", icon: <Icon d={ICONS.tickets} /> },
     { href: "/inspections", label: "Inspections", icon: <Icon d={ICONS.inspections} />, staffOnly: true },
-    { href: "/inventory", label: "Inventory", icon: <Icon d={ICONS.inventory} />, staffOnly: true },
+    // Renamed per your call: "Inventory" now means parts stock (the more
+    // common everyday reading of the word) — the asset physical-count
+    // feature that used to own this label moved to "Asset Verification"
+    // instead, same route/data, just a clearer, more specific name.
+    { href: "/inventory", label: "Asset Verification", icon: <Icon d={ICONS.inventory} />, staffOnly: true },
+    { href: "/parts", label: "Inventory", icon: <Icon d={ICONS.parts} />, staffOnly: true },
     { href: "/messages", label: "HorizonCare360 Assist", icon: <Icon d={ICONS.chat} /> },
     { href: "/calendar", label: "Calendar", icon: <Icon d={ICONS.calendar} /> },
     { href: "/reports", label: "Reports", icon: <Icon d={ICONS.reports} /> },

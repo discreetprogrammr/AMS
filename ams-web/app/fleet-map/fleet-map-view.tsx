@@ -267,7 +267,17 @@ export function FleetMapView({ sites }: { sites: FleetSite[] }) {
                     {site.primaryAssetId && (
                       <button
                         type="button"
-                        onClick={() => setDetailAssetId(site.primaryAssetId)}
+                        // Leaflet's Popup calls L.DomEvent.disableClickPropagation
+                        // on its content wrapper — a raw stopPropagation() on the
+                        // native 'click' event during the bubble phase, so it
+                        // never reaches. React's root-level synthetic listener
+                        // (React 17+ delegates from the root container, not per
+                        // element). A plain onClick here would silently never
+                        // fire. onClickCapture uses React's capture-phase
+                        // listener instead, which runs on the way DOWN to the
+                        // target — before Leaflet's bubble-phase stopPropagation
+                        // ever gets a chance to block it.
+                        onClickCapture={() => setDetailAssetId(site.primaryAssetId)}
                         className="mt-3 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-blue-500/15 text-xs font-medium text-blue-300 ring-1 ring-inset ring-blue-500/25 hover:bg-blue-500/25"
                       >
                         View Asset →

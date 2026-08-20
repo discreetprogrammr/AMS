@@ -57,12 +57,7 @@ export function AssetDetailModal({
   const [notFoundOrDenied, setNotFoundOrDenied] = useState(false);
   const [crashMessage, setCrashMessage] = useState<string | null>(null);
 
-  // eslint-disable-next-line no-console
-  console.log("[AssetDetailModal] rendering for assetId:", assetId);
-
   useEffect(() => {
-    // eslint-disable-next-line no-console
-    console.log("[AssetDetailModal] mount effect running for assetId:", assetId);
     let cancelled = false;
     let supabase;
     try {
@@ -87,8 +82,6 @@ export function AssetDetailModal({
           )
           .eq("id", assetId)
           .single();
-        // eslint-disable-next-line no-console
-        console.log("[AssetDetailModal] assets query result:", { data, error });
         if (cancelled) return;
         if (error || !data) {
           setNotFoundOrDenied(true);
@@ -120,7 +113,16 @@ export function AssetDetailModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      // z-50 was invisible whenever this opened over the Fleet Map: Leaflet
+      // assigns its own internal panes z-index values up to 700 (popups) /
+      // 800 (controls), and since the map's container doesn't isolate those
+      // into their own stacking context, they were painting right over this
+      // modal despite it being `fixed` and covering the full viewport —
+      // confirmed via console logging that the click, state update, mount,
+      // and data fetch were all working correctly the whole time; this was
+      // purely a stacking-order issue. z-[9999] just needs to clear
+      // Leaflet's highest pane with room to spare.
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4"
       onClick={onClose}
     >
       <div

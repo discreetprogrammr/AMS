@@ -85,10 +85,6 @@ export function FleetMapView({ sites }: { sites: FleetSite[] }) {
   const markerRefs = useRef<Record<string, L.Marker>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailAssetId, setDetailAssetId] = useState<string | null>(null);
-  useEffect(() => {
-    // eslint-disable-next-line no-console
-    console.log("[FleetMap] detailAssetId state is now:", detailAssetId);
-  }, [detailAssetId]);
 
   // The theme toggle (theme-toggle.tsx) lives in the topbar, a totally
   // separate component with no shared React state or context — it flips
@@ -271,30 +267,7 @@ export function FleetMapView({ sites }: { sites: FleetSite[] }) {
                     {site.primaryAssetId && (
                       <button
                         type="button"
-                        // Leaflet's Popup calls L.DomEvent.disableClickPropagation
-                        // on its content wrapper, which stopPropagation()s the
-                        // native 'click' during the bubble phase. onClickCapture
-                        // alone should already sidestep that (React's capture
-                        // listener runs on the way down, before Leaflet's bubble
-                        // block), but assigning a plain native handler directly
-                        // on this exact element via ref is the most bulletproof
-                        // option — it fires the moment the event reaches this
-                        // element, with no dependency on React's delegation
-                        // internals or event-phase ordering at all. Belt and
-                        // suspenders: both are harmless to have firing together.
-                        ref={(el) => {
-                          if (el)
-                            el.onclick = () => {
-                              // eslint-disable-next-line no-console
-                              console.log("[FleetMap] View Asset native onclick fired", site.primaryAssetId);
-                              setDetailAssetId(site.primaryAssetId);
-                            };
-                        }}
-                        onClickCapture={() => {
-                          // eslint-disable-next-line no-console
-                          console.log("[FleetMap] View Asset onClickCapture fired", site.primaryAssetId);
-                          setDetailAssetId(site.primaryAssetId);
-                        }}
+                        onClick={() => setDetailAssetId(site.primaryAssetId)}
                         className="mt-3 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-blue-500/15 text-xs font-medium text-blue-400 ring-1 ring-inset ring-blue-500/25 hover:bg-blue-500/25"
                       >
                         View Asset →

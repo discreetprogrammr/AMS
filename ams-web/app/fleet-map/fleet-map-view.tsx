@@ -268,17 +268,21 @@ export function FleetMapView({ sites }: { sites: FleetSite[] }) {
                       <button
                         type="button"
                         // Leaflet's Popup calls L.DomEvent.disableClickPropagation
-                        // on its content wrapper — a raw stopPropagation() on the
-                        // native 'click' event during the bubble phase, so it
-                        // never reaches. React's root-level synthetic listener
-                        // (React 17+ delegates from the root container, not per
-                        // element). A plain onClick here would silently never
-                        // fire. onClickCapture uses React's capture-phase
-                        // listener instead, which runs on the way DOWN to the
-                        // target — before Leaflet's bubble-phase stopPropagation
-                        // ever gets a chance to block it.
+                        // on its content wrapper, which stopPropagation()s the
+                        // native 'click' during the bubble phase. onClickCapture
+                        // alone should already sidestep that (React's capture
+                        // listener runs on the way down, before Leaflet's bubble
+                        // block), but assigning a plain native handler directly
+                        // on this exact element via ref is the most bulletproof
+                        // option — it fires the moment the event reaches this
+                        // element, with no dependency on React's delegation
+                        // internals or event-phase ordering at all. Belt and
+                        // suspenders: both are harmless to have firing together.
+                        ref={(el) => {
+                          if (el) el.onclick = () => setDetailAssetId(site.primaryAssetId);
+                        }}
                         onClickCapture={() => setDetailAssetId(site.primaryAssetId)}
-                        className="mt-3 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-blue-500/15 text-xs font-medium text-blue-300 ring-1 ring-inset ring-blue-500/25 hover:bg-blue-500/25"
+                        className="mt-3 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-blue-500/15 text-xs font-medium text-blue-400 ring-1 ring-inset ring-blue-500/25 hover:bg-blue-500/25"
                       >
                         View Asset →
                       </button>

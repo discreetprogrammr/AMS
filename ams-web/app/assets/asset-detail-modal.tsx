@@ -55,22 +55,40 @@ export function AssetDetailModal({
   const [asset, setAsset] = useState<AssetDetail | null>(null);
   const [latestTicket, setLatestTicket] = useState<LatestTicket | null>(null);
   const [notFoundOrDenied, setNotFoundOrDenied] = useState(false);
+  const [crashMessage, setCrashMessage] = useState<string | null>(null);
+
+  // eslint-disable-next-line no-console
+  console.log("[AssetDetailModal] rendering for assetId:", assetId);
 
   useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log("[AssetDetailModal] mount effect running for assetId:", assetId);
     let cancelled = false;
-    const supabase = createClient();
+    let supabase;
+    try {
+      supabase = createClient();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[AssetDetailModal] createClient() threw:", err);
+      setCrashMessage(err instanceof Error ? err.message : String(err));
+      return;
+    }
     setAsset(null);
     setLatestTicket(null);
     setNotFoundOrDenied(false);
+    setCrashMessage(null);
 
-    supabase
-      .from("assets")
-      .select(
-        "id, asset_tag, equipment_type, brand, model, serial_number, status, install_date, warranty_end_date, next_service_due, sites(address), organizations(name)",
-      )
-      .eq("id", assetId)
-      .single()
-      .then(({ data, error }) => {
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("assets")
+          .select(
+            "id, asset_tag, equipment_type, brand, model, serial_number, status, install_date, warranty_end_date, next_service_due, sites(address), organizations(name)",
+          )
+          .eq("id", assetId)
+          .single();
+        // eslint-disable-next-line no-console
+        console.log("[AssetDetailModal] assets query result:", { data, error });
         if (cancelled) return;
         if (error || !data) {
           setNotFoundOrDenied(true);
@@ -78,7 +96,12 @@ export function AssetDetailModal({
         }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         setAsset(data as any);
-      });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("[AssetDetailModal] assets query threw:", err);
+        if (!cancelled) setCrashMessage(err instanceof Error ? err.message : String(err));
+      }
+    })();
 
     supabase
       .from("service_tickets")
@@ -121,6 +144,11 @@ export function AssetDetailModal({
         </div>
 
         <div className="px-5 py-4">
+          {crashMessage && (
+            <p className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+              Something went wrong loading this asset: {crashMessage}
+            </p>
+          )}
           {notFoundOrDenied && (
             <p className="text-sm text-slate-500">
               This asset isn't available — it may not exist, or you may not have access to it.

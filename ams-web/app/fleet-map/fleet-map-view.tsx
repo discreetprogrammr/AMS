@@ -85,6 +85,10 @@ export function FleetMapView({ sites }: { sites: FleetSite[] }) {
   const markerRefs = useRef<Record<string, L.Marker>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailAssetId, setDetailAssetId] = useState<string | null>(null);
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log("[FleetMap] detailAssetId state is now:", detailAssetId);
+  }, [detailAssetId]);
 
   // The theme toggle (theme-toggle.tsx) lives in the topbar, a totally
   // separate component with no shared React state or context — it flips
@@ -279,9 +283,18 @@ export function FleetMapView({ sites }: { sites: FleetSite[] }) {
                         // internals or event-phase ordering at all. Belt and
                         // suspenders: both are harmless to have firing together.
                         ref={(el) => {
-                          if (el) el.onclick = () => setDetailAssetId(site.primaryAssetId);
+                          if (el)
+                            el.onclick = () => {
+                              // eslint-disable-next-line no-console
+                              console.log("[FleetMap] View Asset native onclick fired", site.primaryAssetId);
+                              setDetailAssetId(site.primaryAssetId);
+                            };
                         }}
-                        onClickCapture={() => setDetailAssetId(site.primaryAssetId)}
+                        onClickCapture={() => {
+                          // eslint-disable-next-line no-console
+                          console.log("[FleetMap] View Asset onClickCapture fired", site.primaryAssetId);
+                          setDetailAssetId(site.primaryAssetId);
+                        }}
                         className="mt-3 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-blue-500/15 text-xs font-medium text-blue-400 ring-1 ring-inset ring-blue-500/25 hover:bg-blue-500/25"
                       >
                         View Asset →

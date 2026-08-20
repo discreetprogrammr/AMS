@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StatusBadge } from "@/components/status-badge";
 import { dateTimeLabel } from "@/lib/format";
+import { ReceiveStockModal } from "./receive-stock-modal";
 
 export type PartRow = {
   id: string;
@@ -39,6 +40,7 @@ function stockStatus(p: PartRow): "in_stock" | "low_stock" | "out_of_stock" {
 export function PartsTable({ parts }: { parts: PartRow[] }) {
   const router = useRouter();
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [receiveFor, setReceiveFor] = useState<PartRow | null>(null);
 
   const rows = useMemo(() => {
     return parts.filter((p) => {
@@ -85,6 +87,7 @@ export function PartsTable({ parts }: { parts: PartRow[] }) {
               <th className="px-4 py-3">Reorder At</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Updated</th>
+              <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody>
@@ -111,11 +114,23 @@ export function PartsTable({ parts }: { parts: PartRow[] }) {
                 <td className="px-4 py-3 whitespace-nowrap text-ink-soft">
                   {dateTimeLabel(p.updated_at)}
                 </td>
+                <td className="px-4 py-3 whitespace-nowrap text-right">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setReceiveFor(p);
+                    }}
+                    className="text-xs text-emerald-400 hover:underline"
+                  >
+                    Receive Stock
+                  </button>
+                </td>
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                   No parts match this filter.
                 </td>
               </tr>
@@ -123,6 +138,16 @@ export function PartsTable({ parts }: { parts: PartRow[] }) {
           </tbody>
         </table>
       </div>
+
+      {receiveFor && (
+        <ReceiveStockModal
+          partId={receiveFor.id}
+          partName={receiveFor.name}
+          currentQuantity={receiveFor.quantity_on_hand}
+          unit={receiveFor.unit}
+          onClose={() => setReceiveFor(null)}
+        />
+      )}
     </div>
   );
 }

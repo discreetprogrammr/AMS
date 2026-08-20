@@ -95,3 +95,53 @@ export async function updatePart(id: string, formData: FormData) {
   revalidatePath(`/parts/${id}`);
   redirect(`/parts/${id}?saved=1`);
 }
+
+// Logs a delivery from a supplier — inserts into part_receipts, which
+// increments parts.quantity_on_hand via the part_receipts_increment_stock
+// trigger (schema_step32.sql), the mirror of how logPartUsage
+// (app/work-orders/actions.ts) decrements it. No redirect — called
+// directly from receive-stock-modal.tsx's submit handler, same pattern as
+// logPartUsage.
+export async function receiveStock(
+  partId: string,
+  quantityReceived: number,
+  supplier: string,
+  referenceNumber: string,
+  unitCost: number | null,
+  notes: string,
+) {
+  await requireStaff("/parts");
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { data: part } = await supabase
+    .from("parts")
+    .select("name")
+    .eq("id", partId)
+    .single();
+
+  if (!part) {
+    throw new Error("That part couldn't be found — it may have been deleted.");
+  }
+
+  const { error } = await supabase.from("part_receipts").insert({
+    part_id: partId,
+    part_name_snapshot: part.name,
+    quantity_received: quantityReceived,
+    supplier: supplier || null,
+    reference_number: referenceNumber || null,
+    unit_cost: unitCost,
+    notes: notes || null,
+    received_by: user?.id ?? null,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  revalidatePath("/parts");
+  revalidatePath(`/parts/${partId}`);
+}

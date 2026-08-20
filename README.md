@@ -1294,6 +1294,28 @@ Per your call: "Inventory" now means the spare-parts/consumables stock tab (the 
 
 Verified with `npx tsc --noEmit` (clean).
 
+## Follow-up — stock receiving ("In"), to go with parts-used logging ("Out")
+
+You asked whether the Inventory tab could be the real system of record for all spare parts, and specifically whether deliveries arriving from a supplier could be logged too, not just usage. Yes to both — this adds the other half.
+
+**`schema_step32.sql`** (new) — **run this in Supabase before deploying.** One table, `part_receipts`: quantity received, supplier (optional), PO/reference number (optional), unit cost for that specific delivery (optional — kept per-delivery rather than overwriting the catalog's general cost, since what you actually pay can drift over time), notes, who logged it. A trigger (`increment_part_stock`) adds the quantity straight to `parts.quantity_on_hand` on insert — the exact mirror of how logging a part **used** on a work order decrements it (schema_step31.sql).
+
+**What's new in the app:**
+- **Receive Stock** button — on every row of the Inventory list, and on a part's own detail page. Small modal: quantity, and optionally who it's from, a PO/reference number, unit cost, and notes.
+- **Stock History** (part detail page, replaces the old "Usage History" section) — now a single merged, chronological ledger of everything that ever moved that part's stock: green `+N` for a delivery received, red `−N` for a use logged against a work order. This is the actual "In and Out" view — one place to see the full story of a part instead of two separate lists.
+
+Same idempotency-free design as everything else here: this doesn't second-guess your numbers. Logging a delivery just adds; logging usage just subtracts; whatever `quantity_on_hand` lands on is trusted as the real count. If you're bringing in your *existing* real parts inventory rather than starting from zero, the fastest way in is to add each part once with its current on-hand quantity typed directly into the "Quantity on Hand" field on creation — you don't need to log a fake "receipt" for stock you already had before this system existed. From that point on, every real delivery and every real use should go through Receive Stock / Log Parts so the Stock History stays a true record going forward.
+
+Verified with `npx tsc --noEmit` (clean).
+
+## Setup steps
+
+1. Run `schema_step32.sql` in Supabase.
+2. Push to GitHub.
+3. On the Inventory tab, click **Receive Stock** on any part, log a delivery of 10 with a supplier and PO number, submit. Confirm the on-hand count went up by 10.
+4. Click into that part's detail page — confirm the delivery shows up in **Stock History** as a green `+10` with the supplier/PO you entered.
+5. Log a use against it from Work Orders (existing **Log Parts** flow) and confirm that same Stock History list now also shows a red `−N` entry, correctly interleaved by time with the receipt from step 3.
+
 ## Follow-up — hourly SLA checks via GitHub Actions (Vercel Hobby workaround)
 
 Since you're staying on Vercel's Hobby plan for now, added `.github/workflows/sla-check.yml`: a scheduled GitHub Actions workflow that calls `/api/cron/sla-check` every hour, on top of (not instead of) Vercel's own once-daily cron. Same endpoint, same `CRON_SECRET`, same idempotent `sla_escalations` ledger — it's safe for both to call it; nothing double-fires. This closes the "up to 24h late" gap from the plan's cron limit without paying for Pro.

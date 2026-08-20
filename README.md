@@ -1257,3 +1257,25 @@ Verified with `npx tsc --noEmit` (clean).
 1. Run `schema_step30.sql` in Supabase.
 2. Push to GitHub — `vercel.json` now has two cron entries; Vercel will register both on the next successful deploy.
 3. To test without waiting: open any ticket with no reply yet and manually back-date its `created_at` in Supabase's Table Editor to 7+ hours ago (for a response breach) or edit an old open ticket to 48+ hours ago (for a resolution breach). Sign in as Super Admin and visit `/api/cron/sla-check` directly. Confirm the alert appears and, for a breach, that the ticket's priority is now High. Reload the same URL and confirm it does *not* fire a duplicate alert.
+
+## Follow-up — hourly SLA checks via GitHub Actions (Vercel Hobby workaround)
+
+Since you're staying on Vercel's Hobby plan for now, added `.github/workflows/sla-check.yml`: a scheduled GitHub Actions workflow that calls `/api/cron/sla-check` every hour, on top of (not instead of) Vercel's own once-daily cron. Same endpoint, same `CRON_SECRET`, same idempotent `sla_escalations` ledger — it's safe for both to call it; nothing double-fires. This closes the "up to 24h late" gap from the plan's cron limit without paying for Pro.
+
+**One-time setup — add the secret GitHub Actions needs:**
+1. On GitHub, open the `AMS` repo → **Settings** → **Secrets and variables** → **Actions**.
+2. Click **New repository secret**.
+3. Name: `CRON_SECRET`. Value: the exact same value you already put in Vercel's `CRON_SECRET` environment variable.
+4. Save.
+
+That's it — no other config. The workflow file itself is already wired to the production URL and runs on the schedule as soon as it's pushed to `main`.
+
+**Verify it's working:**
+1. Push this change (see commands below).
+2. On GitHub, go to the **Actions** tab → **SLA Breach Check** in the left list.
+3. Click **Run workflow** (the manual trigger, top right) to fire it immediately instead of waiting up to an hour.
+4. Click into the run and expand the "Call SLA check endpoint" step — you should see `HTTP status: 200` and the same JSON body (`checked`, `escalated`, `skipped`) you saw testing manually earlier. A red X instead means something's wrong — most likely the secret doesn't match, or Deployment Protection got re-enabled on Vercel (see the earlier follow-up on that).
+
+**Two things worth knowing:**
+- GitHub automatically disables a scheduled workflow after **60 days with no commits to the repo** — harmless (it just stops silently, no email warning by default), but worth remembering if this project goes quiet between working sessions for a couple months. A quick way to re-enable it: Actions tab → the workflow → the "This scheduled workflow is disabled" banner has a re-enable button; or just push any commit, which reactivates it.
+- This only speeds up the **SLA check**, not the **PM ticket generation** cron — that one's fine staying at once/day (a PM reminder being a few hours early or late doesn't carry the same urgency as an 8-hour response SLA). If you ever want that one hourly too, the same workflow pattern applies — just say so.

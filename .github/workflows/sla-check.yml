@@ -1,0 +1,30 @@
+name: SLA Breach Check
+
+# Runs the SLA escalation sweep (app/api/cron/sla-check) hourly instead of
+# once a day. Vercel's own Cron Jobs are capped at once/day on the Hobby
+# plan (see the "SLA breach escalation" section in README.md) — this
+# workflow is a free workaround for that during the testing/demo phase,
+# without needing to upgrade the Vercel plan. Same endpoint, same
+# CRON_SECRET auth, same idempotent sla_escalations ledger underneath, so
+# it's safe to have this AND Vercel's own daily cron both call it — nothing
+# double-fires either way.
+on:
+  schedule:
+    - cron: "0 * * * *" # every hour, on the hour (UTC)
+  workflow_dispatch: {} # lets you trigger a run manually from the Actions tab
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call SLA check endpoint
+        run: |
+          status=$(curl -sS -o response.json -w "%{http_code}" \
+            https://ams-web-phtek.vercel.app/api/cron/sla-check \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $status"
+          cat response.json
+          if [ "$status" -ne 200 ]; then
+            echo "SLA check failed with status $status"
+            exit 1
+          fi

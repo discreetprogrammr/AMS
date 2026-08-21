@@ -52,6 +52,8 @@ const ICONS = {
     "M20 7 12 3 4 7m16 0-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4",
   parts:
     "M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.73V8ZM3.3 7 12 12l8.7-5M12 22V12",
+  scan:
+    "M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10",
   calendar:
     "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z",
   reports:
@@ -70,6 +72,7 @@ function buildNav(): NavItem[] {
   return [
     { href: "/dashboard", label: "Dashboard", icon: <Icon d={ICONS.dashboard} /> },
     { href: "/assets", label: "Assets", icon: <Icon d={ICONS.assets} /> },
+    { href: "/assets/scan", label: "Scan Asset", icon: <Icon d={ICONS.scan} />, staffOnly: true },
     { href: "/fleet-map", label: "Fleet Map", icon: <Icon d={ICONS.map} /> },
     { href: "/clients", label: "Clients", icon: <Icon d={ICONS.clients} />, staffOnly: true },
     { href: "/work-orders", label: "Work Orders", icon: <Icon d={ICONS.workOrders} />, staffOnly: true },
@@ -108,6 +111,14 @@ export function Sidebar({ profile }: { profile: Profile | null }) {
     if (item.staffOnly) return isStaff;
     return true;
   });
+
+  // Picks the single longest-matching href as "active" — needed now that
+  // /assets/scan sits under /assets as its own sibling nav item rather
+  // than a sub-page of it; a plain startsWith per item would highlight
+  // both "Assets" and "Scan Asset" at once while on the scan page.
+  const activeHref = nav
+    .filter((item) => !item.disabled && pathname?.startsWith(item.href))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href;
 
   // Close the drawer automatically whenever the route changes — otherwise
   // tapping a nav link on mobile would navigate underneath a still-open
@@ -166,7 +177,7 @@ export function Sidebar({ profile }: { profile: Profile | null }) {
 
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
         {nav.map((item) => {
-          const active = !item.disabled && pathname?.startsWith(item.href);
+          const active = !item.disabled && item.href === activeHref;
 
           if (item.disabled) {
             return (

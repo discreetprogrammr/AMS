@@ -7,7 +7,7 @@ import { PreventiveChecklistForm } from "./preventive-form";
 export default async function PreventiveChecklistPage({
   searchParams,
 }: {
-  searchParams: { error?: string; ticket_id?: string };
+  searchParams: { error?: string; ticket_id?: string; asset_id?: string };
 }) {
   await requireStaff("/reports");
   const profile = await getProfile();
@@ -63,7 +63,11 @@ export default async function PreventiveChecklistPage({
         )}
         <PreventiveChecklistForm
           assets={assets ?? []}
-          prefilledAssetId={ticket?.asset_id ?? null}
+          // Ticket-derived takes priority when both are somehow present;
+          // ?asset_id= is the new path in from the asset detail page's
+          // "Start PM Checklist" quick action / QR scan flow, with no
+          // ticket involved at all.
+          prefilledAssetId={ticket?.asset_id ?? searchParams?.asset_id ?? null}
           prefilledTicketId={ticketId}
           linkableTickets={linkableTickets ?? []}
         />

@@ -1316,6 +1316,37 @@ Verified with `npx tsc --noEmit` (clean).
 4. Click into that part's detail page — confirm the delivery shows up in **Stock History** as a green `+10` with the supplier/PO you entered.
 5. Log a use against it from Work Orders (existing **Log Parts** flow) and confirm that same Stock History list now also shows a red `−N` entry, correctly interleaved by time with the receipt from step 3.
 
+## Follow-up — QR/barcode scanning on assets
+
+Fourth item off the improvements list: scan an asset's tag on-site to jump straight to its record and a checklist, instead of searching for it manually.
+
+**New dependencies** (`ams-web/package.json`) — **run `npm install` before this will build.** No sandbox registry access in this session, same situation as `leaflet`/`react-leaflet` earlier, so these are added to `package.json` but not yet installed:
+- `qrcode` (+ `@types/qrcode`) — generates the QR code image server-side.
+- `@zxing/browser` + `@zxing/library` — reads a QR code or barcode from the device camera in-browser. Supports far more than just QR (Code128, EAN, UPC, and others), which matters here since not every asset will have a fresh Phtek-printed tag — some already have an OEM barcode.
+
+**No new environment variable needed.** The QR code encodes a full URL to that asset (`https://.../assets/<id>`), but instead of a hardcoded/configured domain, it reads the *actual request's* own host at render time (`next/headers`). That means it's automatically correct whether you're on localhost, a Vercel preview URL, or your real production domain later — nothing to misconfigure, nothing that can go stale if the domain ever changes.
+
+**What's new in the app:**
+- **Asset detail page** (staff only) — a new card up top with the asset's QR code, a **Download QR** link (for printing onto a physical tag), and two quick-action links: **Start PM Checklist** and **Start CM Report**, both landing on the report form with this exact asset already selected — no dropdown hunting.
+- **Scan Asset** (new sidebar item, staff-only, `/assets/scan`) — opens the device camera right in the browser. On a successful scan:
+  - If it's one of this app's own QR codes, it jumps straight to that asset — no database lookup needed, the id is right there in the URL.
+  - Otherwise, it's tried as an exact match against `assets.serial_number` — so an asset's **existing** OEM barcode (if it has one) works too, not just a newly-printed Phtek tag.
+  - No match found, or camera access denied/unsupported: a manual text-entry fallback is always available underneath, so this page is never a dead end.
+
+**Requires HTTPS** (camera access via `getUserMedia` is blocked on plain HTTP by every browser) — already true for the Vercel deployment, same requirement the WebRTC calling feature already has.
+
+Verified with `npx tsc --noEmit` — clean except for the two expected "module not found" errors for the not-yet-installed packages above; everything else type-checks.
+
+## Setup steps
+
+1. Run `npm install` locally (picks up the new packages).
+2. No SQL to run — this feature has no schema changes.
+3. Push to GitHub.
+4. Sign in as staff, open any asset, and confirm the new QR card appears with a scannable code. Click **Download QR** and confirm a PNG downloads.
+5. Click **Start PM Checklist** — confirm the Preventive Maintenance Checklist page opens with this exact asset already selected in the dropdown, not blank.
+6. Go to **Scan Asset** in the sidebar, allow camera access when prompted, and point it at the QR code you just downloaded (displaying it on another screen or printout works fine) — confirm it navigates straight to that asset's page.
+7. Test the fallback: type an existing asset's serial number into the manual entry box on the Scan Asset page and confirm it also navigates correctly. Try a made-up value and confirm you get a clear "no asset found" message instead of an error or dead end.
+
 ## Follow-up — hourly SLA checks via GitHub Actions (Vercel Hobby workaround)
 
 Since you're staying on Vercel's Hobby plan for now, added `.github/workflows/sla-check.yml`: a scheduled GitHub Actions workflow that calls `/api/cron/sla-check` every hour, on top of (not instead of) Vercel's own once-daily cron. Same endpoint, same `CRON_SECRET`, same idempotent `sla_escalations` ledger — it's safe for both to call it; nothing double-fires. This closes the "up to 24h late" gap from the plan's cron limit without paying for Pro.

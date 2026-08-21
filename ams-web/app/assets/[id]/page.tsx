@@ -1,9 +1,11 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { changedFields } from "@/lib/audit";
 import { woRef, dateTimeLabel } from "@/lib/format";
+import { generateQrDataUrl } from "@/lib/qr";
 import { AppShell } from "@/components/app-shell";
 import { StatusBadge } from "@/components/status-badge";
 import { AssetForm } from "../asset-form";
@@ -88,6 +90,21 @@ export default async function EditAssetPage({
       ? `${clientLabel} — ${siteLabel}`
       : clientLabel ?? siteLabel ?? asset.asset_tag;
 
+  // Reads the actual request's own host instead of a hardcoded/env-configured
+  // domain — works correctly whether this is localhost, a Vercel preview
+  // URL, or the real production custom domain, with nothing to misconfigure
+  // or let go stale. Staff-only: printing a physical tag and jumping into a
+  // checklist are field-technician actions, not something a client needs.
+  let qrDataUrl: string | null = null;
+  let assetUrl: string | null = null;
+  if (isStaff) {
+    const h = await headers();
+    const host = h.get("host");
+    const proto = h.get("x-forwarded-proto") ?? "https";
+    assetUrl = `${proto}://${host}/assets/${asset.id}`;
+    qrDataUrl = await generateQrDataUrl(assetUrl);
+  }
+
   return (
     <AppShell
       profile={profile}
@@ -116,6 +133,45 @@ export default async function EditAssetPage({
           <p className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400">
             Work order created and linked to the ticket.
           </p>
+        )}
+
+        {isStaff && qrDataUrl && (
+          <div className="mb-6 flex flex-col items-start gap-4 rounded-xl border border-hairline bg-surface p-6 sm:flex-row sm:items-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={qrDataUrl}
+              alt={`QR code for ${asset.asset_tag}`}
+              className="h-28 w-28 shrink-0 rounded-lg border border-hairline bg-white p-1.5"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-ink">Scan tag for this asset</p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Print this onto a physical tag — scanning it (with the app's Scan Asset
+                page, or any phone camera) jumps straight here instead of a manual search.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-3">
+                <a
+                  href={qrDataUrl}
+                  download={`${asset.asset_tag}-qr.png`}
+                  className="text-xs font-medium text-blue-400 hover:underline"
+                >
+                  Download QR →
+                </a>
+                <Link
+                  href={`/reports/preventive-checklist?asset_id=${asset.id}`}
+                  className="text-xs font-medium text-blue-400 hover:underline"
+                >
+                  Start PM Checklist →
+                </Link>
+                <Link
+                  href={`/reports/corrective-checklist?asset_id=${asset.id}`}
+                  className="text-xs font-medium text-blue-400 hover:underline"
+                >
+                  Start CM Report →
+                </Link>
+              </div>
+            </div>
+          </div>
         )}
 
         {isStaff ? (

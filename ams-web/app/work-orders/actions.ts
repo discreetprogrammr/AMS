@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/supabase/profile";
+import { notifyTicketStatusChange } from "@/lib/notify";
 
 // Staff-only end to end — see the note in schema_step9.sql. Unlike
 // service_tickets, clients never raise or view work orders; this is the
@@ -215,6 +216,7 @@ export async function updateWorkOrderStatus(id: string, status: string) {
             : linkedTicket.resolved_at,
       })
       .eq("id", linkedTicket.id);
+    await notifyTicketStatusChange(linkedTicket.id, ticketStatus);
     revalidatePath("/tickets");
     revalidatePath("/assets");
   }

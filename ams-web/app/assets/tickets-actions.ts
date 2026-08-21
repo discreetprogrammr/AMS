@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/supabase/profile";
+import { notifyTicketStatusChange } from "@/lib/notify";
 
 // Anyone who can see the asset can raise a ticket on it — RLS restricts a
 // client_viewer to only their own organization's assets (see
@@ -112,6 +113,8 @@ export async function acknowledgeTicket(assetId: string, ticketId: string) {
     redirect(`/assets/${assetId}?error=${encodeURIComponent(error.message)}`);
   }
 
+  await notifyTicketStatusChange(ticketId, "in_progress");
+
   revalidatePath(`/assets/${assetId}`);
   redirect(`/assets/${assetId}`);
 }
@@ -149,6 +152,8 @@ export async function resolveTicket(assetId: string, ticketId: string) {
     redirect(`/assets/${assetId}?error=${encodeURIComponent(error.message)}`);
   }
 
+  await notifyTicketStatusChange(ticketId, "closed");
+
   revalidatePath(`/assets/${assetId}`);
   redirect(`/assets/${assetId}`);
 }
@@ -179,6 +184,8 @@ export async function markTicketPartsPending(assetId: string, ticketId: string) 
   if (error) {
     redirect(`/assets/${assetId}?error=${encodeURIComponent(error.message)}`);
   }
+
+  await notifyTicketStatusChange(ticketId, "parts_pending");
 
   revalidatePath(`/assets/${assetId}`);
   redirect(`/assets/${assetId}`);
@@ -238,6 +245,8 @@ export async function updateTicketStatus(ticketId: string, status: string) {
       .update({ status: status === "closed" ? "completed" : "scheduled" })
       .eq("work_order_id", ticket.work_order_id);
   }
+
+  await notifyTicketStatusChange(ticketId, status);
 
   revalidatePath("/tickets");
   revalidatePath("/work-orders");

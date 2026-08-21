@@ -1,4 +1,5 @@
 import { createServiceRoleClient } from "@/lib/supabase/service-role";
+import { notifyStaff } from "@/lib/notify";
 
 // Core logic for "Automated PM ticket generation" — instead of relying on
 // someone remembering to check next_service_due, a daily cron job
@@ -136,6 +137,14 @@ export async function runPmAutoCheck(): Promise<PmAutoCheckResult> {
       if (alertError || !alert) {
         throw new Error(alertError?.message ?? "alert insert returned no row");
       }
+
+      // Beyond the in-app alert/bell — same title/description. Non-fatal
+      // (notifyStaff never throws): a missing/misconfigured RESEND_API_KEY
+      // shouldn't block the auto-created ticket/calendar event/alert.
+      await notifyStaff(
+        `PM due soon — ${asset.asset_tag}`,
+        description,
+      );
 
       const { error: runError } = await supabase.from("pm_auto_runs").insert({
         asset_id: asset.id,

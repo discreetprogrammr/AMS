@@ -1442,3 +1442,31 @@ Verified with `npx tsc --noEmit` (clean). No new dependencies.
 6. Sign in as a client on that same asset's org and confirm the Documents card shows the same file, downloadable, but with no Upload button and no Delete link.
 7. Sign in as a client on a *different* org and confirm that asset (and its documents) aren't reachable at all — existing asset-level RLS already covers this, this step just confirms the new table didn't accidentally loosen it.
 8. Back as staff, click **Delete** on the test document — confirm it disappears from the list. In Supabase's Storage browser, confirm the underlying file in the `asset-documents` bucket is gone too, not just the catalog row.
+
+## Follow-up — Email notifications (beyond the in-app bell)
+
+Last item off the list: real email, not just the in-app alert/bell, for the three things that most need someone to actually notice them — SLA breaches, upcoming PM, and ticket status changes. You picked **Resend** as the email provider.
+
+**No schema changes, no new npm dependency.** `lib/email.ts` calls Resend's HTTP API directly with a plain `fetch()` — Resend's API is a single POST with a JSON body, so pulling in their SDK wasn't worth it. Every email send is non-fatal everywhere it's wired in: a missing API key or a Resend outage never blocks the SLA escalation, the PM ticket creation, or the ticket status update it's attached to — the in-app alert/bell and the ticket record are always the source of truth; email is a bonus channel layered on top, silently skipped if unconfigured.
+
+**Two different recipients, on purpose** (`lib/notify.ts`):
+- **SLA breach/approaching and PM due** → one configurable staff address (`STAFF_NOTIFICATION_EMAIL`). `profiles` doesn't store an email (that lives in Supabase Auth, not the app's own tables), and for an internal ops alert, routing to one shared inbox is the normal pattern anyway — not per-technician subscriptions. Same wording as the in-app alert, so the email and the bell never say different things.
+- **Ticket status change** → the *specific client* who raised that ticket, looked up via `auth.admin.getUserById()` (a single targeted lookup with the service-role client, not a full user export). Only fires if the ticket was actually raised by a client — a staff-raised ticket has nobody external waiting on a status email. Wired into every place a ticket's status can change: the three quick actions on the asset page (Start Progress / Mark Parts Pending / Mark Closed), the ticket detail modal's status dropdown, and a work order's status change when it's linked back to a ticket.
+
+**Setup — Resend account (one-time):**
+1. Sign up at resend.com (free tier: 3,000 emails/month, 100/day — no credit card needed).
+2. Dashboard → **API Keys** → create one, copy it.
+3. For quick testing without your own domain: use the sandbox sender `HorizonCare360 <onboarding@resend.dev>` as `RESEND_FROM_EMAIL` — but Resend will only actually deliver those to the email address you signed up to Resend with, nobody else, until you verify a real domain (Dashboard → **Domains** → add `pacifichorizontek.com` or whichever you'll send from, then add the DNS records they give you). For anything beyond your own inbox testing, verify a domain first.
+4. In Vercel: Project Settings → Environment Variables → add `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, and `STAFF_NOTIFICATION_EMAIL` (Production — and Preview/Development too if you want emails while testing branch deploys).
+5. Also add the same three to your local `.env.local` if you want to test from `next dev`.
+
+Verified with `npx tsc --noEmit` (clean).
+
+## Setup steps
+
+1. No SQL to run — this feature only touches code + environment variables.
+2. Complete the Resend setup above, then push to GitHub and let Vercel redeploy with the new env vars in place.
+3. **Test ticket status email:** as a client, raise a test ticket. Sign in as staff, open that asset, click **Start Progress** on the ticket. Check the inbox for the email address you signed up to Resend with (or the client's real inbox, if you've verified a domain) — confirm a "TKT-XXXXXXXX is now In Progress" email arrives. Click **Mark Closed** and confirm a second email arrives for "Closed."
+4. **Test staff SLA email:** repeat the earlier SLA breach test (back-date a ticket's `created_at`, hit `/api/cron/sla-check`) — confirm `STAFF_NOTIFICATION_EMAIL` receives an email matching the alert that shows up in the Alerts tab.
+5. **Test staff PM email:** repeat the earlier PM automation test (set an asset's `next_service_due` within the reminder window, hit `/api/cron/pm-due`) — confirm `STAFF_NOTIFICATION_EMAIL` receives a matching "PM due soon" email.
+6. **Confirm the non-fatal behavior:** temporarily remove `RESEND_API_KEY` from Vercel's env vars (or just test this locally without setting it), redeploy, and repeat any of the above — confirm the ticket status still updates / the alert still gets created normally, just with no email. This is the expected fallback, not a bug.

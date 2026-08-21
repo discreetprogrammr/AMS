@@ -1,6 +1,7 @@
 import { createServiceRoleClient } from "@/lib/supabase/service-role";
 import { SLA_RESPONSE_TARGET_HOURS, SLA_RESOLUTION_TARGET_HOURS, hoursBetween } from "@/lib/sla";
 import { ticketRef } from "@/lib/format";
+import { notifyStaff } from "@/lib/notify";
 
 // Core logic for "SLA breach escalation" — instead of only ever showing SLA
 // performance after the fact (the dashboard's SLA Performance / Historical
@@ -178,6 +179,12 @@ async function tryEscalate(
   if (alertError || !alert) {
     throw new Error(alertError?.message ?? "alert insert returned no row");
   }
+
+  // Beyond the in-app alert/bell — same title/description, so the email
+  // never says anything different from what's already in the Alerts tab.
+  // Non-fatal (notifyStaff never throws): a missing/misconfigured
+  // RESEND_API_KEY shouldn't block the escalation itself.
+  await notifyStaff(title, description);
 
   let priorityBumped = false;
   if (level === "breached" && ticket.priority !== "high") {

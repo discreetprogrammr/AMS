@@ -1368,3 +1368,28 @@ That's it — no other config. The workflow file itself is already wired to the 
 **Two things worth knowing:**
 - GitHub automatically disables a scheduled workflow after **60 days with no commits to the repo** — harmless (it just stops silently, no email warning by default), but worth remembering if this project goes quiet between working sessions for a couple months. A quick way to re-enable it: Actions tab → the workflow → the "This scheduled workflow is disabled" banner has a re-enable button; or just push any commit, which reactivates it.
 - This only speeds up the **SLA check**, not the **PM ticket generation** cron — that one's fine staying at once/day (a PM reminder being a few hours early or late doesn't carry the same urgency as an 8-hour response SLA). If you ever want that one hourly too, the same workflow pattern applies — just say so.
+
+## Follow-up — Trends/Analytics view (client-facing)
+
+Next item off the list: a view management can point to during a service-contract review — uptime %, ticket volume, and mean time to repair (MTTR), over time. Client-facing (also visible to staff, showing fleet-wide), separate from the tactical SLA widgets already on the Dashboard.
+
+**`schema_step33.sql`** (new) — **run this in Supabase before deploying.** Adds one additive RLS policy on `audit_log`. Ticket volume and MTTR needed nothing new (`service_tickets` is already readable exactly the way this needs it — staff see every org, a client sees only their own). Uptime % is the one genuinely new metric, and rather than inventing a number, it's reconstructed from real history: every asset insert/update is already captured in `audit_log` (schema.sql's `log_audit()`), so "what fraction of assets were operational as of the end of month X" is answered by walking each asset's own status-change trail. The catch: `audit_log` reads are Super Admin-only (schema_step22b.sql), which would block both a regular Admin and every client from running that reconstruction. The new policy doesn't touch or narrow that — it just also lets staff read `audit_log` rows for the `assets` table fleet-wide, and lets a client read them for their own org's assets only. Every other table's audit trail stays exactly as restricted as before.
+
+**`lib/analytics.ts`** (new) — the shared computation, used by both the page and the CSV export so the two can never drift apart. Buckets the last 6 calendar months and for each one computes: tickets opened, tickets resolved, MTTR (avg hours from opened to resolved, for tickets resolved that month), and uptime % (assets confirmed operational as of that month's end, over assets with a confirmed status by then — an asset with no audit history yet, or that didn't exist yet, is excluded from that month's count rather than guessed at).
+
+**What's new in the app:**
+- **Analytics** (new sidebar item, visible to both roles, matching Calendar/Reports) — a KPI row (avg uptime, 6-month ticket count, resolved count, avg repair time) plus three hand-rolled trend charts (same plain-div style as the Dashboard's SLA Historical Performance chart — no new charting library): Uptime %, Ticket Volume (opened vs. resolved), and Mean Time to Repair, each color-coded against a threshold (uptime tiers at 98%/90%, MTTR against the existing `SLA_RESOLUTION_TARGET_HOURS` target from `lib/sla.ts`).
+- **Export CSV** button — `/api/reports/analytics/export`, one row per month plus a 6-month average/total row, same numbers as the page.
+
+RLS scoping means staff and a client viewing this page never see the same numbers unless they happen to share a fleet — staff get everything, a client gets only their own org, with zero extra filtering logic in the page itself.
+
+Verified with `npx tsc --noEmit` (clean).
+
+## Setup steps
+
+1. Run `schema_step33.sql` in Supabase.
+2. Push to GitHub.
+3. Sign in as staff, go to **Analytics** in the sidebar — confirm the KPI row and three charts render (months with no data yet show a `—` bar rather than a fake zero).
+4. Click **Export CSV** and confirm the downloaded file's numbers match what's on screen.
+5. Sign in as a client and confirm the same page shows only that org's tickets/assets — compare against what you already know about that org's data (or against the Dashboard's existing SLA widgets for a sanity check on ticket-derived numbers).
+6. To see uptime move: change an asset's status (e.g. to "Down") on the Assets tab, then back to "Operational." Revisit Analytics — this month's uptime bar should reflect the asset having spent part of the month in the audit trail as non-operational once you check next month's bucket (the current month always reflects the *latest* known status, since "as of now" is the same as "as of month-end" while you're still inside that month).

@@ -58,6 +58,8 @@ const ICONS = {
     "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z",
   reports:
     "M3 3v18h18M8 17V10m5 7V4m5 13v-6",
+  analytics:
+    "M3 3v18h18M7 14l4-5 3 3 5-7M14 5h5v5",
   alerts:
     "M12 2a6 6 0 0 0-6 6c0 4.5-2 6-2 6h16s-2-1.5-2-6a6 6 0 0 0-6-6ZM10.3 21a1.94 1.94 0 0 0 3.4 0",
   audit:
@@ -87,6 +89,10 @@ function buildNav(): NavItem[] {
     { href: "/messages", label: "HorizonCare360 Assist", icon: <Icon d={ICONS.chat} /> },
     { href: "/calendar", label: "Calendar", icon: <Icon d={ICONS.calendar} /> },
     { href: "/reports", label: "Reports", icon: <Icon d={ICONS.reports} /> },
+    // Client-visible like Dashboard's SLA widgets — RLS scopes every query
+    // in lib/analytics.ts to the signed-in org automatically, so staff see
+    // fleet-wide trends and a client sees only their own (schema_step33.sql).
+    { href: "/analytics", label: "Analytics", icon: <Icon d={ICONS.analytics} /> },
     { href: "/alerts", label: "Alerts", icon: <Icon d={ICONS.alerts} />, staffOnly: true },
     { href: "/audit-log", label: "Audit Log", icon: <Icon d={ICONS.audit} />, staffOnly: true, superAdminOnly: true },
   ];

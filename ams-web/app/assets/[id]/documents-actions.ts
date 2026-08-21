@@ -11,15 +11,21 @@ import { makeDocumentPath, MAX_DOCUMENT_BYTES } from "@/lib/documents";
 // keep the already-selected file and show an inline error on failure
 // instead of losing it to a redirect round trip, same reasoning as
 // receiveStock (app/parts/actions.ts).
-export async function uploadDocument(
-  assetId: string,
-  category: string,
-  title: string,
-  file: File,
-): Promise<void> {
+//
+// Takes a FormData rather than a raw File positional argument — passing a
+// bare File instance alongside other plain args isn't reliably supported
+// by Server Actions' serialization ("Only plain objects, and a few
+// built-ins, can be passed to Server Actions"). FormData itself IS a
+// supported boundary type (it's exactly what a native <form action> submit
+// already sends under the hood), so wrapping the file in one sidesteps it.
+export async function uploadDocument(assetId: string, formData: FormData): Promise<void> {
   await requireStaff(`/assets/${assetId}`);
 
-  if (!file || file.size === 0) {
+  const file = formData.get("file");
+  const category = String(formData.get("category") ?? "other");
+  const title = String(formData.get("title") ?? "");
+
+  if (!(file instanceof File) || file.size === 0) {
     throw new Error("Please choose a file.");
   }
   if (file.size > MAX_DOCUMENT_BYTES) {

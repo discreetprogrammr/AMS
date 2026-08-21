@@ -32,7 +32,11 @@ export function UploadDocumentModal({
     setSubmitting(true);
     setError(null);
     try {
-      await uploadDocument(assetId, category, title.trim(), file);
+      const formData = new FormData();
+      formData.set("file", file);
+      formData.set("category", category);
+      formData.set("title", title.trim());
+      await uploadDocument(assetId, formData);
       router.refresh();
       onClose();
     } catch (err) {

@@ -1470,3 +1470,11 @@ Verified with `npx tsc --noEmit` (clean).
 4. **Test staff SLA email:** repeat the earlier SLA breach test (back-date a ticket's `created_at`, hit `/api/cron/sla-check`) — confirm `STAFF_NOTIFICATION_EMAIL` receives an email matching the alert that shows up in the Alerts tab.
 5. **Test staff PM email:** repeat the earlier PM automation test (set an asset's `next_service_due` within the reminder window, hit `/api/cron/pm-due`) — confirm `STAFF_NOTIFICATION_EMAIL` receives a matching "PM due soon" email.
 6. **Confirm the non-fatal behavior:** temporarily remove `RESEND_API_KEY` from Vercel's env vars (or just test this locally without setting it), redeploy, and repeat any of the above — confirm the ticket status still updates / the alert still gets created normally, just with no email. This is the expected fallback, not a bug.
+
+## Follow-up — Site + Serial instead of Asset Tag in notification text
+
+Small follow-up on the email feature: SLA breach, PM due, and ticket status change text all referenced the asset by its internal `asset_tag` code (e.g. "XRY-0005") — the same thing task #74 already fixed everywhere else in the app (Fleet Map, Tickets, Assets, Assist inbox, etc.) in favor of `assetLabel()`'s "Site — SN Serial" format, more meaningful to a client who's never seen an asset_tag anywhere else. The notification code just predates that convention having been applied here.
+
+Fixed in `lib/sla-escalation.ts`, `lib/pm-automation.ts`, and `lib/notify.ts` — all three now pull `serial_number`/`sites(address)` alongside `asset_tag` and run it through the same `assetLabel()` helper everything else uses. Since SLA/PM alert text is shared verbatim between the in-app Alerts tab and the email (by design, so they can't say different things), this also updates what shows in the Alerts tab now, not just the email — consistent with the rest of the app already doing this, not a new inconsistency. Calendar event titles and the cron JSON response's `assetTag` field were deliberately left as the raw tag — internal/operational identifiers, not something a client reads.
+
+Verified with `npx tsc --noEmit` (clean). No schema changes, nothing new to deploy beyond the code itself.

@@ -1,5 +1,6 @@
 import { createServiceRoleClient } from "@/lib/supabase/service-role";
 import { notifyStaff } from "@/lib/notify";
+import { assetLabel } from "@/lib/format";
 
 // Core logic for "Automated PM ticket generation" — instead of relying on
 // someone remembering to check next_service_due, a daily cron job
@@ -54,7 +55,7 @@ export async function runPmAutoCheck(): Promise<PmAutoCheckResult> {
 
   const { data: assets, error: assetsError } = await supabase
     .from("assets")
-    .select("id, asset_tag, next_service_due, status")
+    .select("id, asset_tag, serial_number, next_service_due, status, sites(address)")
     .not("next_service_due", "is", null)
     .lte("next_service_due", horizon)
     .neq("status", "unserviceable");
@@ -86,9 +87,17 @@ export async function runPmAutoCheck(): Promise<PmAutoCheckResult> {
     }
 
     const overdue = dueDate < today;
+    // Site + serial number instead of the raw asset tag in anything a
+    // person actually reads (alert text, email) — asset_tag itself is kept
+    // as-is for the calendar event title and this function's own JSON
+    // return shape, same as everywhere else in the app that draws this
+    // distinction (lib/format.ts's assetLabel()).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const siteRow = Array.isArray((asset as any).sites) ? (asset as any).sites[0] : (asset as any).sites;
+    const display = assetLabel({ ...asset, sites: siteRow });
     const description = overdue
-      ? `Automated PM reminder — scheduled maintenance for ${asset.asset_tag} was due ${dueDate} and hasn't been logged yet.`
-      : `Automated PM reminder — scheduled maintenance for ${asset.asset_tag} is due ${dueDate}.`;
+      ? `Automated PM reminder — scheduled maintenance for ${display} was due ${dueDate} and hasn't been logged yet.`
+      : `Automated PM reminder — scheduled maintenance for ${display} is due ${dueDate}.`;
 
     try {
       const { data: ticket, error: ticketError } = await supabase
@@ -127,7 +136,7 @@ export async function runPmAutoCheck(): Promise<PmAutoCheckResult> {
         .from("alerts")
         .insert({
           asset_id: asset.id,
-          title: `PM due soon — ${asset.asset_tag}`,
+          title: `PM due soon — ${display}`,
           description,
           severity: "caution",
           created_by: null,
@@ -141,10 +150,7 @@ export async function runPmAutoCheck(): Promise<PmAutoCheckResult> {
       // Beyond the in-app alert/bell — same title/description. Non-fatal
       // (notifyStaff never throws): a missing/misconfigured RESEND_API_KEY
       // shouldn't block the auto-created ticket/calendar event/alert.
-      await notifyStaff(
-        `PM due soon — ${asset.asset_tag}`,
-        description,
-      );
+      await notifyStaff(`PM due soon — ${display}`, description);
 
       const { error: runError } = await supabase.from("pm_auto_runs").insert({
         asset_id: asset.id,

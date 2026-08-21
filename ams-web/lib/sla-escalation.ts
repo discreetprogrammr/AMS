@@ -1,6 +1,6 @@
 import { createServiceRoleClient } from "@/lib/supabase/service-role";
 import { SLA_RESPONSE_TARGET_HOURS, SLA_RESOLUTION_TARGET_HOURS, hoursBetween } from "@/lib/sla";
-import { ticketRef } from "@/lib/format";
+import { ticketRef, assetLabel } from "@/lib/format";
 import { notifyStaff } from "@/lib/notify";
 
 // Core logic for "SLA breach escalation" — instead of only ever showing SLA
@@ -28,6 +28,11 @@ function classify(hoursElapsed: number, targetHours: number): SlaLevel {
   return null;
 }
 
+// Supabase's untyped reverse-embeds come back as arrays at every level
+// regardless of the relationship actually being single-row (same quirk
+// noted throughout app/**, e.g. work-orders/page.tsx) — kept loose here
+// rather than fighting it with generated types this codebase doesn't use.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type OpenTicket = {
   id: string;
   description: string | null;
@@ -36,13 +41,21 @@ type OpenTicket = {
   created_at: string;
   first_response_at: string | null;
   asset_id: string;
-  assets: { asset_tag: string } | { asset_tag: string }[] | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  assets: any;
 };
 
-function assetTagOf(ticket: OpenTicket): string {
+// Site + serial number instead of the raw asset tag — same "meaningful at
+// a glance, especially for a client" reasoning as assetLabel()'s own doc
+// comment (lib/format.ts), now applied to alert/email text too, not just
+// the UI.
+function assetDisplayOf(ticket: OpenTicket): string {
   const assets = ticket.assets;
   if (!assets) return "unknown asset";
-  return Array.isArray(assets) ? (assets[0]?.asset_tag ?? "unknown asset") : assets.asset_tag;
+  const asset = Array.isArray(assets) ? assets[0] : assets;
+  if (!asset) return "unknown asset";
+  const sites = Array.isArray(asset.sites) ? asset.sites[0] : asset.sites;
+  return assetLabel({ ...asset, sites });
 }
 
 export type SlaEscalationEvent = {
@@ -69,7 +82,9 @@ export async function runSlaEscalationCheck(): Promise<SlaCheckResult> {
   // dashboard's own SLA math, which doesn't special-case it either.
   const { data: tickets, error } = await supabase
     .from("service_tickets")
-    .select("id, description, status, priority, created_at, first_response_at, asset_id, assets(asset_tag)")
+    .select(
+      "id, description, status, priority, created_at, first_response_at, asset_id, assets(asset_tag, serial_number, sites(address))",
+    )
     .neq("status", "closed");
 
   if (error) {
@@ -82,7 +97,7 @@ export async function runSlaEscalationCheck(): Promise<SlaCheckResult> {
 
   for (const ticket of (tickets ?? []) as OpenTicket[]) {
     const ref = ticketRef(ticket.id);
-    const tag = assetTagOf(ticket);
+    const tag = assetDisplayOf(ticket);
     const hoursOpen = hoursBetween(ticket.created_at, now);
 
     // Response dimension only applies while nobody has responded yet —

@@ -20,7 +20,7 @@
 //    lookup, not a full user list).
 import { sendEmail } from "./email";
 import { createServiceRoleClient } from "./supabase/service-role";
-import { ticketRef } from "./format";
+import { ticketRef, assetLabel } from "./format";
 
 const APP_NAME = "HorizonCare360";
 
@@ -65,10 +65,16 @@ const STATUS_LABEL: Record<string, string> = {
   closed: "Closed",
 };
 
+// Site + serial number instead of the raw asset tag — same reasoning as
+// assetLabel()'s own doc comment (lib/format.ts): more meaningful to a
+// client than an internal asset_tag code they never see anywhere else.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function assetTagOf(assets: any): string {
+function assetDisplayOf(assets: any): string {
   if (!assets) return "your equipment";
-  return Array.isArray(assets) ? (assets[0]?.asset_tag ?? "your equipment") : assets.asset_tag;
+  const asset = Array.isArray(assets) ? assets[0] : assets;
+  if (!asset) return "your equipment";
+  const sites = Array.isArray(asset.sites) ? asset.sites[0] : asset.sites;
+  return assetLabel({ ...asset, sites });
 }
 
 // Ticket status change — notifies the client who raised it, if it was a
@@ -86,7 +92,7 @@ export async function notifyTicketStatusChange(
 
     const { data: ticket } = await supabase
       .from("service_tickets")
-      .select("raised_by, description, assets(asset_tag)")
+      .select("raised_by, description, assets(asset_tag, serial_number, sites(address))")
       .eq("id", ticketId)
       .single();
 
@@ -106,7 +112,7 @@ export async function notifyTicketStatusChange(
 
     const ref = ticketRef(ticketId);
     const statusLabel = STATUS_LABEL[newStatus] ?? newStatus;
-    const assetTag = assetTagOf(ticket.assets);
+    const assetDisplay = assetDisplayOf(ticket.assets);
 
     const result = await sendEmail({
       to: email,
@@ -114,7 +120,7 @@ export async function notifyTicketStatusChange(
       html: wrapEmail(
         `${ref} updated`,
         `<p>Hi ${raiserProfile.full_name ?? "there"},</p>
-         <p>Your service ticket for <strong>${assetTag}</strong> is now <strong>${statusLabel}</strong>.</p>
+         <p>Your service ticket for <strong>${assetDisplay}</strong> is now <strong>${statusLabel}</strong>.</p>
          ${ticket.description ? `<p style="color:#64748b;">"${ticket.description}"</p>` : ""}`,
       ),
     });

@@ -36,6 +36,7 @@ export default async function DashboardPage() {
     { count: downCount },
     { count: unserviceableCount },
     { data: expiringCerts, count: expiringCertsCount },
+    { data: expiringWarranties, count: expiringWarrantiesCount },
     { data: dueAssets },
     { count: openTicketsCount },
     { count: inProgressTicketsCount },
@@ -72,6 +73,19 @@ export default async function DashboardPage() {
       })
       .lte("expiry_date", daysFromNow(30))
       .order("expiry_date", { ascending: true }),
+    // Warranty half of the same "Compliance & Warranty" panel below —
+    // assets.warranty_end_date already existed but had never been
+    // surfaced anywhere in the app until now. RLS ("read own org assets
+    // or all if staff") scopes this the same way every other assets query
+    // already does.
+    supabase
+      .from("assets")
+      .select("id, asset_tag, serial_number, warranty_end_date, sites(address)", {
+        count: "exact",
+      })
+      .not("warranty_end_date", "is", null)
+      .lte("warranty_end_date", daysFromNow(30))
+      .order("warranty_end_date", { ascending: true }),
     supabase
       .from("assets")
       .select("id, asset_tag, serial_number, next_service_due, sites(address)")
@@ -144,6 +158,27 @@ export default async function DashboardPage() {
   const operationalPct = totalAssets
     ? Math.round(((operationalCount ?? 0) / totalAssets) * 100)
     : 0;
+
+  // Merges the two "expiring in <30 days" queries above into one
+  // chronological list — a client shouldn't have to mentally combine two
+  // separate panels to know everything coming due on their equipment.
+  const complianceItems = [
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ...(expiringCerts ?? []).map((c: any) => ({
+      key: `cert-${c.id}`,
+      assetLabel: assetLabel(c.assets),
+      label: c.certificate_type ?? "Certificate",
+      date: c.expiry_date as string,
+    })),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ...(expiringWarranties ?? []).map((a: any) => ({
+      key: `warranty-${a.id}`,
+      assetLabel: assetLabel(a),
+      label: "Warranty",
+      date: a.warranty_end_date as string,
+    })),
+  ].sort((a, b) => a.date.localeCompare(b.date));
+  const complianceCount = (expiringCertsCount ?? 0) + (expiringWarrantiesCount ?? 0);
 
   const respondedTickets = (slaTickets ?? []).filter(
     (t) => t.first_response_at,
@@ -343,9 +378,9 @@ export default async function DashboardPage() {
           tone={unserviceableCount ? "warn" : undefined}
         />
         <KpiCard
-          label="Certs Expiring <30d"
-          value={expiringCertsCount ?? 0}
-          tone={expiringCertsCount ? "warn" : undefined}
+          label="Compliance <30d"
+          value={complianceCount}
+          tone={complianceCount ? "warn" : undefined}
         />
       </div>
 
@@ -436,34 +471,35 @@ export default async function DashboardPage() {
 
         <div className="rounded-xl border border-hairline bg-surface p-5">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-soft">
-            Certificates Expiring — Next 30 Days
+            Compliance & Warranty — Next 30 Days
           </h2>
-          {expiringCerts?.length ? (
+          {complianceItems.length ? (
             <ul className="divide-y divide-hairline text-sm">
-              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              {expiringCerts.map((c: any) => (
+              {complianceItems.map((item) => (
                 <li
-                  key={c.id}
+                  key={item.key}
                   className="flex items-center justify-between py-2"
                 >
                   <span className="text-ink-soft">
-                    {assetLabel(c.assets)} — {c.certificate_type}
+                    {item.assetLabel} — {item.label}
                   </span>
                   <span
                     className={
-                      c.expiry_date < today()
+                      item.date < today()
                         ? "font-medium text-red-400"
-                        : "text-slate-500"
+                        : item.date <= daysFromNow(7)
+                          ? "font-medium text-amber-400"
+                          : "text-slate-500"
                     }
                   >
-                    {c.expiry_date}
+                    {item.date}
                   </span>
                 </li>
               ))}
             </ul>
           ) : (
             <p className="text-sm text-slate-500">
-              No certificates expiring soon.
+              No certificates or warranties expiring soon.
             </p>
           )}
         </div>

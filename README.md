@@ -1393,3 +1393,26 @@ Verified with `npx tsc --noEmit` (clean).
 4. Click **Export CSV** and confirm the downloaded file's numbers match what's on screen.
 5. Sign in as a client and confirm the same page shows only that org's tickets/assets — compare against what you already know about that org's data (or against the Dashboard's existing SLA widgets for a sanity check on ticket-derived numbers).
 6. To see uptime move: change an asset's status (e.g. to "Down") on the Assets tab, then back to "Operational." Revisit Analytics — this month's uptime bar should reflect the asset having spent part of the month in the audit trail as non-operational once you check next month's bucket (the current month always reflects the *latest* known status, since "as of now" is the same as "as of month-end" while you're still inside that month).
+
+## Follow-up — Compliance certificate & warranty expiry alerts (client-facing)
+
+Next item off the list: proactive notice before a compliance certificate or an asset's warranty lapses — both fields (`compliance_certificates.expiry_date`, `assets.warranty_end_date`) already existed, they just weren't surfaced as anything you'd actually notice. Matters especially for X-ray/NII equipment, where a lapsed compliance cert isn't just paperwork.
+
+Two layers, same split as everything else "proactive" this session (PM automation, SLA escalation): a passive, always-current view for clients, and an active staff-side alert for anyone triaging day to day.
+
+**Client-facing (Dashboard):** the existing "Certificates Expiring — Next 30 Days" panel and its KPI card were certificate-only and never looked at warranties at all. Both are now merged into one **Compliance & Warranty — Next 30 Days** panel and a **Compliance <30d** KPI — one chronological list combining both, three-tier coloring (red = already expired, amber = within 7 days, gray = within 30). This was already RLS-scoped correctly and already client-visible before this change (confirmed by re-reading the query); the only gap was that warranty data never appeared in it.
+
+**Staff-facing (new):** **`schema_step34.sql`** — **run this in Supabase before deploying.** Adds `compliance_escalations`, an idempotency ledger exactly like `pm_auto_runs` / `sla_escalations` — one row per (certificate-or-warranty, approaching-or-expired) pair, so the same expiry only ever raises one alert. A new daily cron (`/api/cron/compliance-check`, same dual-auth pattern as the other two crons) walks every certificate and every asset's warranty date, and raises a staff `alerts` row (caution at 30 days out, critical once actually expired) the first time each crosses a threshold — visible in the Alerts tab and the notification bell, same as a PM reminder or an SLA breach. Once-daily is genuinely fine here (unlike the SLA check) — a compliance window is weeks wide, not hours.
+
+`COMPLIANCE_LEAD_DAYS` (optional, defaults to 30) controls the lookahead, same pattern as `PM_REMINDER_LEAD_DAYS`.
+
+Verified with `npx tsc --noEmit` (clean).
+
+## Setup steps
+
+1. Run `schema_step34.sql` in Supabase.
+2. Push to GitHub — `vercel.json` now has a third cron entry.
+3. Sign in as a client (or staff) and check the Dashboard — confirm **Compliance & Warranty — Next 30 Days** shows both certificate and warranty rows together, sorted by date, and that the **Compliance <30d** KPI matches the panel's row count.
+4. To test the staff-side alert without waiting on a real expiry: on an asset with no warranty date set, edit `warranty_end_date` directly (Assets tab, or Supabase Table Editor) to a date within the next 30 days. Sign in as Super Admin and visit `/api/cron/compliance-check` directly — confirm the JSON response lists it under `escalated`, then check the **Alerts** tab and the notification bell for a new caution alert.
+5. Reload the same URL and confirm that asset does *not* raise a second, duplicate alert (`skipped` should go up instead).
+6. Set the same date to yesterday and re-run — confirm a *second*, separate "expired" alert fires (critical severity), since approaching and expired are two different events on the same record, not one that just gets overwritten.

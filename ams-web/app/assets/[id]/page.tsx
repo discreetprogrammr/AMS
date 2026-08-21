@@ -6,6 +6,7 @@ import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { changedFields } from "@/lib/audit";
 import { woRef, dateTimeLabel } from "@/lib/format";
 import { generateQrDataUrl } from "@/lib/qr";
+import { categoryLabel, formatFileSize } from "@/lib/documents";
 import { AppShell } from "@/components/app-shell";
 import { StatusBadge } from "@/components/status-badge";
 import { AssetForm } from "../asset-form";
@@ -16,6 +17,8 @@ import {
   acknowledgeTicket,
   markTicketPartsPending,
 } from "../tickets-actions";
+import { deleteDocument } from "./documents-actions";
+import { UploadDocumentButton } from "./upload-document-button";
 
 const EQUIPMENT_LABEL: Record<string, string> = {
   xray_screening: "X-ray Screening",
@@ -41,6 +44,7 @@ export default async function EditAssetPage({
     { data: organizations },
     { data: tickets },
     { data: certificates },
+    { data: documents },
     { data: history },
   ] = await Promise.all([
     // Joins the site's address in directly — the Site field on the form is
@@ -63,6 +67,13 @@ export default async function EditAssetPage({
       .select("id, certificate_type, issue_date, expiry_date")
       .eq("asset_id", params.id)
       .order("expiry_date", { ascending: true }),
+    // RLS ("read own org asset documents or all if staff", schema_step35.sql)
+    // scopes this the same way certificates above already are.
+    supabase
+      .from("asset_documents")
+      .select("id, category, title, file_name, file_size, created_at")
+      .eq("asset_id", params.id)
+      .order("created_at", { ascending: false }),
     // RLS restricts this to staff only — a client_viewer's query just
     // comes back empty, no error, so it's safe to always run this.
     supabase
@@ -210,6 +221,55 @@ export default async function EditAssetPage({
           ) : (
             <p className="text-sm text-slate-500">
               No certificates on file yet.
+            </p>
+          )}
+        </div>
+
+        <div className="mt-6 rounded-xl border border-hairline bg-surface p-6">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-soft">
+              Documents
+            </h2>
+            {isStaff && <UploadDocumentButton assetId={params.id} />}
+          </div>
+          <p className="mb-3 text-xs text-slate-500">
+            Manuals, datasheets, and compliance paperwork on file for this asset.
+          </p>
+          {documents?.length ? (
+            <ul className="divide-y divide-hairline text-sm">
+              {documents.map((d) => (
+                <li
+                  key={d.id}
+                  className="flex items-center justify-between gap-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <a
+                      href={`/api/documents/${d.id}/download`}
+                      className="font-medium text-ink hover:underline"
+                    >
+                      {d.title}
+                    </a>
+                    <p className="text-xs text-slate-500">
+                      {categoryLabel(d.category)}
+                      {d.file_size ? ` · ${formatFileSize(d.file_size)}` : ""}
+                    </p>
+                  </div>
+                  {isStaff && (
+                    <form action={deleteDocument.bind(null, params.id, d.id)}>
+                      <button
+                        type="submit"
+                        className="whitespace-nowrap text-xs text-slate-500 underline hover:text-red-400"
+                      >
+                        Delete
+                      </button>
+                    </form>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-slate-500">
+              No documents on file yet.
             </p>
           )}
         </div>

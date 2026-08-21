@@ -1416,3 +1416,29 @@ Verified with `npx tsc --noEmit` (clean).
 4. To test the staff-side alert without waiting on a real expiry: on an asset with no warranty date set, edit `warranty_end_date` directly (Assets tab, or Supabase Table Editor) to a date within the next 30 days. Sign in as Super Admin and visit `/api/cron/compliance-check` directly — confirm the JSON response lists it under `escalated`, then check the **Alerts** tab and the notification bell for a new caution alert.
 5. Reload the same URL and confirm that asset does *not* raise a second, duplicate alert (`skipped` should go up instead).
 6. Set the same date to yesterday and re-run — confirm a *second*, separate "expired" alert fires (critical severity), since approaching and expired are two different events on the same record, not one that just gets overwritten.
+
+## Follow-up — Document library per asset (client-facing)
+
+Next item off the list: manuals, datasheets, and compliance paperwork (e.g. PNRI documentation) a client can pull up themselves on an asset's own page, instead of raising a ticket or calling in to ask for something that's already on file.
+
+Staff curate the library (upload/delete); a client can browse and download whatever's on file for their own org's assets, same "staff manage, client reads own org" split already used for Compliance Certificates right above it on the same page.
+
+**`schema_step35.sql`** (new) — **run this in Supabase before deploying.** One table, `asset_documents` (category — Manual / Datasheet / Compliance Paperwork / Other — title, file name, file size, who uploaded it), plus a new **private Storage bucket** (`asset-documents`). This is the same private-bucket-with-RLS pattern already used for PM/CM report PDFs (`service-reports`, schema_step20.sql) and chat attachments (`chat-attachments`, schema_step27.sql): staff get a blanket manage policy, and a client's read access is scoped by the object's own path — every file lands at `{asset_id}/{random}-{filename}`, so the storage policy just checks that asset belongs to their org.
+
+**What's new in the app:**
+- **Documents** card on the asset detail page (both roles) — lists everything on file for that asset with category and file size, each title a direct download link (`/api/documents/[id]/download`, streams the file back using the signed-in viewer's own session, so RLS is what actually gates it — a client hitting another org's document id just gets a 404).
+- **Upload Document** button (staff only) — small modal: pick a file (25MB cap), a category, and an optional title (defaults to the file name).
+- **Delete** link per document (staff only) — removes both the catalog row and the underlying Storage object together, no orphaned files left behind.
+
+Verified with `npx tsc --noEmit` (clean). No new dependencies.
+
+## Setup steps
+
+1. Run `schema_step35.sql` in Supabase.
+2. Push to GitHub.
+3. Sign in as staff, open any asset, and confirm the new **Documents** card appears with an **Upload Document** button.
+4. Upload a small test file (a PDF or image works fine) with a category and title — confirm it appears in the list immediately.
+5. Click the document's title and confirm it downloads with the correct file name and content.
+6. Sign in as a client on that same asset's org and confirm the Documents card shows the same file, downloadable, but with no Upload button and no Delete link.
+7. Sign in as a client on a *different* org and confirm that asset (and its documents) aren't reachable at all — existing asset-level RLS already covers this, this step just confirms the new table didn't accidentally loosen it.
+8. Back as staff, click **Delete** on the test document — confirm it disappears from the list. In Supabase's Storage browser, confirm the underlying file in the `asset-documents` bucket is gone too, not just the catalog row.

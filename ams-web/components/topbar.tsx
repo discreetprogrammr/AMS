@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { ThemeToggle } from "./theme-toggle";
+import { PushSubscribeButton } from "./push-subscribe-button";
 import { useMobileNav } from "./mobile-nav";
 
 function MenuIcon() {
@@ -53,6 +54,7 @@ export function Topbar({
       </div>
       <div className="flex flex-wrap items-center gap-3">
         {actions}
+        <PushSubscribeButton />
         <ThemeToggle />
       </div>
     </header>

@@ -1477,4 +1477,44 @@ Small follow-up on the email feature: SLA breach, PM due, and ticket status chan
 
 Fixed in `lib/sla-escalation.ts`, `lib/pm-automation.ts`, and `lib/notify.ts` — all three now pull `serial_number`/`sites(address)` alongside `asset_tag` and run it through the same `assetLabel()` helper everything else uses. Since SLA/PM alert text is shared verbatim between the in-app Alerts tab and the email (by design, so they can't say different things), this also updates what shows in the Alerts tab now, not just the email — consistent with the rest of the app already doing this, not a new inconsistency. Calendar event titles and the cron JSON response's `assetTag` field were deliberately left as the raw tag — internal/operational identifiers, not something a client reads.
 
+## Follow-up — Installable PWA with push notifications
+
+Last item off the original list: make HorizonCare360 installable to a home screen/desktop like a native app, and add browser push as a second notification channel alongside email — useful for a field technician who wants an alert without an inbox open, and one more thing that makes the demo look like a finished product rather than "a website."
+
+**Two independent pieces:**
+- **Installability** — a web app manifest (`public/manifest.webmanifest`) plus a registered service worker (`public/sw.js`) with a `fetch` handler are Chrome/Edge/Android's baseline install criteria. Once both are in place, Chrome/Edge fire a `beforeinstallprompt` event that `components/install-prompt.tsx` catches and turns into a dismissible "Install HorizonCare360" banner. **iOS Safari never fires that event** — there's no programmatic install prompt there, only the user's own Share → Add to Home Screen — so `apple-touch-icon` + Apple's own meta tags are set in `app/layout.tsx` to make that manual path look right, but nothing pops up automatically on iOS.
+- **Push notifications** — Web Push (the same open protocol Chrome, Firefox, and now Safari use), authenticated with a VAPID keypair rather than any per-browser vendor account. A new bell-toggle button in the top bar lets a signed-in user opt this specific browser/device in or out. Once subscribed, that device receives a push for the same three triggers email already covers — SLA breach, PM due, ticket status change — routed the same way as email (staff triggers → every opted-in staff device; ticket status → the specific client's own device(s)), via `lib/push.ts`. Same non-fatal contract as email throughout: a missing VAPID key, an unreachable push service, or a dead/expired subscription never blocks the underlying SLA/PM/ticket action — it's a bonus channel, not a dependency.
+
+**New dependency:** `web-push` (sends the actual encrypted push payloads — there's no realistic fetch-only equivalent the way there was for Resend's HTTP API). Run `npm install` after pulling.
+
+**`schema_step36.sql`** (new) — **run this in Supabase before deploying.** One table, `push_subscriptions` (one row per browser/device: `user_id`, `endpoint` unique, the `p256dh`/`auth` keys the browser hands back from `pushManager.subscribe()`). RLS is owner-only — a user can only see/manage their own subscriptions — since these rows are just delivery credentials, not business data that needs a staff-blanket policy.
+
+**VAPID keys (one-time, per environment):** generate your own keypair — don't reuse anyone else's:
+```bash
+node -e "const {publicKey,privateKey}=require('web-push').generateVAPIDKeys();console.log(publicKey,privateKey)"
+```
+Add all three to Vercel (Project Settings → Environment Variables) and to local `.env.local`:
+- `NEXT_PUBLIC_VAPID_PUBLIC_KEY` — the public half; exposed to the browser on purpose, used client-side by `pushManager.subscribe()`.
+- `VAPID_PRIVATE_KEY` — keep this one server-only, same care as the Supabase service-role key.
+- `VAPID_SUBJECT` — a `mailto:` address push services may contact if your server misbehaves (e.g. `mailto:ops@pacifichorizontek.com`).
+
+**What's new in the app:**
+- App icons (`public/icon-192.png`, `icon-512.png`, `icon-maskable-512.png`, `apple-touch-icon.png`) generated from the existing `logo-mark.png` on a white canvas, matching how the logo is already displayed elsewhere in the app (the sidebar wraps it in a white box too — the source PNG isn't truly transparent).
+- Install banner (bottom of screen, dismissible, remembers dismissal) on Chrome/Edge/Android once the manifest + service worker are both in place.
+- Bell-toggle button in the top bar (next to the theme toggle) — subscribes/unsubscribes push for that specific browser. Shows nothing if the browser doesn't support push at all; shows a crossed-out bell (non-interactive) if the user previously denied the browser's notification permission.
+- `lib/push.ts` — `sendPushToStaff()` / `sendPushToUser()`, wired into `lib/notify.ts` alongside (not instead of) the existing email sends.
+
+Verified with `npx tsc --noEmit` — clean aside from `Cannot find module 'web-push'`, expected until `npm install` runs in your own environment (same as every other new dependency added this project).
+
+## Setup steps
+
+1. Run `schema_step36.sql` in Supabase.
+2. Generate a VAPID keypair (command above) and add all three `VAPID_*` env vars to Vercel and your local `.env.local`.
+3. `npm install` (pulls in `web-push`), then push to GitHub and let Vercel redeploy.
+4. **Test installability:** open the deployed site in Chrome desktop or Android Chrome. Confirm the "Install HorizonCare360" banner appears near the bottom of the screen; install it and confirm it opens in its own window/icon, not a browser tab. On iOS Safari, confirm Share → Add to Home Screen produces a proper icon and app name (no automatic banner is expected there).
+5. **Test push subscribe:** sign in, click the bell icon in the top bar, grant the browser's notification permission prompt when it appears. Confirm the icon changes to its "subscribed" state.
+6. **Test staff push:** repeat the earlier SLA breach test (back-date a ticket, hit `/api/cron/sla-check`) while subscribed as a staff user — confirm a push notification appears (even with the tab in the background), and clicking it opens/focuses the app to the Alerts tab.
+7. **Test client push:** as a client, raise a test ticket and subscribe via the bell icon. Sign in as staff and click **Start Progress** on that ticket. Confirm the client's device gets a push, and clicking it opens/focuses the app to the Tickets tab.
+8. **Confirm the non-fatal behavior:** click the bell icon again to unsubscribe, then repeat step 6 or 7 — confirm the underlying action (escalation/status change) still completes normally with no push, same as removing `RESEND_API_KEY` earlier didn't break email's absence.
+
 Verified with `npx tsc --noEmit` (clean). No schema changes, nothing new to deploy beyond the code itself.

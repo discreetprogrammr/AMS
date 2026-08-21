@@ -1,24 +1,25 @@
-// Email notifications alongside the existing in-app alerts/bell —
-// SLA breaches, upcoming PM, and ticket status changes. Every function
-// here is fire-and-forget from the caller's point of view: failures are
-// caught and logged, never thrown, so a misconfigured or down email
-// provider can't break the automation or action it's attached to (see
-// lib/email.ts's sendEmail() for the same non-fatal contract one level
-// down).
+// Notifications alongside the existing in-app alerts/bell — SLA breaches,
+// upcoming PM, and ticket status changes, over TWO channels: email
+// (lib/email.ts, Resend) and browser push (lib/push.ts, Web Push). Every
+// function here is fire-and-forget from the caller's point of view:
+// failures are caught and logged, never thrown, so a misconfigured/down
+// provider on either channel can't break the automation or action it's
+// attached to.
 //
 // Two different recipient shapes, on purpose:
-//  - SLA/PM notifications go to one configurable staff distribution
-//    address (STAFF_NOTIFICATION_EMAIL) — profiles doesn't store an email
-//    (that lives in auth.users), and for an internal ops alert, routing to
-//    a shared inbox (like a real "ops@" address) is the normal pattern
-//    anyway, not per-technician subscriptions. Easy to extend to
-//    per-staff later if that's ever wanted.
-//  - Ticket status change goes to the SPECIFIC client who raised it —
-//    that one only makes sense addressed to an individual, so this one
-//    function does look up a real person's email, via
-//    auth.admin.getUserById() (service-role only; a single targeted
-//    lookup, not a full user list).
+//  - SLA/PM notifications go to staff. Email goes to one configurable
+//    distribution address (STAFF_NOTIFICATION_EMAIL) — profiles doesn't
+//    store an email (that lives in auth.users), and for an internal ops
+//    alert, routing to a shared inbox is the normal pattern anyway, not
+//    per-technician subscriptions. Push is naturally per-device though, so
+//    it goes to every subscribed staff member individually (sendPushToStaff,
+//    lib/push.ts) rather than needing its own distribution concept.
+//  - Ticket status change goes to the SPECIFIC client who raised it, on
+//    both channels — email via auth.admin.getUserById() (service-role
+//    only; a single targeted lookup, not a full user list), push via
+//    whatever devices that same user has subscribed.
 import { sendEmail } from "./email";
+import { sendPushToStaff, sendPushToUser } from "./push";
 import { createServiceRoleClient } from "./supabase/service-role";
 import { ticketRef, assetLabel } from "./format";
 
@@ -43,19 +44,25 @@ function wrapEmail(title: string, bodyHtml: string): string {
 // already built for the in-app alert row, so the wording never drifts
 // between the bell and the inbox.
 export async function notifyStaff(title: string, description: string): Promise<void> {
+  // Email and push are independent channels — one being unconfigured (or
+  // failing) shouldn't stop the other from trying. sendEmail()/
+  // sendPushToStaff() both already no-op quietly if their own env vars
+  // aren't set, so nothing extra needed here beyond just calling both.
   const to = process.env.STAFF_NOTIFICATION_EMAIL;
-  if (!to) return; // Not configured — silently skip, same as sendEmail()'s own no-op.
+  if (to) {
+    const result = await sendEmail({
+      to,
+      subject: `[${APP_NAME}] ${title}`,
+      html: wrapEmail(title, `<p>${description}</p>`),
+    });
 
-  const result = await sendEmail({
-    to,
-    subject: `[${APP_NAME}] ${title}`,
-    html: wrapEmail(title, `<p>${description}</p>`),
-  });
-
-  if (!result.ok) {
-    // eslint-disable-next-line no-console
-    console.error("[notify] Staff email failed:", result.message);
+    if (!result.ok) {
+      // eslint-disable-next-line no-console
+      console.error("[notify] Staff email failed:", result.message);
+    }
   }
+
+  await sendPushToStaff({ title, body: description, url: "/alerts" });
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -106,29 +113,38 @@ export async function notifyTicketStatusChange(
 
     if (!raiserProfile || raiserProfile.role !== "client_viewer") return;
 
-    const { data: userResult } = await supabase.auth.admin.getUserById(ticket.raised_by);
-    const email = userResult?.user?.email;
-    if (!email) return;
-
     const ref = ticketRef(ticketId);
     const statusLabel = STATUS_LABEL[newStatus] ?? newStatus;
     const assetDisplay = assetDisplayOf(ticket.assets);
 
-    const result = await sendEmail({
-      to: email,
-      subject: `[${APP_NAME}] ${ref} is now ${statusLabel}`,
-      html: wrapEmail(
-        `${ref} updated`,
-        `<p>Hi ${raiserProfile.full_name ?? "there"},</p>
-         <p>Your service ticket for <strong>${assetDisplay}</strong> is now <strong>${statusLabel}</strong>.</p>
-         ${ticket.description ? `<p style="color:#64748b;">"${ticket.description}"</p>` : ""}`,
-      ),
-    });
+    // Email and push are independent channels here too — a missing/looked-up
+    // email shouldn't stop the push send, and vice versa.
+    const { data: userResult } = await supabase.auth.admin.getUserById(ticket.raised_by);
+    const email = userResult?.user?.email;
 
-    if (!result.ok) {
-      // eslint-disable-next-line no-console
-      console.error("[notify] Ticket status email failed:", result.message);
+    if (email) {
+      const result = await sendEmail({
+        to: email,
+        subject: `[${APP_NAME}] ${ref} is now ${statusLabel}`,
+        html: wrapEmail(
+          `${ref} updated`,
+          `<p>Hi ${raiserProfile.full_name ?? "there"},</p>
+           <p>Your service ticket for <strong>${assetDisplay}</strong> is now <strong>${statusLabel}</strong>.</p>
+           ${ticket.description ? `<p style="color:#64748b;">"${ticket.description}"</p>` : ""}`,
+        ),
+      });
+
+      if (!result.ok) {
+        // eslint-disable-next-line no-console
+        console.error("[notify] Ticket status email failed:", result.message);
+      }
     }
+
+    await sendPushToUser(ticket.raised_by, {
+      title: `${ref} is now ${statusLabel}`,
+      body: `Your service ticket for ${assetDisplay} is now ${statusLabel}.`,
+      url: "/tickets",
+    });
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error("[notify] Ticket status email failed:", err);

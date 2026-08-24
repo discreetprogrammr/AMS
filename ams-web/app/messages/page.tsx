@@ -98,7 +98,16 @@ export default async function MessagesPage() {
                   </span>
                 )}
               </div>
+              {/* Ticket description — without this, "TKT-XXXXXXXX" tells a
+                  client nothing about which of their (possibly several)
+                  open tickets a thread is actually about, so they'd have to
+                  guess or cross-check against the Tickets page before
+                  messaging/calling in. Shown right under the ref/status so
+                  it's the first thing that identifies the ticket. */}
               <p className="mt-0.5 truncate text-sm text-ink-soft">
+                {t.description || "No description provided."}
+              </p>
+              <p className="mt-0.5 truncate text-xs text-slate-500">
                 {t.assets?.sites?.address ?? "—"}
                 {t.assets?.organizations?.name
                   ? ` — ${t.assets.organizations.name}`

@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
+import { createClient } from "@/lib/supabase/server";
 import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
-import { SLA_RESOLUTION_TARGET_HOURS } from "@/lib/sla";
+import { getSlaPolicyMap, resolveSlaTargets } from "@/lib/sla";
 import { getAnalytics, type MonthlyAnalytics } from "@/lib/analytics";
 
 function formatHours(hours: number | null): string {
@@ -17,15 +18,23 @@ function uptimeTone(pct: number | null): string {
   return "bg-red-400";
 }
 
-function mttrTone(hours: number | null): string {
+function mttrTone(hours: number | null, resolutionTargetHours: number): string {
   if (hours === null) return "bg-surface-2";
-  return hours <= SLA_RESOLUTION_TARGET_HOURS ? "bg-emerald-400" : "bg-red-400";
+  return hours <= resolutionTargetHours ? "bg-emerald-400" : "bg-red-400";
 }
 
 export default async function AnalyticsPage() {
   const profile = await getProfile();
   const isStaff = isStaffRole(profile?.role);
   const { months, totals } = await getAnalytics();
+
+  // Same viewer-aware resolution as the dashboard (app/dashboard/page.tsx)
+  // — a client sees their own org's SLA override if one's set, staff see
+  // the global default rather than a blended multi-org number
+  // (schema_step40.sql).
+  const supabase = await createClient();
+  const slaPolicyMap = await getSlaPolicyMap(supabase);
+  const slaTargets = resolveSlaTargets(slaPolicyMap, isStaff ? null : (profile?.organization_id ?? null));
 
   return (
     <AppShell
@@ -59,7 +68,7 @@ export default async function AnalyticsPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <UptimeChart months={months} />
         <TicketVolumeChart months={months} />
-        <MttrChart months={months} />
+        <MttrChart months={months} resolutionTargetHours={slaTargets.resolutionTargetHours} />
       </div>
 
       <p className="mt-6 text-xs text-slate-500">
@@ -203,12 +212,18 @@ function TicketVolumeChart({ months }: { months: MonthlyAnalytics[] }) {
   );
 }
 
-function MttrChart({ months }: { months: MonthlyAnalytics[] }) {
+function MttrChart({
+  months,
+  resolutionTargetHours,
+}: {
+  months: MonthlyAnalytics[];
+  resolutionTargetHours: number;
+}) {
   const max = Math.max(1, ...months.map((m) => m.mttrHours ?? 0));
   return (
     <ChartCard
       title="Mean Time to Repair"
-      subtitle={`Avg hours open to resolved · target ${SLA_RESOLUTION_TARGET_HOURS}h`}
+      subtitle={`Avg hours open to resolved · target ${resolutionTargetHours}h`}
     >
       <div className="flex h-40 items-end gap-2 border-b border-hairline pb-2">
         {months.map((m) => (
@@ -218,7 +233,7 @@ function MttrChart({ months }: { months: MonthlyAnalytics[] }) {
             </span>
             <div className="flex h-28 w-full items-end">
               <div
-                className={`w-full rounded-t ${mttrTone(m.mttrHours)}`}
+                className={`w-full rounded-t ${mttrTone(m.mttrHours, resolutionTargetHours)}`}
                 style={{
                   height: `${m.mttrHours === null ? 4 : Math.max((m.mttrHours / max) * 100, 4)}%`,
                 }}

@@ -1,5 +1,5 @@
 import { createServiceRoleClient } from "@/lib/supabase/service-role";
-import { SLA_RESPONSE_TARGET_HOURS, SLA_RESOLUTION_TARGET_HOURS, hoursBetween } from "@/lib/sla";
+import { hoursBetween, getSlaPolicyMap, resolveSlaTargets } from "@/lib/sla";
 import { ticketRef, assetLabel } from "@/lib/format";
 import { notifyStaff } from "@/lib/notify";
 
@@ -58,6 +58,17 @@ function assetDisplayOf(ticket: OpenTicket): string {
   return assetLabel({ ...asset, sites });
 }
 
+// Per-ticket org id, for resolving which SLA policy applies (schema_step40.sql
+// — a client with their own contracted tier escalates against their own
+// numbers, not the global default). Same array-or-object defensiveness as
+// assetDisplayOf above.
+function organizationIdOf(ticket: OpenTicket): string | null {
+  const assets = ticket.assets;
+  if (!assets) return null;
+  const asset = Array.isArray(assets) ? assets[0] : assets;
+  return asset?.organization_id ?? null;
+}
+
 export type SlaEscalationEvent = {
   ticketId: string;
   ticketRef: string;
@@ -83,13 +94,17 @@ export async function runSlaEscalationCheck(): Promise<SlaCheckResult> {
   const { data: tickets, error } = await supabase
     .from("service_tickets")
     .select(
-      "id, description, status, priority, created_at, first_response_at, asset_id, assets(asset_tag, serial_number, sites(address))",
+      "id, description, status, priority, created_at, first_response_at, asset_id, assets(asset_tag, serial_number, organization_id, sites(address))",
     )
     .neq("status", "closed");
 
   if (error) {
     throw new Error(`Failed to load open tickets: ${error.message}`);
   }
+
+  // One query for every org's policy (global + overrides) instead of one
+  // lookup per ticket — schema_step40.sql.
+  const policyMap = await getSlaPolicyMap(supabase);
 
   const escalated: SlaEscalationEvent[] = [];
   let skipped = 0;
@@ -99,6 +114,7 @@ export async function runSlaEscalationCheck(): Promise<SlaCheckResult> {
     const ref = ticketRef(ticket.id);
     const tag = assetDisplayOf(ticket);
     const hoursOpen = hoursBetween(ticket.created_at, now);
+    const targets = resolveSlaTargets(policyMap, organizationIdOf(ticket));
 
     // Response dimension only applies while nobody has responded yet —
     // once first_response_at is stamped (acknowledgeTicket / resolveTicket
@@ -106,7 +122,7 @@ export async function runSlaEscalationCheck(): Promise<SlaCheckResult> {
     // SLA has already been either met or missed, and there's nothing left
     // to escalate for it.
     if (!ticket.first_response_at) {
-      const level = classify(hoursOpen, SLA_RESPONSE_TARGET_HOURS);
+      const level = classify(hoursOpen, targets.responseTargetHours);
       if (level) {
         const applied = await tryEscalate(supabase, {
           ticket,
@@ -115,7 +131,7 @@ export async function runSlaEscalationCheck(): Promise<SlaCheckResult> {
           hoursElapsed: hoursOpen,
           dimension: "response",
           level,
-          targetHours: SLA_RESPONSE_TARGET_HOURS,
+          targetHours: targets.responseTargetHours,
         });
         if (applied) escalated.push(applied);
         else skipped++;
@@ -124,7 +140,7 @@ export async function runSlaEscalationCheck(): Promise<SlaCheckResult> {
 
     // Resolution dimension applies to every ticket in this query (none are
     // closed), regardless of response state.
-    const resolutionLevel = classify(hoursOpen, SLA_RESOLUTION_TARGET_HOURS);
+    const resolutionLevel = classify(hoursOpen, targets.resolutionTargetHours);
     if (resolutionLevel) {
       const applied = await tryEscalate(supabase, {
         ticket,
@@ -133,7 +149,7 @@ export async function runSlaEscalationCheck(): Promise<SlaCheckResult> {
         hoursElapsed: hoursOpen,
         dimension: "resolution",
         level: resolutionLevel,
-        targetHours: SLA_RESOLUTION_TARGET_HOURS,
+        targetHours: targets.resolutionTargetHours,
       });
       if (applied) escalated.push(applied);
       else skipped++;

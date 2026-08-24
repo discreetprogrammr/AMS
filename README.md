@@ -1620,3 +1620,28 @@ Verified with `npx tsc --noEmit` — clean aside from the pre-existing, expected
 4. Re-upload the exact same file again — confirm both rows now show as **skipped** (duplicate serial numbers), not re-imported.
 5. Try a row with an Equipment Type that isn't one of the five valid values — confirm it's reported under **Errors** with a clear message, and doesn't block the other valid rows from importing.
 6. Repeat steps 2–5 on the Inventory page's **Import CSV** (SKU dedup instead of serial number) — confirm a low-stock imported part shows the **Low Stock** badge immediately, and shows up in the next `/api/cron/low-stock-check` run.
+
+## Follow-up — SLA policy configuration
+
+Fourth item off the new round. Response/resolution SLA targets (8h / 48h) had been two hardcoded constants in `lib/sla.ts` since SLA breach escalation was first built — same numbers for every client, only changeable by editing code and redeploying. This turns them into real, editable data on a new **SLA Policy** page: one global default, plus optional per-client overrides for a client with a different contracted tier.
+
+**Editing is Super Admin-only, by explicit request — not all staff.** Any staff (Admin or Super Admin) can still open the page and see the current targets, same as everyone can already see SLA performance on the dashboard; only a Super Admin gets the actual input fields and Save/Add/Remove buttons. Admin sees the same numbers as plain read-only text.
+
+**`schema_step40.sql`** (new) — **run this in Supabase before deploying.** Adds `sla_policies`: exactly one row is the global default (enforced by a partial unique index, not a plain column constraint — a plain `unique(organization_id)` would let multiple "global" rows pile up, since Postgres treats every NULL as distinct from every other NULL), and any number of per-organization override rows (also capped at one each, by a second partial unique index). Editing is gated by `is_super_admin()` in RLS — the same helper Audit Log uses — with reads open to `is_internal_staff()`. Seeded with today's 8h/48h values, so nothing changes the moment the migration runs; only once someone actually edits it on the new page.
+
+**How the resolved target is chosen, depending on who's asking:**
+- **SLA breach escalation** (`lib/sla-escalation.ts`) — each ticket resolves its own asset's organization against the policy map (one query for every org's policy, not one lookup per ticket) and escalates against that client's actual override if they have one, falling back to the global default otherwise. A premium client's tickets genuinely escalate faster now, not just cosmetically.
+- **A client's own Dashboard/Analytics** — shows their own org's override if set, so they can see their own actual commitment reflected in their own numbers, not a generic default.
+- **Staff's fleet-wide Dashboard/Analytics** — deliberately always shows the **global** default, never a per-org number. A staff view spans every client's tickets at once, potentially several different override tiers mixed together, and blending those into one "compliance %" wouldn't have an obviously-correct meaning — so this intentionally doesn't try, and uses the global baseline instead. Documented as a deliberate scope decision in both pages' code, not an oversight.
+
+Verified with `npx tsc --noEmit` — clean aside from the two pre-existing, expected `Cannot find module` errors (`web-push`, `papaparse`).
+
+## Setup steps
+
+1. Run `schema_step40.sql` in Supabase.
+2. Push to GitHub and let Vercel redeploy. No new env vars or dependencies.
+3. Sign in as **Admin** (not Super Admin) and open the new **SLA Policy** nav item — confirm you can see the current global default and any overrides, but there are no input fields or Save/Add/Remove buttons, just plain text.
+4. Sign in as **Super Admin** — confirm the same page now shows editable fields. Change the global Response/Resolution targets and save — confirm the Dashboard's SLA Performance card and Analytics' MTTR chart both immediately reflect the new numbers (for a staff view).
+5. Add a per-client override for one of your test organizations — confirm it appears in the overrides table, and that signing in as a client under that org now shows their dashboard/analytics using the override's numbers instead of the global default, while staff's fleet-wide view still shows the global default unchanged.
+6. Back-date a ticket under that overridden client and hit `/api/cron/sla-check` — confirm the escalation (or lack of one) reflects the override's target hours, not the global ones.
+7. Click **Remove** on the override — confirm that client's dashboard reverts to showing the global default again.

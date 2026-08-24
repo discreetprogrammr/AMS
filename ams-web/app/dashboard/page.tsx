@@ -6,7 +6,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { NotificationBell } from "@/components/notification-bell";
 import { SearchBar } from "@/components/search-bar";
 import { ticketRef, assetLabel } from "@/lib/format";
-import { SLA_RESPONSE_TARGET_HOURS, SLA_RESOLUTION_TARGET_HOURS, hoursBetween } from "@/lib/sla";
+import { hoursBetween, getSlaPolicyMap, resolveSlaTargets } from "@/lib/sla";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -28,6 +28,15 @@ export default async function DashboardPage() {
   const supabase = await createClient();
   const profile = await getProfile();
   const isStaff = isStaffRole(profile?.role);
+
+  // Staff see the global default (a fleet-wide view spans multiple orgs,
+  // which could each have their own override — blending those into one
+  // number wouldn't have an obviously-correct meaning, so this
+  // intentionally doesn't try). A client_viewer sees their own org's
+  // override if one's been set, same target lib/sla-escalation.ts actually
+  // escalates their tickets against (schema_step40.sql).
+  const slaPolicyMap = await getSlaPolicyMap(supabase);
+  const slaTargets = resolveSlaTargets(slaPolicyMap, isStaff ? null : (profile?.organization_id ?? null));
 
   const [
     { count: totalAssets },
@@ -198,7 +207,7 @@ export default async function DashboardPage() {
       ) / resolvedInPeriod.length
     : null;
   const metResolutionTarget = resolvedInPeriod.filter(
-    (t) => hoursBetween(t.created_at, t.resolved_at!) <= SLA_RESOLUTION_TARGET_HOURS,
+    (t) => hoursBetween(t.created_at, t.resolved_at!) <= slaTargets.resolutionTargetHours,
   ).length;
   const slaPct = resolvedInPeriod.length
     ? Math.round((metResolutionTarget / resolvedInPeriod.length) * 100)
@@ -229,7 +238,7 @@ export default async function DashboardPage() {
     const met = ticketsInWeek.filter(
       (t) =>
         hoursBetween(t.created_at, t.resolved_at!) <=
-        SLA_RESOLUTION_TARGET_HOURS,
+        slaTargets.resolutionTargetHours,
     ).length;
     return {
       label: bucket.label,
@@ -406,6 +415,8 @@ export default async function DashboardPage() {
           avgResponseHours={avgResponseHours}
           avgResolutionHours={avgResolutionHours}
           measuredCount={resolvedInPeriod.length}
+          responseTargetHours={slaTargets.responseTargetHours}
+          resolutionTargetHours={slaTargets.resolutionTargetHours}
         />
         {isStaff && (
           <EquipmentHealthCard
@@ -425,7 +436,7 @@ export default async function DashboardPage() {
           appropriate to show an external client regardless. */}
       <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className={isStaff ? "lg:col-span-2" : "lg:col-span-3"}>
-          <SlaHistoryCard history={slaHistory} />
+          <SlaHistoryCard history={slaHistory} resolutionTargetHours={slaTargets.resolutionTargetHours} />
         </div>
         {isStaff && <RecentActivityCard items={activityItems} />}
       </div>
@@ -735,11 +746,15 @@ function SlaPerformanceCard({
   avgResponseHours,
   avgResolutionHours,
   measuredCount,
+  responseTargetHours,
+  resolutionTargetHours,
 }: {
   slaPct: number | null;
   avgResponseHours: number | null;
   avgResolutionHours: number | null;
   measuredCount: number;
+  responseTargetHours: number;
+  resolutionTargetHours: number;
 }) {
   const pct = slaPct ?? 0;
   const circumference = 2 * Math.PI * 34;
@@ -789,7 +804,7 @@ function SlaPerformanceCard({
             {slaPct === null ? "—" : `${slaPct}%`}
           </p>
           <p className="text-xs text-slate-500">
-            resolved within {SLA_RESOLUTION_TARGET_HOURS}h target
+            resolved within {resolutionTargetHours}h target
           </p>
         </div>
       </div>
@@ -811,8 +826,8 @@ function SlaPerformanceCard({
 
       <p className="mt-3 text-xs text-slate-500">
         {measuredCount} ticket{measuredCount === 1 ? "" : "s"} resolved · last
-        30 days · target {SLA_RESPONSE_TARGET_HOURS}h response /{" "}
-        {SLA_RESOLUTION_TARGET_HOURS}h resolution
+        30 days · target {responseTargetHours}h response /{" "}
+        {resolutionTargetHours}h resolution
       </p>
     </div>
   );
@@ -859,8 +874,10 @@ function barTone(pct: number | null): string {
 
 function SlaHistoryCard({
   history,
+  resolutionTargetHours,
 }: {
   history: { label: string; pct: number | null; count: number }[];
+  resolutionTargetHours: number;
 }) {
   const hasAnyData = history.some((week) => week.count > 0);
 
@@ -874,7 +891,7 @@ function SlaHistoryCard({
           SLA Historical Performance
         </h2>
         <span className="text-xs text-slate-500">
-          Weekly compliance vs {SLA_RESOLUTION_TARGET_HOURS}h resolution target
+          Weekly compliance vs {resolutionTargetHours}h resolution target
         </span>
       </div>
 

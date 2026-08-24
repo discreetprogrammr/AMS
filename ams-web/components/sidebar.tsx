@@ -227,17 +227,28 @@ export function Sidebar({ profile }: { profile: Profile | null }) {
 
       <div className="border-t border-hairline p-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-ink">
-            {initials(profile?.full_name ?? null)}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-ink">
-              {profile?.full_name ?? "Unknown User"}
-            </p>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-400">
-              {isSuperAdmin ? "Super Admin" : isStaff ? "Admin" : "Client"}
-            </p>
-          </div>
+          {/* Whole block (except Sign out) links to /profile — the entry
+              point for the self-service Edit Profile feature
+              (schema_step37.sql). No separate "Settings" nav item; clicking
+              your own name/avatar to edit it is the more obvious affordance
+              here. */}
+          <Link
+            href="/profile"
+            title="Edit profile"
+            className="-m-1.5 flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1.5 hover:bg-surface-2"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-ink">
+              {initials(profile?.full_name ?? null)}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-ink">
+                {profile?.full_name ?? "Unknown User"}
+              </p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-400">
+                {isSuperAdmin ? "Super Admin" : isStaff ? "Admin" : "Client"}
+              </p>
+            </div>
+          </Link>
           <form action={logout}>
             <button
               type="submit"

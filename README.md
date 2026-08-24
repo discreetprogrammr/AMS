@@ -1518,3 +1518,25 @@ Verified with `npx tsc --noEmit` — clean aside from `Cannot find module 'web-p
 8. **Confirm the non-fatal behavior:** click the bell icon again to unsubscribe, then repeat step 6 or 7 — confirm the underlying action (escalation/status change) still completes normally with no push, same as removing `RESEND_API_KEY` earlier didn't break email's absence.
 
 Verified with `npx tsc --noEmit` (clean). No schema changes, nothing new to deploy beyond the code itself.
+
+## Follow-up — Self-service Edit Profile
+
+First item off the new round of improvements. Until now, changing a user's display name (the thing shown in the sidebar and on tickets/reports) meant running an `update profiles set full_name = ...` by hand in Supabase's SQL Editor — fine for the one test account set up earlier this project, not something you'd want to keep doing per client contact. This adds a small **My Profile** page where any signed-in user (staff or client) updates their own display name and password directly.
+
+**`schema_step37.sql`** (new) — **run this in Supabase before deploying.** `profiles`' existing RLS policies (`schema.sql`) only cover reading your own row and a staff-blanket "manage everything" policy — there was no policy letting a regular user update their own row at all. The naive fix, a plain `for update using (id = auth.uid())` policy, would actually be a real security hole: RLS governs *rows*, not *columns*, so a signed-in client could open the browser console and, using the public anon key directly (bypassing the app's UI entirely), rewrite their own `role` to `super_admin` or `organization_id` to someone else's org in the same request that legitimately updates their name. This migration closes that off with a Postgres column-level `GRANT`, which is enforced independently of RLS: `authenticated`'s blanket UPDATE privilege on `profiles` is revoked and replaced with a grant on just the `full_name` column, so any UPDATE statement touching `role`, `organization_id`, or `id` — from the app or a raw client call — is rejected outright before RLS even runs.
+
+**What's new in the app:**
+- **My Profile** page (`/profile`) — an Account card (email, role — both read-only), a Display Name form, and a Change Password form. No schema changes needed for the password form; it goes through Supabase Auth's own `updateUser()`, which only requires the user's existing session (no separate "current password" re-entry — that's not something Supabase's API exposes for a logged-in change).
+- Entry point: the user card at the bottom of the sidebar (avatar, name, role) is now a link to `/profile` instead of being static — click your own name to edit it. The Sign Out button next to it is unchanged.
+
+Verified with `npx tsc --noEmit` — clean aside from the pre-existing, expected `Cannot find module 'web-push'`.
+
+## Setup steps
+
+1. Run `schema_step37.sql` in Supabase.
+2. Push to GitHub and let Vercel redeploy — no new env vars or dependencies.
+3. Sign in as any user, click your name/avatar at the bottom of the sidebar, confirm it opens **My Profile** with your current email, role, and name pre-filled.
+4. Change the Display Name and save — confirm the sidebar updates immediately (after the redirect) and the success banner appears.
+5. Try saving an empty name — confirm it's rejected with a clear error instead of silently clearing your name.
+6. Change your password (twice, matching) and save — confirm the success banner appears. Sign out and back in with the new password to confirm it actually took effect.
+7. No separate test needed for the column-level guard itself — steps 3–6 above only work at all because the new policy + grant are both correctly in place (a misconfigured grant would fail the name save too, not just block role/org changes), so a successful name/password update is already the confirmation.

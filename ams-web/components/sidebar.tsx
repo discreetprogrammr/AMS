@@ -9,6 +9,7 @@ import { isStaffRole, isSuperAdminRole } from "@/lib/supabase/roles";
 import { logout } from "@/app/login/actions";
 import { useMobileNav } from "./mobile-nav";
 import { MessagesUnreadDot } from "./messages-unread-dot";
+import { UserAvatar } from "./user-avatar";
 
 type NavItem = {
   href: string;
@@ -98,14 +99,6 @@ function buildNav(): NavItem[] {
   ];
 }
 
-function initials(name: string | null): string {
-  if (!name) return "?";
-  const parts = name.trim().split(/\s+/);
-  return parts
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase())
-    .join("");
-}
 
 export function Sidebar({ profile }: { profile: Profile | null }) {
   const pathname = usePathname();
@@ -237,9 +230,7 @@ export function Sidebar({ profile }: { profile: Profile | null }) {
             title="Edit profile"
             className="-m-1.5 flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1.5 hover:bg-surface-2"
           >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-ink">
-              {initials(profile?.full_name ?? null)}
-            </div>
+            <UserAvatar fullName={profile?.full_name} avatarUrl={profile?.avatar_url} />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-ink">
                 {profile?.full_name ?? "Unknown User"}

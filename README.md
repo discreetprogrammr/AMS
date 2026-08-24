@@ -1540,3 +1540,27 @@ Verified with `npx tsc --noEmit` — clean aside from the pre-existing, expected
 5. Try saving an empty name — confirm it's rejected with a clear error instead of silently clearing your name.
 6. Change your password (twice, matching) and save — confirm the success banner appears. Sign out and back in with the new password to confirm it actually took effect.
 7. No separate test needed for the column-level guard itself — steps 3–6 above only work at all because the new policy + grant are both correctly in place (a misconfigured grant would fail the name save too, not just block role/org changes), so a successful name/password update is already the confirmation.
+
+## Follow-up — Profile pictures
+
+Immediate follow-up on Self-service Edit Profile: the initials circle (sidebar and My Profile) can now be replaced with an actual photo, same self-service model as the display name — a user manages only their own.
+
+**`schema_step38.sql`** (new) — **run this in Supabase before deploying (after schema_step37.sql).** Adds `profiles.avatar_url` plus a column-level GRANT for it, additive to schema_step37.sql's `full_name` grant (Postgres column grants stack — this doesn't undo that one). Also creates a new **public** Storage bucket, `avatars` — unlike every other bucket in this project (`asset-documents`, `chat-attachments`, `service-reports`), which are private with an RLS-gated download route. A profile picture isn't sensitive business data the way compliance paperwork is, and it renders on nearly every page (the sidebar), so a plain public URL avoids a signed-URL round trip just to show an avatar. Reads bypass RLS entirely for a public bucket; the RLS policies added here only gate writes (insert/update/delete), each scoped to the caller's own folder via the object path `{user_id}/{random}-{filename}` — the same `storage.foldername(name)` prefix-check pattern `asset-documents` uses.
+
+**What's new in the app:**
+- **My Profile** now opens with an avatar picker at the top of the Account card — click the circle (or the small camera badge) to pick an image; it uploads immediately on selection rather than needing a separate Save click, since that's the more familiar pattern for a profile picture. A **Remove** link appears once a photo is set, reverting to the initials circle.
+- The sidebar's avatar (bottom user card) now shows the photo too, everywhere in the app, not just on My Profile.
+- Old photos are cleaned up from Storage automatically on replace or removal — no orphaned files piling up in a user's folder over time.
+- No resizing/compression — capped at 5MB, cropped to a circle purely via CSS. Kept simple on purpose for this feature's scope.
+
+Verified with `npx tsc --noEmit` — clean aside from the pre-existing, expected `Cannot find module 'web-push'`.
+
+## Setup steps
+
+1. Run `schema_step38.sql` in Supabase (after `schema_step37.sql`, if you haven't already run that one).
+2. Push to GitHub and let Vercel redeploy — no new env vars or dependencies.
+3. Open **My Profile**, click the avatar circle, pick an image — confirm it uploads and the circle updates without a page reload.
+4. Check the sidebar — confirm the same photo now shows there too (may need the page to finish its refresh).
+5. Click **Remove** — confirm it reverts to the initials circle in both places.
+6. Upload a second photo, then a third — in Supabase's Storage browser, confirm the `avatars` bucket only ever has one file per user at a time (the old one gets deleted on each replace), not an ever-growing pile.
+7. Try selecting a non-image file (e.g. a PDF) — confirm it's rejected with a clear error instead of silently failing.

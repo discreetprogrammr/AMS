@@ -7,6 +7,7 @@ export type Profile = {
   full_name: string | null;
   role: Role;
   organization_id: string | null;
+  avatar_url: string | null;
 };
 
 // Re-exported so existing server-side imports (`from "@/lib/supabase/profile"`)
@@ -30,7 +31,7 @@ export async function getProfile(): Promise<Profile | null> {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, full_name, role, organization_id")
+    .select("id, full_name, role, organization_id, avatar_url")
     .eq("id", user.id)
     .single();
 

@@ -2,16 +2,17 @@ import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/supabase/profile";
 import { isSuperAdminRole, isStaffRole } from "@/lib/supabase/roles";
 import { AppShell } from "@/components/app-shell";
+import { AvatarUpload } from "@/components/avatar-upload";
 import { updateDisplayName, updatePassword } from "./actions";
 
-// My Profile — self-service display name + password change, reachable from
-// the sidebar's bottom user card (sidebar.tsx). Everything else about the
-// account (email, role, org) is read-only here: email/password live in
-// Supabase Auth (not editable via this form's own action, password has its
-// own form below), and role/organization_id are staff-managed elsewhere —
-// schema_step37.sql's column-level GRANT means an UPDATE touching those two
-// columns is rejected outright regardless of what a form or a raw client
-// call sends.
+// My Profile — self-service display name, profile picture, and password
+// change, reachable from the sidebar's bottom user card (sidebar.tsx).
+// Everything else about the account (email, role, org) is read-only here:
+// email/password live in Supabase Auth (not editable via this form's own
+// action, password has its own form below), and role/organization_id are
+// staff-managed elsewhere — schema_step37.sql's column-level GRANT means an
+// UPDATE touching those two columns is rejected outright regardless of what
+// a form or a raw client call sends.
 export default async function ProfilePage({
   searchParams,
 }: {
@@ -53,8 +54,9 @@ export default async function ProfilePage({
         )}
 
         <div className="rounded-xl border border-hairline bg-surface p-6">
-          <h2 className="text-sm font-semibold text-ink">Account</h2>
-          <div className="mt-3 grid grid-cols-2 gap-4 text-sm">
+          <h2 className="mb-4 text-sm font-semibold text-ink">Account</h2>
+          <AvatarUpload fullName={profile?.full_name ?? null} avatarUrl={profile?.avatar_url ?? null} />
+          <div className="mt-5 grid grid-cols-2 gap-4 border-t border-hairline pt-4 text-sm">
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                 Email

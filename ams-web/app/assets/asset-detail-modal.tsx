@@ -204,7 +204,12 @@ export function AssetDetailModal({
                 {latestTicket ? (
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-ink">{ticketRef(latestTicket.id)}</span>
+                      <Link
+                        href={`/tickets?ticket=${latestTicket.id}`}
+                        className="font-medium text-blue-400 hover:underline"
+                      >
+                        {ticketRef(latestTicket.id)}
+                      </Link>
                       <StatusBadge status={latestTicket.status} />
                     </div>
                     <p className="mt-0.5 truncate text-ink-soft">{latestTicket.description}</p>

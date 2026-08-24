@@ -46,9 +46,15 @@ const FILTERS: { key: FilterKey; label: string; dotClass?: string }[] = [
 export function TicketsTable({
   tickets,
   isStaff,
+  initialTicketId,
 }: {
   tickets: TicketRow[];
   isStaff: boolean;
+  // Deep-link support (e.g. the "latest service ticket" link in the Fleet
+  // Map site popup's asset summary, /tickets?ticket=<id>) — auto-opens that
+  // ticket's detail modal below once its row shows up in `allTickets`,
+  // instead of just landing on the unfiltered queue.
+  initialTicketId?: string | null;
 }) {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [allTickets, setAllTickets] = useState<TicketRow[]>(tickets);
@@ -58,6 +64,13 @@ export function TicketsTable({
   useEffect(() => {
     setAllTickets(tickets);
   }, [tickets]);
+
+  useEffect(() => {
+    if (!initialTicketId) return;
+    const match = allTickets.find((t) => t.id === initialTicketId);
+    if (match) setSelected(match);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTicketId, allTickets]);
 
   // Live status updates (schema_step28.sql adds service_tickets to the
   // realtime publication) — same component renders both the staff and

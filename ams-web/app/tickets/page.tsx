@@ -14,7 +14,10 @@ import { TicketsTable, type TicketRow } from "./tickets-table";
 export default async function TicketsPage({
   searchParams,
 }: {
-  searchParams: { created?: string };
+  // `ticket` — deep-links straight to a ticket's detail modal (e.g. from the
+  // Fleet Map site popup's "latest service ticket" link) instead of just
+  // landing on the unfiltered queue and making the user find it themselves.
+  searchParams: { created?: string; ticket?: string };
 }) {
   const profile = await getProfile();
   const isStaff = isStaffRole(profile?.role);
@@ -72,7 +75,7 @@ export default async function TicketsPage({
         </p>
       )}
 
-      <TicketsTable tickets={rows} isStaff={isStaff} />
+      <TicketsTable tickets={rows} isStaff={isStaff} initialTicketId={searchParams?.ticket ?? null} />
     </AppShell>
   );
 }

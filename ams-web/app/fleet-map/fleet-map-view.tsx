@@ -283,7 +283,7 @@ export function FleetMapView({ sites }: { sites: FleetSite[] }) {
               above so this can match the rest of the app's styling, and so
               "Reset view" (which Leaflet has no equivalent for) can sit
               alongside +/-. */}
-          <div className="absolute right-3 top-3 z-[500] flex flex-col gap-1.5">
+          <div className="absolute right-3 top-3 z-20 flex flex-col gap-1.5">
             <MapBtn label="Zoom in" onClick={() => mapRef.current?.zoomIn()}>
               +
             </MapBtn>
@@ -296,7 +296,7 @@ export function FleetMapView({ sites }: { sites: FleetSite[] }) {
           </div>
 
           {/* Legend */}
-          <div className="absolute bottom-3 left-3 z-[500] rounded-xl border border-hairline bg-surface/90 px-3 py-2.5 backdrop-blur">
+          <div className="absolute bottom-3 left-3 z-20 rounded-xl border border-hairline bg-surface/90 px-3 py-2.5 backdrop-blur">
             <div className="mb-1.5 text-[10px] font-semibold tracking-widest text-slate-500">
               LEGEND
             </div>

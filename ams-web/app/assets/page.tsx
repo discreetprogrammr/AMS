@@ -76,6 +76,14 @@ export default async function AssetsPage({
           )}
           {isStaff && (
             <Link
+              href="/assets/import"
+              className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
+            >
+              Import CSV
+            </Link>
+          )}
+          {isStaff && (
+            <Link
               href="/assets/new"
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-ink hover:bg-blue-500"
             >

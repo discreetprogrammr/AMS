@@ -1587,3 +1587,36 @@ Verified with `npx tsc --noEmit` — clean aside from the pre-existing, expected
 5. Hit the same endpoint again immediately — confirm the part now shows under `skipped`, not `escalated` again (same level, no repeat alert).
 6. Use **Receive Stock** to bring the part back above its reorder level, then hit the endpoint again — confirm it shows under `recovered`, not `escalated`.
 7. Drop the same part low again (log more usage) and hit the endpoint once more — confirm it escalates again, proving the alert re-arms after a restock instead of staying permanently silenced.
+
+## Follow-up — Bulk CSV import (Assets and Inventory)
+
+Third item off the new round. Onboarding a new client's whole fleet, or stocking up the parts catalog, used to mean adding rows one at a time through `/assets/new` / `/parts/new`. This adds a CSV import path for both — same two-phase flow in each: upload a file, review a preview (what will import, what's a duplicate, what has errors) with nothing written yet, then confirm.
+
+**No schema changes.** New dependency: **papaparse** (`app/assets/import`, `app/parts/import`, `lib/csv-import.ts`) — hand-rolling a CSV parser is a bad idea for something meant to accept real Excel/Google Sheets exports; quoted fields containing commas or embedded newlines are genuinely tricky to get right by hand. Run `npm install` after pulling. CSV *generation* (the downloadable templates) stays hand-rolled, matching the existing `Export CSV` route's pattern — that direction is simple enough not to need a library.
+
+**Why two phases instead of straight to the database:** a fleet-onboarding import can easily be 50–200+ rows, and there's no bulk delete/undo anywhere in this app if a bad file goes in wrong. So nothing is written until you explicitly confirm the preview.
+
+**Duplicate protection:** re-uploading the same file twice (e.g. after fixing one bad row) won't create duplicates — Assets are deduplicated by `serial_number`, Parts by `SKU`, both checked against existing rows AND against earlier rows in the same file. A duplicate is reported as **skipped**, not a hard error; rows with skipped serials/SKUs just aren't imported.
+
+**Assets import specifics** (`app/assets/import/`):
+- CSV columns: Organization, Site, Equipment Type, Brand, Model, Serial Number, Status, Sold By, Install Date, Warranty End, Next Service Due, Custodian, PNRI License # — deliberately matching the existing `Export CSV` route's column names (minus **Asset ID**, which is always server-generated, same numbering scheme as the single-asset form — `XRY-0001`, etc. — never accepted from a file). A staff member can literally download an Export CSV and re-upload it unmodified; the "Asset ID" column is just ignored.
+- **Organization** must match an existing client exactly (case-insensitive) — the import doesn't create new client organizations, only assets/sites under ones that already exist, same boundary the single-asset form already has (organization is a dropdown of existing orgs there too).
+- **Site** reuses the exact same `resolveSiteId()` helper the single-asset form uses — an existing site address matches case-insensitively, a new one is created and auto-geocoded (known PH facilities resolve instantly, anything else falls back to live geocoding), exactly as if it had been typed into the New Asset form by hand.
+- Equipment Type / Status / Sold By must be the raw enum values (`xray_screening`, `operational`, etc.), not display labels — same values the Export CSV already produces.
+
+**Inventory (Parts) import specifics** (`app/parts/import/`):
+- CSV columns: Name, SKU, Category, Unit, Quantity On Hand, Reorder Level, Unit Cost, Notes. Only Name is required; Quantity On Hand and Reorder Level default to 0, Unit defaults to `pcs`, same defaults as the single-part form.
+- A part imported with a Quantity On Hand at or below its Reorder Level will trigger the Low-stock parts alert on the next daily cron run, exactly like manually adding one would — the two features compose without any special-casing.
+
+Both import pages cap a single file at 500 rows (a clear error tells you to split a larger file, rather than timing out silently) and are reachable via a new **Import CSV** button next to the existing Add/Export buttons on the Assets and Inventory pages.
+
+Verified with `npx tsc --noEmit` — clean aside from the pre-existing, expected `Cannot find module 'web-push'`, plus the newly-expected `Cannot find module 'papaparse'` until `npm install` runs.
+
+## Setup steps
+
+1. `npm install` (pulls in `papaparse`), then push to GitHub and let Vercel redeploy. No SQL to run.
+2. On the Assets page, click **Import CSV** → **Download the template** → open it and add a couple of rows for an organization that already exists in your Supabase data (check the Clients page for exact names) — try one row with a Site that already exists and one with a brand-new address.
+3. Upload that file — confirm the preview shows the right counts, the new-site row doesn't error, and the table preview looks right. Click **Import** and confirm both assets appear on the Assets page with auto-generated Asset IDs, and that the new site shows up on Fleet Map with a pin (auto-geocoded).
+4. Re-upload the exact same file again — confirm both rows now show as **skipped** (duplicate serial numbers), not re-imported.
+5. Try a row with an Equipment Type that isn't one of the five valid values — confirm it's reported under **Errors** with a clear message, and doesn't block the other valid rows from importing.
+6. Repeat steps 2–5 on the Inventory page's **Import CSV** (SKU dedup instead of serial number) — confirm a low-stock imported part shows the **Low Stock** badge immediately, and shows up in the next `/api/cron/low-stock-check` run.

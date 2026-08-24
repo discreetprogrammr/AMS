@@ -39,12 +39,20 @@ export default async function PartsPage({
       title="Inventory"
       subtitle="Spare-parts and consumables stock levels — separate from Asset Verification, which counts assets, not parts."
       actions={
-        <Link
-          href="/parts/new"
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-ink hover:bg-blue-500"
-        >
-          + Add Part
-        </Link>
+        <>
+          <Link
+            href="/parts/import"
+            className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
+          >
+            Import CSV
+          </Link>
+          <Link
+            href="/parts/new"
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-ink hover:bg-blue-500"
+          >
+            + Add Part
+          </Link>
+        </>
       }
     >
       {searchParams?.created === "1" && (

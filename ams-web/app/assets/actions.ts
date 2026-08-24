@@ -25,7 +25,7 @@ const EQUIPMENT_PREFIX: Record<string, string> = {
 // XRY-0001, then XRY-0002. Looks at the highest existing number already
 // used for that prefix — not just a row count — so deleting an asset never
 // causes its number to be reissued to a different asset later.
-async function nextAssetTag(
+export async function nextAssetTag(
   supabase: Awaited<ReturnType<typeof createClient>>,
   equipmentType: string,
 ): Promise<string> {
@@ -56,7 +56,7 @@ async function nextAssetTag(
 // typed address to an existing site for that organization (case-insensitive
 // match) or creates one on the fly, and returns its id. Blank input means
 // "no specific site."
-async function resolveSiteId(
+export async function resolveSiteId(
   supabase: Awaited<ReturnType<typeof createClient>>,
   organizationId: string,
   siteAddressRaw: FormDataEntryValue | null,

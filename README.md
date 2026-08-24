@@ -1564,3 +1564,26 @@ Verified with `npx tsc --noEmit` — clean aside from the pre-existing, expected
 5. Click **Remove** — confirm it reverts to the initials circle in both places.
 6. Upload a second photo, then a third — in Supabase's Storage browser, confirm the `avatars` bucket only ever has one file per user at a time (the old one gets deleted on each replace), not an ever-growing pile.
 7. Try selecting a non-image file (e.g. a PDF) — confirm it's rejected with a clear error instead of silently failing.
+
+## Follow-up — Low-stock parts alerts
+
+Second item off the new round of improvements. The "Low Stock" / "Out of Stock" badge on the Parts page (`app/parts/parts-table.tsx`) was already there, but passive — nobody finds out a part's run low unless they happen to open that page. This adds the same proactive treatment already given to SLA breaches, PM due dates, and compliance/warranty expiry: a daily cron sweep raises a staff alert (in-app + email/push, `lib/notify.ts`) the first time a part crosses into Low Stock or Out of Stock.
+
+**`schema_step39.sql`** (new) — **run this in Supabase before deploying.** Adds `low_stock_alerts`, a ledger table that works differently on purpose from the SLA/PM/compliance ledgers it otherwise mirrors. Those three track one-way lifecycle events — a certificate only expires once, an SLA only breaches once per ticket — so "insert once, a unique constraint blocks any repeat" is exactly right for them. Stock levels aren't one-way: a part goes low, gets restocked (Receive Stock, schema_step32.sql), and can go low again next month, repeatedly. A permanent "already alerted" ledger would flag a part the first time it ever goes low and then stay silent forever after, even across a full restock. So this ledger instead stores the *current* alert level per part, and the row is deleted entirely once a part is restocked back above its reorder level — no row means "fine right now," which naturally re-arms the alert for next time.
+
+**What's new in the app:**
+- `lib/low-stock-alerts.ts` — `runLowStockCheck()`, using the exact same Low Stock / Out of Stock precedence already established in `parts-table.tsx`'s `stockStatus()` (a `reorder_level` of 0 means "no threshold set," never flags Low Stock on its own).
+- `app/api/cron/low-stock-check` — same dual-auth shape as the other three cron routes (Vercel Cron via `CRON_SECRET`, or a signed-in Super Admin directly). Added to `vercel.json` at a staggered daily time (7am UTC) — once-daily is enough, same reasoning as the compliance check.
+- Parts have no client-portal visibility (staff-only end to end, per schema_step31.sql), so — unlike ticket-status emails — every alert here only ever goes to staff, never a client. No new env vars.
+
+Verified with `npx tsc --noEmit` — clean aside from the pre-existing, expected `Cannot find module 'web-push'`.
+
+## Setup steps
+
+1. Run `schema_step39.sql` in Supabase.
+2. Push to GitHub and let Vercel redeploy.
+3. Open a part on the Parts page and set its **Reorder Level** above its current **Quantity on Hand** (or log enough "Parts Used" to bring it down) so it shows the **Low Stock** badge.
+4. Sign in as Super Admin and hit `/api/cron/low-stock-check` directly — confirm the response includes that part under `escalated`, and check the Alerts tab / your staff email / a subscribed device for the matching alert.
+5. Hit the same endpoint again immediately — confirm the part now shows under `skipped`, not `escalated` again (same level, no repeat alert).
+6. Use **Receive Stock** to bring the part back above its reorder level, then hit the endpoint again — confirm it shows under `recovered`, not `escalated`.
+7. Drop the same part low again (log more usage) and hit the endpoint once more — confirm it escalates again, proving the alert re-arms after a restock instead of staying permanently silenced.

@@ -102,9 +102,12 @@ export default async function MessagesPage() {
                   client nothing about which of their (possibly several)
                   open tickets a thread is actually about, so they'd have to
                   guess or cross-check against the Tickets page before
-                  messaging/calling in. Shown right under the ref/status so
-                  it's the first thing that identifies the ticket. */}
-              <p className="mt-0.5 truncate text-sm text-ink-soft">
+                  messaging/calling in. Styled as the most prominent line in
+                  the row (bigger, bolder, full-contrast) — it's the thing a
+                  user actually needs to read first to pick the right
+                  ticket; the ref/status badges above it are secondary,
+                  more like metadata. */}
+              <p className="mt-1 truncate text-base font-semibold text-ink">
                 {t.description || "No description provided."}
               </p>
               <p className="mt-0.5 truncate text-xs text-slate-500">

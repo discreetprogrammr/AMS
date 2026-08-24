@@ -105,4 +105,14 @@ body {
 .leaflet-container {
   background: rgb(var(--c-base));
   font-family: inherit;
+  /* Leaflet's own CSS puts its zoom controls at z-index 1000 (and other
+     internal panes up to 700) — fine normally, but since .leaflet-container
+     only had `position: relative` with no z-index of its own, it never
+     formed a new stacking context, so those values leaked out and competed
+     directly with the rest of the page instead of staying contained inside
+     the map. That let the map's controls render on top of the mobile
+     sidebar drawer (z-50) when both were open at once. Giving the container
+     its own z-index (any explicit value works, even 0) makes it establish
+     a stacking context, so everything inside stays capped below it. */
+  z-index: 0;
 }

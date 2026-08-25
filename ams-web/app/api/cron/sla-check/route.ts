@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProfile, isSuperAdminRole } from "@/lib/supabase/profile";
 import { runSlaEscalationCheck } from "@/lib/sla-escalation";
+import { logError } from "@/lib/error-log";
 
 // Daily SLA breach escalation sweep. Same dual-auth shape as
 // app/api/cron/pm-due/route.ts — see that file's comment for the full
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error("[cron/sla-check] run failed:", err);
+    await logError("cron:sla-check", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : String(err) },
       { status: 500 },

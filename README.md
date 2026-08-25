@@ -1754,3 +1754,29 @@ Verified with `npx tsc --noEmit` — clean aside from the two pre-existing, expe
 4. File a **Site Survey Report** — confirm the 5-section checklist (Receiving Area, Access Path, Power & Space, Environment, Connectivity) appears, tap a few statuses to cycle OK → Attention → Fail, and confirm it shows on the PDF/HTML view as "Site Assessment Checklist." Sign in as a client on that org and confirm the checklist is visible to them too (the RLS fix).
 5. File an **Installation Report** — select Cargo type, check a couple of Optional/Software Features, mark Parts Required with a list, and confirm all of it appears composed into the Findings section of the PDF.
 6. File a **Training Report** — fill in Length of Training and check a couple of Competence Assessment boxes, confirm they appear composed into the Findings section.
+
+## Follow-up — Error Monitoring
+
+10th item off the improvements list. Two failure points were invisible the moment they actually happened: `lib/pdf/generate-and-store.ts`'s catch block returned `{ok:false, message}` with nothing durable kept anywhere, and every cron route's (`pm-due`, `sla-check`, `compliance-check`, `low-stock-check`, `weekly-digest`) top-level catch only wrote to `console.error` — visible only to whoever happened to check Vercel's function logs. This closes that gap: unhandled app errors now get a real, staff-visible record, no third-party service required.
+
+**`schema_step43.sql`** (new) — **run this in Supabase before deploying.** New `error_logs` table: `source`, `message`, `stack`, `context` (jsonb, whatever extra detail the call site has on hand), `resolved`/`resolved_at`/`resolved_by`, and `alert_id` linking back to the alerts-table row raised for the same error. RLS staff-only (`is_internal_staff()`) for select/update — there's no insert policy, since every write goes through the service-role client, the same way the SLA/low-stock/PM-due cron jobs already bypass RLS to write to `alerts`.
+
+**What's new in the app:**
+- `lib/error-log.ts` — the single capture point, `logError(source, error, context?)`. Fire-and-forget-safe (never throws, so it drops straight into an existing catch block with no new try/catch needed). Every call does two things: inserts the full technical detail into `error_logs`, and inserts a row into the existing `alerts` table (`title: "Error: <source>"`, severity `critical`) so it rides the exact same `/alerts` feed and `notifyStaff()` email/push delivery every other alert type (SLA breach, low stock, PM due) already uses — no second notification path to build or maintain.
+- Wired into the two silent-failure points above (`generate-and-store.ts`'s catch, and all five cron routes' catches), tagged by source: `pdf:generate-and-store`, `cron:pm-due`, `cron:sla-check`, `cron:compliance-check`, `cron:low-stock-check`, `cron:weekly-digest`.
+- `app/global-error.tsx` — Next.js's root error boundary, catching unhandled client-side render crashes that no nested `error.tsx` already handled. Since it's a Client Component (App Router requirement — it renders its own `<html>/<body>`), it POSTs the crash to a new `app/api/log-client-error/route.ts`, which calls `logError("client:render", ...)` server-side. Shows a minimal "Try again / Go to Dashboard" recovery screen with plain inline styles (deliberately not dependent on Tailwind/globals.css, since a root boundary can't safely assume the normal CSS pipeline is intact).
+- `app/error-logs/` — new **Error Logs** page, Super Admin-only (same precedent as Audit Log: raw stack traces/context aren't an everyday ops surface, and every error already shows up on `/alerts` for regular staff too). Filterable (Unresolved/All), expandable stack trace + context per entry, Mark Resolved action. Added to the sidebar nav, gated `staffOnly` + `superAdminOnly`.
+
+**Scope note**: this covers unhandled errors at existing catch points and unrecoverable client render crashes — not a synthetic uptime/health check, and not every server action's catch block individually (only the two places that were already known to swallow failures silently). Extending `logError()` to more call sites later is just one more `await logError(...)` call each, same pattern.
+
+Verified with `npx tsc --noEmit` — clean aside from the two pre-existing, expected `Cannot find module` errors (`web-push`, `papaparse`).
+
+## Setup steps
+
+1. Run `schema_step43.sql` in Supabase.
+2. Push to GitHub and let Vercel redeploy.
+3. As Super Admin, open **Error Logs** in the sidebar — confirm the page loads (empty is fine).
+4. Trigger a real failure to test end-to-end — easiest is hitting a cron route with a broken/missing env var, or temporarily renaming a column reference — and confirm: a row appears in **Error Logs** with the right `source` tag, stack trace, and context; a matching "Error: ..." entry appears in **Alerts** with Critical severity; and (if `STAFF_NOTIFICATION_EMAIL`/push are configured) the email/push notification arrives.
+5. Sign in as a non-Super-Admin staff member — confirm **Error Logs** doesn't appear in their sidebar, but the same error is still visible to them on **Alerts**.
+6. Force a client-side render crash (e.g. temporarily throw inside a page component) and confirm the dark "Something went wrong" recovery screen renders instead of a blank page, and that a `client:render` entry shows up in Error Logs with a real browser stack trace.
+7. Mark an entry **Resolved** and confirm it drops out of the default "Unresolved" filter but still shows under "All".

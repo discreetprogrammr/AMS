@@ -14,6 +14,7 @@ import {
 } from "./service-report";
 import { reportRef } from "@/lib/format";
 import { REPORT_KIND_REF_PREFIX, type ReportKind } from "@/lib/report-types";
+import { logError } from "@/lib/error-log";
 import { LOGO_BASE64 } from "./logo-base64";
 
 // Embedded as base64 (logo-base64.ts) rather than read from
@@ -208,6 +209,12 @@ export async function generateAndStoreReportPdf(
 
     return { ok: true };
   } catch (err) {
+    // Error Monitoring (schema_step43.sql) — this catch used to be a dead
+    // end: the failure only ever reached the user if the caller happened
+    // to surface {ok:false}.message in a redirect, and nothing durable was
+    // ever kept. logError() is fire-and-forget-safe (never throws), so it
+    // can't change this function's own error-return behavior below.
+    await logError("pdf:generate-and-store", err, { recordId: params.recordId, reportKind: params.reportKind });
     return {
       ok: false,
       message: err instanceof Error ? err.message : "PDF generation failed.",

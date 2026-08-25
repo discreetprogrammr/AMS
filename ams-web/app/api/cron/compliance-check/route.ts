@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProfile, isSuperAdminRole } from "@/lib/supabase/profile";
 import { runComplianceCheck } from "@/lib/compliance-alerts";
+import { logError } from "@/lib/error-log";
 
 // Daily compliance certificate & warranty expiry sweep. Same dual-auth
 // shape as app/api/cron/pm-due and app/api/cron/sla-check — Vercel Cron
@@ -29,6 +30,7 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error("[cron/compliance-check] run failed:", err);
+    await logError("cron:compliance-check", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : String(err) },
       { status: 500 },

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProfile, isSuperAdminRole } from "@/lib/supabase/profile";
 import { runLowStockCheck } from "@/lib/low-stock-alerts";
+import { logError } from "@/lib/error-log";
 
 // Daily low-stock parts sweep. Same dual-auth shape as the other three cron
 // routes (pm-due, sla-check, compliance-check) — Vercel Cron hits this with
@@ -27,6 +28,7 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error("[cron/low-stock-check] run failed:", err);
+    await logError("cron:low-stock-check", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : String(err) },
       { status: 500 },

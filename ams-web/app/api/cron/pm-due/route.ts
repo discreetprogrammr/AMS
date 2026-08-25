@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProfile, isSuperAdminRole } from "@/lib/supabase/profile";
 import { runPmAutoCheck } from "@/lib/pm-automation";
+import { logError } from "@/lib/error-log";
 
 // Daily PM-due sweep (Automated PM ticket generation). Two ways in:
 //
@@ -36,6 +37,7 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error("[cron/pm-due] run failed:", err);
+    await logError("cron:pm-due", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : String(err) },
       { status: 500 },

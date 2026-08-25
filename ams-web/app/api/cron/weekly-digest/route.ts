@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProfile, isSuperAdminRole } from "@/lib/supabase/profile";
 import { sendWeeklyDigest } from "@/lib/report-digest";
+import { logError } from "@/lib/error-log";
 
 // Weekly staff ops digest. Same dual-auth shape as the other four cron
 // routes (pm-due, sla-check, compliance-check, low-stock-check) — Vercel
@@ -24,6 +25,7 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error("[cron/weekly-digest] run failed:", err);
+    await logError("cron:weekly-digest", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : String(err) },
       { status: 500 },

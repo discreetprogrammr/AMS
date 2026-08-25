@@ -65,6 +65,8 @@ const ICONS = {
     "M12 2a6 6 0 0 0-6 6c0 4.5-2 6-2 6h16s-2-1.5-2-6a6 6 0 0 0-6-6ZM10.3 21a1.94 1.94 0 0 0 3.4 0",
   audit:
     "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Zm-3-9 2 2 4-4",
+  errorLogs:
+    "M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0ZM12 9v4m0 4h.01",
   slaPolicy: "M12 8v4l3 3M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z",
   chat: "M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z",
   logout:
@@ -102,6 +104,11 @@ function buildNav(): NavItem[] {
     // see the current SLA targets even though they can't change them.
     { href: "/sla-settings", label: "SLA Policy", icon: <Icon d={ICONS.slaPolicy} />, staffOnly: true },
     { href: "/audit-log", label: "Audit Log", icon: <Icon d={ICONS.audit} />, staffOnly: true, superAdminOnly: true },
+    // Error Monitoring (schema_step43.sql). Super Admin-only like Audit Log
+    // — raw stack traces/context, not an everyday ops surface. Every error
+    // logged here also raises a normal staff-visible alert on /alerts, so
+    // regular staff aren't missing anything actionable by not having this.
+    { href: "/error-logs", label: "Error Logs", icon: <Icon d={ICONS.errorLogs} />, staffOnly: true, superAdminOnly: true },
   ];
 }
 

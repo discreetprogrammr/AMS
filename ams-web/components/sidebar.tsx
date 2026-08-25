@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import type { ReactNode } from "react";
 import type { Profile } from "@/lib/supabase/profile";
 import { isStaffRole, isSuperAdminRole } from "@/lib/supabase/roles";
+import { NAV_MODULES } from "@/lib/nav-items";
 import { logout } from "@/app/login/actions";
 import { useMobileNav } from "./mobile-nav";
 import { MessagesUnreadDot } from "./messages-unread-dot";
@@ -67,6 +68,8 @@ const ICONS = {
     "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Zm-3-9 2 2 4-4",
   errorLogs:
     "M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0ZM12 9v4m0 4h.01",
+  userAccess:
+    "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-7 6c0-3.31 3.13-6 7-6s7 2.69 7 6M19 8v4m2-2h-4",
   slaPolicy: "M12 8v4l3 3M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z",
   chat: "M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z",
   logout:
@@ -74,41 +77,52 @@ const ICONS = {
   close: "M18 6 6 18M6 6l12 12",
 };
 
+// href -> icon key, kept separate from lib/nav-items.ts's NAV_MODULES so
+// that shared list stays pure data (reusable from a server component like
+// app/user-access without dragging JSX/icons along) while this component
+// still owns the visuals.
+const ICON_BY_HREF: Record<string, keyof typeof ICONS> = {
+  "/dashboard": "dashboard",
+  "/assets": "assets",
+  "/assets/scan": "scan",
+  "/fleet-map": "map",
+  "/clients": "clients",
+  "/work-orders": "workOrders",
+  "/tickets": "tickets",
+  "/inspections": "inspections",
+  "/inventory": "inventory",
+  "/parts": "parts",
+  "/messages": "chat",
+  "/calendar": "calendar",
+  "/reports": "reports",
+  "/analytics": "analytics",
+  "/alerts": "alerts",
+  "/sla-settings": "slaPolicy",
+  "/audit-log": "audit",
+  "/error-logs": "errorLogs",
+};
+
 function buildNav(): NavItem[] {
   return [
-    { href: "/dashboard", label: "Dashboard", icon: <Icon d={ICONS.dashboard} /> },
-    { href: "/assets", label: "Assets", icon: <Icon d={ICONS.assets} /> },
-    { href: "/assets/scan", label: "Scan Asset", icon: <Icon d={ICONS.scan} />, staffOnly: true },
-    { href: "/fleet-map", label: "Fleet Map", icon: <Icon d={ICONS.map} /> },
-    { href: "/clients", label: "Clients", icon: <Icon d={ICONS.clients} />, staffOnly: true },
-    { href: "/work-orders", label: "Work Orders", icon: <Icon d={ICONS.workOrders} />, staffOnly: true },
-    { href: "/tickets", label: "Tickets", icon: <Icon d={ICONS.tickets} /> },
-    { href: "/inspections", label: "Inspections", icon: <Icon d={ICONS.inspections} />, staffOnly: true },
-    // Renamed per your call: "Inventory" now means parts stock (the more
-    // common everyday reading of the word) — the asset physical-count
-    // feature that used to own this label moved to "Asset Verification"
-    // instead, same route/data, just a clearer, more specific name.
-    { href: "/inventory", label: "Asset Verification", icon: <Icon d={ICONS.inventory} />, staffOnly: true },
-    { href: "/parts", label: "Inventory", icon: <Icon d={ICONS.parts} />, staffOnly: true },
-    { href: "/messages", label: "HorizonCare360 Assist", icon: <Icon d={ICONS.chat} /> },
-    { href: "/calendar", label: "Calendar", icon: <Icon d={ICONS.calendar} /> },
-    { href: "/reports", label: "Reports", icon: <Icon d={ICONS.reports} /> },
-    // Client-visible like Dashboard's SLA widgets — RLS scopes every query
-    // in lib/analytics.ts to the signed-in org automatically, so staff see
-    // fleet-wide trends and a client sees only their own (schema_step33.sql).
-    { href: "/analytics", label: "Analytics", icon: <Icon d={ICONS.analytics} /> },
-    { href: "/alerts", label: "Alerts", icon: <Icon d={ICONS.alerts} />, staffOnly: true },
-    // Viewable by any staff (edit access is Super Admin-only, enforced on
-    // the page/actions themselves, schema_step40.sql) — not gated
-    // superAdminOnly like Audit Log, since an Admin should still be able to
-    // see the current SLA targets even though they can't change them.
-    { href: "/sla-settings", label: "SLA Policy", icon: <Icon d={ICONS.slaPolicy} />, staffOnly: true },
-    { href: "/audit-log", label: "Audit Log", icon: <Icon d={ICONS.audit} />, staffOnly: true, superAdminOnly: true },
-    // Error Monitoring (schema_step43.sql). Super Admin-only like Audit Log
-    // — raw stack traces/context, not an everyday ops surface. Every error
-    // logged here also raises a normal staff-visible alert on /alerts, so
-    // regular staff aren't missing anything actionable by not having this.
-    { href: "/error-logs", label: "Error Logs", icon: <Icon d={ICONS.errorLogs} />, staffOnly: true, superAdminOnly: true },
+    ...NAV_MODULES.map((m) => ({
+      href: m.href,
+      label: m.label,
+      icon: <Icon d={ICONS[ICON_BY_HREF[m.href]]} />,
+      staffOnly: m.staffOnly,
+      superAdminOnly: m.superAdminOnly,
+    })),
+    // User Access (schema_step44.sql's per-user module visibility) is
+    // deliberately NOT in lib/nav-items.ts's shared NAV_MODULES list — it
+    // must never itself be hideable via hidden_modules, or the one Super
+    // Admin could lock themselves out of the only page that grants access
+    // back with no in-app recovery path.
+    {
+      href: "/user-access",
+      label: "User Access",
+      icon: <Icon d={ICONS.userAccess} />,
+      staffOnly: true,
+      superAdminOnly: true,
+    },
   ];
 }
 
@@ -118,9 +132,15 @@ export function Sidebar({ profile }: { profile: Profile | null }) {
   const { open, setOpen } = useMobileNav();
   const isStaff = isStaffRole(profile?.role);
   const isSuperAdmin = isSuperAdminRole(profile?.role);
+  // hidden_modules (schema_step44.sql, "User Access") is checked AFTER the
+  // role gate, never instead of it — it can only take away a module a
+  // user's role would otherwise show, never grant one their role blocks.
+  // /user-access itself is excluded on purpose (see buildNav()'s comment).
+  const hiddenModules = profile?.hidden_modules ?? [];
   const nav = buildNav().filter((item) => {
-    if (item.superAdminOnly) return isSuperAdmin;
-    if (item.staffOnly) return isStaff;
+    if (item.superAdminOnly && !isSuperAdmin) return false;
+    if (item.staffOnly && !isStaff) return false;
+    if (item.href !== "/user-access" && hiddenModules.includes(item.href)) return false;
     return true;
   });
 

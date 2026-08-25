@@ -1,0 +1,27 @@
+-- Step 44: Per-user module visibility ("User Access"). The Super Admin
+-- wants to hand-pick which sidebar modules any individual user — staff or
+-- client — sees when they log in, beyond just the coarse role-based
+-- staffOnly/superAdminOnly gating components/sidebar.tsx already does.
+--
+-- Opt-out model, not an allow-list: hidden_modules stores the hrefs a
+-- given user has had explicitly taken AWAY from them. Every existing user
+-- keeps seeing exactly what they see today (empty array = no change) —
+-- nothing needs backfilling, and nobody's access silently disappears the
+-- moment this migration runs. The Super Admin only ever needs to act to
+-- restrict someone, never to preserve what they already have.
+alter table profiles add column if not exists hidden_modules text[] not null default '{}';
+
+-- No RLS or column-grant changes needed:
+--  - READ: already covered by schema.sql's "read own profile or all if
+--    staff" policy — a user reading their own profile (to filter their own
+--    sidebar) or staff reading any profile both already work.
+--  - WRITE: deliberately NOT added to the authenticated role's column
+--    grants (schema_step37.sql's `grant update (full_name) on profiles to
+--    authenticated` / schema_step38.sql's `avatar_url` follow-up) — unlike
+--    those two self-editable fields, nobody should be able to edit their
+--    own (or anyone else's) hidden_modules through the normal session
+--    client, not even staff. The new app/user-access/actions.ts server
+--    action writes through the service-role client instead (same pattern
+--    already used by the cron jobs to write `alerts`), gated by
+--    requireSuperAdmin() in app code — so this is Super-Admin-only end to
+--    end, with no column grant to accidentally widen later.

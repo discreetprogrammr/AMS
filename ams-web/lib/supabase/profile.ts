@@ -8,6 +8,11 @@ export type Profile = {
   role: Role;
   organization_id: string | null;
   avatar_url: string | null;
+  // Per-user sidebar module visibility (schema_step44.sql, "User Access")
+  // — hrefs this specific user has had taken away from them, on top of
+  // whatever their role already shows. Empty for everyone until a Super
+  // Admin explicitly restricts someone via app/user-access.
+  hidden_modules: string[];
 };
 
 // Re-exported so existing server-side imports (`from "@/lib/supabase/profile"`)
@@ -31,7 +36,7 @@ export async function getProfile(): Promise<Profile | null> {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, full_name, role, organization_id, avatar_url")
+    .select("id, full_name, role, organization_id, avatar_url, hidden_modules")
     .eq("id", user.id)
     .single();
 

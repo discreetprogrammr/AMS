@@ -1780,3 +1780,27 @@ Verified with `npx tsc --noEmit` — clean aside from the two pre-existing, expe
 5. Sign in as a non-Super-Admin staff member — confirm **Error Logs** doesn't appear in their sidebar, but the same error is still visible to them on **Alerts**.
 6. Force a client-side render crash (e.g. temporarily throw inside a page component) and confirm the dark "Something went wrong" recovery screen renders instead of a blank page, and that a `client:render` entry shows up in Error Logs with a real browser stack trace.
 7. Mark an entry **Resolved** and confirm it drops out of the default "Unresolved" filter but still shows under "All".
+
+## Follow-up — User Access (per-user sidebar module visibility)
+
+Real ask: the Super Admin wants to hand-pick which sidebar modules any individual staff or client account sees, beyond the existing coarse role-based gating (staffOnly/superAdminOnly in `components/sidebar.tsx`). Scope, deliberately: this controls what shows up in the **sidebar**, not a second authorization layer — actual data access is still enforced by RLS/role exactly as before (same "UX layer, not the security boundary" distinction `lib/supabase/profile.ts`'s own comment already makes about role-based nav filtering). Someone who already knows a direct URL their role permits could still open it even with its sidebar entry hidden — this is about tidying what a person sees when they log in, not locking down routes.
+
+**`schema_step44.sql`** (new) — **run this in Supabase before deploying.** Adds `profiles.hidden_modules text[] not null default '{}'`. Opt-out model, not an allow-list: it stores the hrefs a given user has had explicitly taken away, so every existing user keeps seeing exactly what they see today (empty array = no change) — nothing needed backfilling, and nobody's access silently disappeared the moment this ran. No RLS or column-grant changes needed: reads go through the existing "read own profile or all if staff" SELECT policy, and writes deliberately do **not** get added to `profiles`' `authenticated` column grants (unlike `full_name`/`avatar_url`, schema_step37/38.sql) — the new server action writes through the service-role client instead, gated by `requireSuperAdmin()`, so this is Super-Admin-only end to end with no grant to accidentally widen later.
+
+**What's new in the app:**
+- `lib/nav-items.ts` — pulled the sidebar's module list (href, label, staffOnly/superAdminOnly) out of `components/sidebar.tsx` into its own shared source of truth, so `app/user-access` can build its checkbox grid from the exact same data instead of a second array that could drift out of sync. `components/sidebar.tsx` still owns the actual icons, attached via a small `ICON_BY_HREF` lookup on top of the shared list. Also exports `modulesForRole()`, mirroring the sidebar's own staffOnly/superAdminOnly filter logic, so User Access only ever offers a toggle for modules a given role could see in the first place.
+- `app/user-access/` (new page, Super Admin-only) — lists every staff and client account (Super Admin accounts excluded on purpose: there's normally only one, and letting a Super Admin hide modules from themselves risks locking them out of the only page that undoes it), grouped Staff / Clients, with name + email + org. Each row expands into a checkbox grid of that person's applicable modules, pre-checked from their current `hidden_modules`; unchecking one and hitting Save calls `updateHiddenModules()`. Emails come from `auth.admin.listUsers()` (service-role) since `profiles` doesn't store them — same lookup `lib/notify.ts` already does per-user for ticket status emails, just batched here.
+- `components/sidebar.tsx` — nav filtering now checks `profile.hidden_modules` after the existing role checks (it can only take a module away, never grant one the role check already blocked). The new **User Access** nav item itself is excluded from `hidden_modules` entirely — it's added directly in `buildNav()`, not part of `lib/nav-items.ts`'s shared list, so it can never be hidden from the Super Admin who'd need it to undo any of this.
+- `lib/supabase/profile.ts` — `Profile` type and `getProfile()`'s select both widened to include `hidden_modules`.
+
+Verified with `npx tsc --noEmit` — clean aside from the two pre-existing, expected `Cannot find module` errors (`web-push`, `papaparse`).
+
+## Setup steps
+
+1. Run `schema_step44.sql` in Supabase.
+2. Push to GitHub and let Vercel redeploy.
+3. As Super Admin, open **User Access** in the sidebar — confirm it lists your staff and client accounts (grouped Staff / Clients), with no Super Admin account in the list.
+4. Pick a test Admin or client account, click **Edit Access**, uncheck a module (e.g. Analytics), and Save.
+5. Sign in as that user (or have them refresh) — confirm the unchecked module no longer appears in their sidebar, and every other module they had access to is unchanged.
+6. Re-check the module in **User Access** and Save — confirm it reappears in that user's sidebar.
+7. Confirm **User Access** itself never appears for anyone except a Super Admin, and that it can't be hidden from a Super Admin (there's no way to add it to `hidden_modules` from the UI at all).

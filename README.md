@@ -1809,3 +1809,33 @@ Verified with `npx tsc --noEmit` — clean aside from the two pre-existing, expe
 5. Sign in as that user (or have them refresh) — confirm the unchecked module no longer appears in their sidebar, AND that typing its URL directly redirects to the Dashboard with the "you don't have access to that page" banner.
 6. Re-check the module in **User Access** and Save — confirm it reappears in that user's sidebar and its URL works normally again.
 7. Confirm **User Access** and **Dashboard** never appear as checkboxes on the User Access page for anyone, and that neither can ever redirect-loop or be blocked no matter what.
+
+## Follow-up — Editable, movable, resizable Dashboard widgets
+
+Real ask: rearrange the Dashboard the way you'd rearrange home-screen widgets on a phone — drag to move, drag a corner to resize, and have it stick for next time. The Dashboard's cards (KPI row, Active Tickets, SLA Performance, Equipment Health/Quick Actions, SLA History, Recent Activity/Equipment Alerts, Service Due, Compliance & Warranty) were previously laid out in fixed Tailwind grid divs — same content, same data queries, just no longer fixed in place.
+
+**`schema_step45.sql`** (new) — **run this in Supabase before deploying.** Adds `profiles.dashboard_layout jsonb`. Unlike `hidden_modules` (schema_step44.sql, deliberately Super-Admin-only since it's a decision made *about* someone else), this is a personal display preference every user sets for *themselves* — so it follows the `full_name`/`avatar_url` self-service pattern (schema_step37/38.sql) instead: just widens the `authenticated` column grant, no new RLS policy needed since the existing "update own display name" policy (`id = auth.uid()`) already covers any granted column on your own row.
+
+**New dependency — `react-grid-layout`** (added to `package.json`, both `dependencies` and its own bundled types, no separate `@types` package needed for this version). Like every other library in this repo, it can't be installed inside this sandbox to typecheck against (same restriction already noted for `web-push`/`papaparse`) — `npx tsc --noEmit` will show a third `Cannot find module 'react-grid-layout'` error until `npm install` actually runs, which happens automatically as part of Vercel's build. This isn't something you need to do manually unless you also run the app locally, in which case a plain `npm install` in `ams-web/` picks it up.
+
+**What's new in the app:**
+- `app/dashboard/dashboard-grid.tsx` (new, Client Component) — the actual grid. Nothing is draggable/resizable until **Edit Layout** is clicked (mirrors a phone's "hold to edit" state — outside edit mode every card behaves exactly as before, links and buttons included). While editing, the whole card is the drag surface, but a `draggableCancel` selector keeps links/buttons inside each card clickable even then. **Reset to Default** clears your saved layout back to the original arrangement; **Done** saves.
+- `app/dashboard/actions.ts` (new) — `saveDashboardLayout()`, a small self-service server action (your own row only, normal session client — no service-role needed, unlike the Super-Admin-only actions elsewhere in this app).
+- `app/dashboard/page.tsx` — the four fixed grid `<div>`s got replaced with one `widgets: DashboardWidget[]` array (same JSX per card, just handed to `<DashboardGrid>` instead of laid out inline) plus a small `dashboard_layout` fetch alongside the page's existing data queries. Role-conditional cards (Equipment Health vs. Quick Actions, Recent Activity vs. Equipment Alerts) still only appear for the right role — hiding hasn't changed, only how each card is positioned. Also handles the `access_denied=1` banner from the User Access follow-up above.
+- Below `sm` breakpoint (~640px, phone width), the grid is skipped entirely in favor of a plain stacked column in the same top-to-bottom order as your saved layout — dragging/resizing a 12-column grid on a phone-width screen wasn't going to be usable, so mobile always shows a clean single-column read-only view instead.
+
+**Known rough edges, worth knowing about rather than treating as bugs:** the KPI row's internal 6-card mini-grid still reflows based on *viewport* width (Tailwind's responsive classes), not the *widget's own* width — so shrinking just that one widget narrower won't make its 6 mini-cards wrap sooner. And a couple of cards don't yet stretch to fill extra vertical space if you resize them taller than their natural content (they'll just leave blank space below rather than stretching); none of them break or clip when resized *smaller* than their content though, since every widget scrolls internally if needed.
+
+Verified with `npx tsc --noEmit` — clean aside from the *three* now-expected `Cannot find module` errors (`web-push`, `papaparse`, `react-grid-layout`).
+
+## Setup steps
+
+1. Run `schema_step45.sql` in Supabase.
+2. Push to GitHub and let Vercel redeploy (this pulls in `react-grid-layout` via `npm install` automatically as part of the build).
+3. Open the Dashboard — confirm it looks the same as before (default layout roughly mirrors the original arrangement).
+4. Click **Edit Layout** — confirm you can drag a card to a new position and drag its bottom-right corner to resize it, and that a "Drag a card to move it…" hint appears.
+5. Click **Done** — confirm the arrangement persists after a page refresh.
+6. Click **Edit Layout** again, then **Reset to Default** — confirm it snaps back to the original arrangement and that persists after a refresh too.
+7. While in Edit Layout, confirm clicking a link inside a card (e.g. "View ticket queue") still navigates normally instead of starting a drag.
+8. Shrink your browser to phone width (or check on an actual phone) — confirm the Dashboard shows a plain stacked list instead of a squeezed grid, and that there's no Edit Layout control at that width.
+9. Sign in as a different user (staff and client) — confirm each person's saved layout is their own; rearranging one account's Dashboard doesn't affect anyone else's.

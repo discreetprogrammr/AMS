@@ -7,6 +7,8 @@ import { NotificationBell } from "@/components/notification-bell";
 import { SearchBar } from "@/components/search-bar";
 import { ticketRef, assetLabel } from "@/lib/format";
 import { hoursBetween, getSlaPolicyMap, resolveSlaTargets } from "@/lib/sla";
+import { DashboardGrid, type DashboardWidget } from "./dashboard-grid";
+import type { LayoutItem } from "./actions";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -32,6 +34,15 @@ export default async function DashboardPage({
   const supabase = await createClient();
   const profile = await getProfile();
   const isStaff = isStaffRole(profile?.role);
+
+  // Editable/movable/resizable widgets (schema_step45.sql). Fetched
+  // separately from getProfile()'s own select rather than widening the
+  // Profile type everyone else reads too — this jsonb blob is only ever
+  // relevant on this one page.
+  const { data: layoutRow } = profile
+    ? await supabase.from("profiles").select("dashboard_layout").eq("id", profile.id).single()
+    : { data: null };
+  const savedLayout = (layoutRow?.dashboard_layout ?? null) as LayoutItem[] | null;
 
   // Staff see the global default (a fleet-wide view spans multiple orgs,
   // which could each have their own override — blending those into one
@@ -347,6 +358,184 @@ export default async function DashboardPage({
     };
   });
 
+  // Editable/movable/resizable widgets (schema_step45.sql) — each card
+  // below is exactly the same JSX the page rendered directly before this
+  // feature existed, just handed to <DashboardGrid> as a {id, content,
+  // defaultLayout} entry instead of being laid out in fixed divs. Default
+  // positions roughly mirror the original fixed layout (12-col grid,
+  // 30px row height) so nothing looks meaningfully different until
+  // someone actually drags something — that starting point is the ONLY
+  // thing role-conditional membership below affects; a saved
+  // dashboard_layout always takes over from here once one exists.
+  const widgets: DashboardWidget[] = [
+    {
+      id: "kpi-summary",
+      defaultLayout: { x: 0, y: 0, w: 12, h: 4 },
+      content: (
+        <div className="grid h-full grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+          <KpiCard label="Total Assets" value={totalAssets ?? 0} />
+          <KpiCard label="% Operational" value={`${operationalPct}%`} tone="good" />
+          <KpiCard label="Attention" value={attentionCount ?? 0} />
+          <KpiCard label="Down" value={downCount ?? 0} tone={downCount ? "warn" : undefined} />
+          <KpiCard
+            label="Unserviceable"
+            value={unserviceableCount ?? 0}
+            tone={unserviceableCount ? "warn" : undefined}
+          />
+          <KpiCard
+            label="Compliance <30d"
+            value={complianceCount}
+            tone={complianceCount ? "warn" : undefined}
+          />
+        </div>
+      ),
+    },
+    {
+      id: "active-tickets",
+      defaultLayout: { x: 0, y: 4, w: 4, h: 8 },
+      content: (
+        <ActiveTicketsCard
+          openCount={openTicketsCount ?? 0}
+          inProgressCount={inProgressTicketsCount ?? 0}
+          partsPendingCount={partsPendingTicketsCount ?? 0}
+          resolvedCount={resolvedTicketsCount ?? 0}
+        />
+      ),
+    },
+    {
+      id: "sla-performance",
+      defaultLayout: { x: 4, y: 4, w: 4, h: 8 },
+      content: (
+        <SlaPerformanceCard
+          slaPct={slaPct}
+          avgResponseHours={avgResponseHours}
+          avgResolutionHours={avgResolutionHours}
+          measuredCount={resolvedInPeriod.length}
+          responseTargetHours={slaTargets.responseTargetHours}
+          resolutionTargetHours={slaTargets.resolutionTargetHours}
+        />
+      ),
+    },
+    // Equipment Health repeats the top KPI row and stays staff-only for
+    // the same reason it always was; Quick Action Center is the client's
+    // fastest path to "get help" (staff already have the full sidebar).
+    ...(isStaff
+      ? [
+          {
+            id: "equipment-health",
+            defaultLayout: { x: 8, y: 4, w: 4, h: 8 },
+            content: (
+              <EquipmentHealthCard
+                totalAssets={totalAssets ?? 0}
+                operationalCount={operationalCount ?? 0}
+                attentionCount={attentionCount ?? 0}
+                downCount={downCount ?? 0}
+                unserviceableCount={unserviceableCount ?? 0}
+              />
+            ),
+          },
+        ]
+      : [
+          {
+            id: "quick-actions",
+            defaultLayout: { x: 8, y: 4, w: 4, h: 8 },
+            content: <QuickActionCenterCard />,
+          },
+        ]),
+    {
+      id: "sla-history",
+      defaultLayout: isStaff ? { x: 0, y: 12, w: 8, h: 8 } : { x: 0, y: 12, w: 12, h: 8 },
+      content: (
+        <SlaHistoryCard history={slaHistory} resolutionTargetHours={slaTargets.resolutionTargetHours} />
+      ),
+    },
+    // Recent Activity reads the audit trail (Super Admin-only data), so it
+    // stays staff-only; Equipment Alerts is the client-facing equivalent,
+    // derived straight from asset status a client can already see.
+    ...(isStaff
+      ? [
+          {
+            id: "recent-activity",
+            defaultLayout: { x: 8, y: 12, w: 4, h: 8 },
+            content: <RecentActivityCard items={activityItems} />,
+          },
+        ]
+      : [
+          {
+            id: "equipment-alerts",
+            defaultLayout: { x: 0, y: 20, w: 4, h: 8 },
+            content: <EquipmentAlertsCard assets={attentionAssets ?? []} />,
+          },
+        ]),
+    {
+      id: "service-due",
+      defaultLayout: isStaff ? { x: 0, y: 20, w: 6, h: 8 } : { x: 4, y: 20, w: 4, h: 8 },
+      content: (
+        <div className="h-full rounded-xl border border-hairline bg-surface p-5">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-soft">
+            Service Due — Next 30 Days
+          </h2>
+          {dueAssets?.length ? (
+            <ul className="divide-y divide-hairline text-sm">
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              {dueAssets.map((a: any) => (
+                <li key={a.id} className="flex items-center justify-between py-2">
+                  <Link href={`/assets/${a.id}`} className="font-medium text-ink hover:underline">
+                    {assetLabel(a)}
+                  </Link>
+                  <span
+                    className={
+                      a.next_service_due < today() ? "font-medium text-red-400" : "text-slate-500"
+                    }
+                  >
+                    {a.next_service_due}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-slate-500">Nothing due in the next 30 days.</p>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: "compliance-warranty",
+      defaultLayout: isStaff ? { x: 6, y: 20, w: 6, h: 8 } : { x: 8, y: 20, w: 4, h: 8 },
+      content: (
+        <div className="h-full rounded-xl border border-hairline bg-surface p-5">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-soft">
+            Compliance & Warranty — Next 30 Days
+          </h2>
+          {complianceItems.length ? (
+            <ul className="divide-y divide-hairline text-sm">
+              {complianceItems.map((item) => (
+                <li key={item.key} className="flex items-center justify-between py-2">
+                  <span className="text-ink-soft">
+                    {item.assetLabel} — {item.label}
+                  </span>
+                  <span
+                    className={
+                      item.date < today()
+                        ? "font-medium text-red-400"
+                        : item.date <= daysFromNow(7)
+                          ? "font-medium text-amber-400"
+                          : "text-slate-500"
+                    }
+                  >
+                    {item.date}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-slate-500">No certificates or warranties expiring soon.</p>
+          )}
+        </div>
+      ),
+    },
+  ];
+
   return (
     <AppShell
       profile={profile}
@@ -381,149 +570,7 @@ export default async function DashboardPage({
           You don&apos;t have access to that page. Contact your Super Admin if you think this is wrong.
         </p>
       )}
-      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-        <KpiCard label="Total Assets" value={totalAssets ?? 0} />
-        <KpiCard label="% Operational" value={`${operationalPct}%`} tone="good" />
-        <KpiCard label="Attention" value={attentionCount ?? 0} />
-        <KpiCard
-          label="Down"
-          value={downCount ?? 0}
-          tone={downCount ? "warn" : undefined}
-        />
-        <KpiCard
-          label="Unserviceable"
-          value={unserviceableCount ?? 0}
-          tone={unserviceableCount ? "warn" : undefined}
-        />
-        <KpiCard
-          label="Compliance <30d"
-          value={complianceCount}
-          tone={complianceCount ? "warn" : undefined}
-        />
-      </div>
-
-      {/* Active Support Tickets + SLA Performance are client-visible too —
-          RLS already scopes every underlying query to just their own org,
-          so this is a pure UI-gating decision, not a data one. Equipment
-          Health just repeats the top KPI row, which is staff-only, so it
-          stays staff-only too — not worth the duplication for clients.
-          Quick Action Center moved to the CLIENT side only: staff already
-          have the full sidebar (Tickets, Work Orders) for creating things
-          directly, so a dashboard shortcut is redundant for them, while a
-          client's fastest path to "get help" is exactly what this card is
-          for. Both roles land on 3 cards either way. */}
-      <div className="mb-6 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        <ActiveTicketsCard
-          openCount={openTicketsCount ?? 0}
-          inProgressCount={inProgressTicketsCount ?? 0}
-          partsPendingCount={partsPendingTicketsCount ?? 0}
-          resolvedCount={resolvedTicketsCount ?? 0}
-        />
-        <SlaPerformanceCard
-          slaPct={slaPct}
-          avgResponseHours={avgResponseHours}
-          avgResolutionHours={avgResolutionHours}
-          measuredCount={resolvedInPeriod.length}
-          responseTargetHours={slaTargets.responseTargetHours}
-          resolutionTargetHours={slaTargets.resolutionTargetHours}
-        />
-        {isStaff && (
-          <EquipmentHealthCard
-            totalAssets={totalAssets ?? 0}
-            operationalCount={operationalCount ?? 0}
-            attentionCount={attentionCount ?? 0}
-            downCount={downCount ?? 0}
-            unserviceableCount={unserviceableCount ?? 0}
-          />
-        )}
-        {!isStaff && <QuickActionCenterCard />}
-      </div>
-
-      {/* SLA Historical Performance is client-visible too, for the same
-          reason as above — Recent Activity reads the audit trail
-          (schema_step22b.sql restricted that to Super Admin), which isn't
-          appropriate to show an external client regardless. */}
-      <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className={isStaff ? "lg:col-span-2" : "lg:col-span-3"}>
-          <SlaHistoryCard history={slaHistory} resolutionTargetHours={slaTargets.resolutionTargetHours} />
-        </div>
-        {isStaff && <RecentActivityCard items={activityItems} />}
-      </div>
-
-      <div className={`grid gap-6 ${isStaff ? "lg:grid-cols-2" : "lg:grid-cols-3"}`}>
-        {!isStaff && <EquipmentAlertsCard assets={attentionAssets ?? []} />}
-        <div className="rounded-xl border border-hairline bg-surface p-5">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-soft">
-            Service Due — Next 30 Days
-          </h2>
-          {dueAssets?.length ? (
-            <ul className="divide-y divide-hairline text-sm">
-              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              {dueAssets.map((a: any) => (
-                <li
-                  key={a.id}
-                  className="flex items-center justify-between py-2"
-                >
-                  <Link
-                    href={`/assets/${a.id}`}
-                    className="font-medium text-ink hover:underline"
-                  >
-                    {assetLabel(a)}
-                  </Link>
-                  <span
-                    className={
-                      a.next_service_due < today()
-                        ? "font-medium text-red-400"
-                        : "text-slate-500"
-                    }
-                  >
-                    {a.next_service_due}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-slate-500">
-              Nothing due in the next 30 days.
-            </p>
-          )}
-        </div>
-
-        <div className="rounded-xl border border-hairline bg-surface p-5">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-soft">
-            Compliance & Warranty — Next 30 Days
-          </h2>
-          {complianceItems.length ? (
-            <ul className="divide-y divide-hairline text-sm">
-              {complianceItems.map((item) => (
-                <li
-                  key={item.key}
-                  className="flex items-center justify-between py-2"
-                >
-                  <span className="text-ink-soft">
-                    {item.assetLabel} — {item.label}
-                  </span>
-                  <span
-                    className={
-                      item.date < today()
-                        ? "font-medium text-red-400"
-                        : item.date <= daysFromNow(7)
-                          ? "font-medium text-amber-400"
-                          : "text-slate-500"
-                    }
-                  >
-                    {item.date}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-slate-500">
-              No certificates or warranties expiring soon.
-            </p>
-          )}
-        </div>
-      </div>
+      <DashboardGrid widgets={widgets} savedLayout={savedLayout} />
     </AppShell>
   );
 }

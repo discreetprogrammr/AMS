@@ -140,7 +140,7 @@ export default async function AnalyticsPage() {
         resolved, for tickets closed in that month. Six-month trailing
         window.
         {isStaff && csatRollup && csatRollup.totalRated > 0 && (
-          <> Satisfaction trend uses the same six-month window; the KPI averages and by-client/by-technician tables use every rated visit ever recorded, not just this window. Technician is grouped by the free-text &quot;Performed By&quot; field on each report, so name typos or variations may split one person into two rows.</>
+          <> Satisfaction trend uses the same six-month window; the KPI averages and By Client/By Engineer-Technician tables use every rated visit ever recorded, not just this window. Engineer/Technician is grouped by the free-text &quot;Performed By&quot; field on each report, so name typos or variations may split one person into two rows.</>
         )}
       </p>
     </AppShell>
@@ -392,7 +392,7 @@ function ClientSatisfactionTable({ byOrg }: { byOrg: OrgCsat[] }) {
 function TechnicianSatisfactionTable({ byTechnician }: { byTechnician: TechnicianCsat[] }) {
   return (
     <div className="rounded-xl border border-hairline bg-surface p-5">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-soft">By Technician</h2>
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-soft">By Engineer/Technician</h2>
       <p className="mb-4 text-xs text-slate-500">
         All-time average overall rating from the &quot;Performed By&quot; field, lowest first.
       </p>
@@ -402,7 +402,7 @@ function TechnicianSatisfactionTable({ byTechnician }: { byTechnician: Technicia
         <table className="w-full text-left text-sm">
           <thead className="text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="py-2 pr-3">Technician</th>
+              <th className="py-2 pr-3">Engineer/Technician</th>
               <th className="py-2 pr-3">Avg</th>
               <th className="py-2 pr-3">Rated Visits</th>
             </tr>

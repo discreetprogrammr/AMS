@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
-export type LayoutItem = { i: string; x: number; y: number; w: number; h: number };
+export type WidgetSize = "sm" | "md" | "lg";
+export type LayoutItem = { i: string; x: number; y: number; size: WidgetSize };
 
 // Editable/movable/resizable Dashboard widgets (schema_step45.sql). Self-
 // service, same as updateDisplayName (app/profile/actions.ts) — writes

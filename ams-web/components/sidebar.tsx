@@ -6,7 +6,7 @@ import { useEffect } from "react";
 import type { ReactNode } from "react";
 import type { Profile } from "@/lib/supabase/profile";
 import { isStaffRole, isSuperAdminRole } from "@/lib/supabase/roles";
-import { NAV_MODULES } from "@/lib/nav-items";
+import { NAV_MODULES, ALWAYS_ACCESSIBLE_HREFS } from "@/lib/nav-items";
 import { logout } from "@/app/login/actions";
 import { useMobileNav } from "./mobile-nav";
 import { MessagesUnreadDot } from "./messages-unread-dot";
@@ -82,7 +82,6 @@ const ICONS = {
 // app/user-access without dragging JSX/icons along) while this component
 // still owns the visuals.
 const ICON_BY_HREF: Record<string, keyof typeof ICONS> = {
-  "/dashboard": "dashboard",
   "/assets": "assets",
   "/assets/scan": "scan",
   "/fleet-map": "map",
@@ -104,6 +103,12 @@ const ICON_BY_HREF: Record<string, keyof typeof ICONS> = {
 
 function buildNav(): NavItem[] {
   return [
+    // Dashboard and User Access are both deliberately NOT in
+    // lib/nav-items.ts's shared NAV_MODULES list — see
+    // ALWAYS_ACCESSIBLE_HREFS's comment there for why (Dashboard is the
+    // middleware's own redirect target for a blocked page; User Access is
+    // the only page that can undo a block at all).
+    { href: "/dashboard", label: "Dashboard", icon: <Icon d={ICONS.dashboard} /> },
     ...NAV_MODULES.map((m) => ({
       href: m.href,
       label: m.label,
@@ -111,11 +116,6 @@ function buildNav(): NavItem[] {
       staffOnly: m.staffOnly,
       superAdminOnly: m.superAdminOnly,
     })),
-    // User Access (schema_step44.sql's per-user module visibility) is
-    // deliberately NOT in lib/nav-items.ts's shared NAV_MODULES list — it
-    // must never itself be hideable via hidden_modules, or the one Super
-    // Admin could lock themselves out of the only page that grants access
-    // back with no in-app recovery path.
     {
       href: "/user-access",
       label: "User Access",
@@ -135,12 +135,14 @@ export function Sidebar({ profile }: { profile: Profile | null }) {
   // hidden_modules (schema_step44.sql, "User Access") is checked AFTER the
   // role gate, never instead of it — it can only take away a module a
   // user's role would otherwise show, never grant one their role blocks.
-  // /user-access itself is excluded on purpose (see buildNav()'s comment).
+  // Dashboard/User Access are permanently exempt (ALWAYS_ACCESSIBLE_HREFS,
+  // lib/nav-items.ts) — same exemption lib/supabase/middleware.ts enforces
+  // at the route level, so the sidebar and the actual block never disagree.
   const hiddenModules = profile?.hidden_modules ?? [];
   const nav = buildNav().filter((item) => {
     if (item.superAdminOnly && !isSuperAdmin) return false;
     if (item.staffOnly && !isStaff) return false;
-    if (item.href !== "/user-access" && hiddenModules.includes(item.href)) return false;
+    if (!ALWAYS_ACCESSIBLE_HREFS.includes(item.href) && hiddenModules.includes(item.href)) return false;
     return true;
   });
 

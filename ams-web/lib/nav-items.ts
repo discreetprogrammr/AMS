@@ -19,7 +19,6 @@ export type NavModule = {
 };
 
 export const NAV_MODULES: NavModule[] = [
-  { href: "/dashboard", label: "Dashboard" },
   { href: "/assets", label: "Assets" },
   { href: "/assets/scan", label: "Scan Asset", staffOnly: true },
   { href: "/fleet-map", label: "Fleet Map" },
@@ -37,12 +36,24 @@ export const NAV_MODULES: NavModule[] = [
   { href: "/sla-settings", label: "SLA Policy", staffOnly: true },
   { href: "/audit-log", label: "Audit Log", staffOnly: true, superAdminOnly: true },
   { href: "/error-logs", label: "Error Logs", staffOnly: true, superAdminOnly: true },
-  // "User Access" itself is intentionally absent from this list — it's
-  // added directly in sidebar.tsx's buildNav(), always superAdminOnly and
-  // never itself hideable via hidden_modules (see app/user-access's own
-  // comments for why: the one Super Admin locking themselves out of the
-  // one page that grants access back would have no in-app recovery path).
+  // "Dashboard" and "User Access" are both intentionally absent from this
+  // list — see ALWAYS_ACCESSIBLE_HREFS below for why.
 ];
+
+// hidden_modules (schema_step44.sql) is enforced as a real block now, not
+// just a cosmetic sidebar hide (lib/supabase/middleware.ts redirects any
+// blocked request to /dashboard) — which makes these two hrefs load-
+// bearing rather than just a nice-to-have: /dashboard is the middleware's
+// own redirect target (hiding it would cause a redirect loop the moment
+// someone hit ANY blocked page), and /user-access is the only page that
+// can undo any of this (hiding it from a Super Admin would strand them
+// with no in-app recovery path). Neither is ever offered as a checkbox in
+// app/user-access (they're excluded from NAV_MODULES entirely, so
+// modulesForRole() never returns them), and both are hard-exempted in
+// components/sidebar.tsx's filter and lib/supabase/middleware.ts's block
+// check regardless of what's actually stored in hidden_modules — belt and
+// suspenders against a stale/manually-edited row somehow containing them.
+export const ALWAYS_ACCESSIBLE_HREFS = ["/dashboard", "/user-access"];
 
 // Which modules a user of a given role is even ELIGIBLE to see, before
 // hidden_modules is applied at all — mirrors components/sidebar.tsx's own

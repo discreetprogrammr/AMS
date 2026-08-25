@@ -24,7 +24,11 @@ function daysAgo(days: number): string {
   return d.toISOString();
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams?: { access_denied?: string };
+}) {
   const supabase = await createClient();
   const profile = await getProfile();
   const isStaff = isStaffRole(profile?.role);
@@ -372,6 +376,11 @@ export default async function DashboardPage() {
         </>
       }
     >
+      {searchParams?.access_denied === "1" && (
+        <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-400">
+          You don&apos;t have access to that page. Contact your Super Admin if you think this is wrong.
+        </p>
+      )}
       <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <KpiCard label="Total Assets" value={totalAssets ?? 0} />
         <KpiCard label="% Operational" value={`${operationalPct}%`} tone="good" />

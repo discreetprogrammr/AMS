@@ -130,8 +130,8 @@ function UserRow({
       {expanded && (
         <div className="border-t border-hairline px-5 py-4">
           <p className="mb-3 text-xs text-slate-500">
-            Unchecking a module removes it from this person&apos;s sidebar only — it doesn&apos;t change what
-            they&apos;re allowed to do elsewhere in the app (data access is still enforced separately).
+            Unchecking a module removes it from this person&apos;s sidebar and blocks them from opening it
+            directly — they&apos;ll be redirected to the Dashboard if they try.
           </p>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {applicable.map((m) => (

@@ -8,19 +8,37 @@ import { SignaturePad } from "@/components/signature-pad";
 import { SiteVisitVerification } from "@/components/site-visit-verification";
 
 type Reading = { location: string; reading: string; unit: string; limit: string };
+type SafetyCheck = { item: string; accepted: boolean; notes: string };
 
 const inputClass =
   "mt-1 w-full rounded-lg border border-hairline bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
 const labelClass = "block text-sm font-medium text-ink-soft";
 
-// Common leakage-radiation measurement points for a typical X-ray
-// screening unit — a reasonable starting point the surveyor can edit,
-// add to, or remove entirely rather than typing every row from scratch.
+// Astrophysics' real XIS leakage-survey points, measured ~5cm from each
+// panel, in µR/hr against the US Federal leakage limit of 500 µR/hr — a
+// reasonable starting point the surveyor can edit, add to, or remove
+// entirely rather than typing every row from scratch.
 const DEFAULT_READINGS: Reading[] = [
-  { location: "Operator position", reading: "", unit: "mR/hr", limit: "0.5 mR/hr" },
-  { location: "1m from tube head", reading: "", unit: "mR/hr", limit: "0.5 mR/hr" },
-  { location: "Control panel", reading: "", unit: "mR/hr", limit: "0.5 mR/hr" },
-  { location: "Cabinet surface", reading: "", unit: "mR/hr", limit: "0.5 mR/hr" },
+  { location: "Generator Side Panel", reading: "", unit: "µR/hr", limit: "500 µR/hr" },
+  { location: "LXDA Side Panel", reading: "", unit: "µR/hr", limit: "500 µR/hr" },
+  { location: "Entry End", reading: "", unit: "µR/hr", limit: "500 µR/hr" },
+  { location: "Exit End", reading: "", unit: "µR/hr", limit: "500 µR/hr" },
+  { location: "Top View", reading: "", unit: "µR/hr", limit: "500 µR/hr" },
+];
+
+// Astrophysics' real form's Warning Label Verification, X-Ray ON
+// Indicator, and Safety Devices/Interlocks sections are all the same
+// shape (item + accepted + notes), so they share one editable list here —
+// same technique as the readings table above.
+const DEFAULT_SAFETY_CHECKS: SafetyCheck[] = [
+  { item: "Radiation Warning Label — Entry", accepted: false, notes: "" },
+  { item: "Radiation Warning Label — Exit", accepted: false, notes: "" },
+  { item: "Radiation Warning Label — Control Panel", accepted: false, notes: "" },
+  { item: "X-Ray ON Indicator Light", accepted: false, notes: "" },
+  { item: "Entry Door Interlock", accepted: false, notes: "" },
+  { item: "Exit Door Interlock", accepted: false, notes: "" },
+  { item: "Emergency Stop Button", accepted: false, notes: "" },
+  { item: "Access Panel Interlock", accepted: false, notes: "" },
 ];
 
 function addOneYear(dateStr: string): string {
@@ -40,6 +58,7 @@ export function RadiationSurveyForm({
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const [readings, setReadings] = useState<Reading[]>(DEFAULT_READINGS);
+  const [safetyChecks, setSafetyChecks] = useState<SafetyCheck[]>(DEFAULT_SAFETY_CHECKS);
   const [surveyDate, setSurveyDate] = useState(today);
   const [nextDueTouched, setNextDueTouched] = useState(false);
   const [nextDue, setNextDue] = useState(addOneYear(today));
@@ -49,11 +68,23 @@ export function RadiationSurveyForm({
   }
 
   function addRow() {
-    setReadings((prev) => [...prev, { location: "", reading: "", unit: "mR/hr", limit: "" }]);
+    setReadings((prev) => [...prev, { location: "", reading: "", unit: "µR/hr", limit: "500 µR/hr" }]);
   }
 
   function removeRow(idx: number) {
     setReadings((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function updateSafetyCheck(idx: number, patch: Partial<SafetyCheck>) {
+    setSafetyChecks((prev) => prev.map((c, i) => (i === idx ? { ...c, ...patch } : c)));
+  }
+
+  function addSafetyCheck() {
+    setSafetyChecks((prev) => [...prev, { item: "", accepted: false, notes: "" }]);
+  }
+
+  function removeSafetyCheck(idx: number) {
+    setSafetyChecks((prev) => prev.filter((_, i) => i !== idx));
   }
 
   function onDateChange(value: string) {
@@ -64,6 +95,7 @@ export function RadiationSurveyForm({
   return (
     <form action={createRadiationSurveyReport} className="space-y-6">
       <input type="hidden" name="radiation_readings" value={JSON.stringify(readings)} />
+      <input type="hidden" name="safety_checklist" value={JSON.stringify(safetyChecks)} />
 
       <div className="grid grid-cols-1 gap-4 rounded-xl border border-hairline bg-surface p-6 sm:grid-cols-3">
         <div>
@@ -118,8 +150,12 @@ export function RadiationSurveyForm({
         <h3 className="text-sm font-semibold text-ink">Survey Meter Used</h3>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <div>
+            <label className={labelClass}>Manufacturer</label>
+            <input name="survey_meter_manufacturer" placeholder="e.g. Fluke" className={inputClass} />
+          </div>
+          <div>
             <label className={labelClass}>Meter Model</label>
-            <input name="survey_meter_model" placeholder="e.g. Fluke 451P" className={inputClass} />
+            <input name="survey_meter_model" placeholder="e.g. 451P" className={inputClass} />
           </div>
           <div>
             <label className={labelClass}>Meter Serial No.</label>
@@ -129,9 +165,19 @@ export function RadiationSurveyForm({
             <label className={labelClass}>Meter Cal. Date</label>
             <input type="date" name="survey_meter_calibration_date" className={inputClass} />
           </div>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label className={labelClass}>Report Reference #</label>
             <input name="report_reference_no" placeholder="Internal / PNRI reference" className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>Background Radiation Reading</label>
+            <input
+              name="background_radiation_reading"
+              placeholder="e.g. 12 µR/hr"
+              className={inputClass}
+            />
           </div>
         </div>
         <p className="text-xs text-slate-500">
@@ -189,6 +235,59 @@ export function RadiationSurveyForm({
           ))}
           {readings.length === 0 && (
             <p className="text-sm text-slate-500">No measurement points added yet.</p>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-hairline bg-surface p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-ink">Safety Devices &amp; Warning Labels</h3>
+          <button
+            type="button"
+            onClick={addSafetyCheck}
+            className="rounded-lg border border-hairline px-3 py-1.5 text-xs text-ink-soft hover:bg-surface-2"
+          >
+            + Add Item
+          </button>
+        </div>
+        <p className="mb-3 text-xs text-slate-500">
+          Warning labels, the X-Ray ON indicator, and door/interlock safety devices — check Accepted if
+          found present and functioning.
+        </p>
+        <div className="space-y-3">
+          {safetyChecks.map((c, idx) => (
+            <div key={idx} className="grid grid-cols-1 gap-2 sm:grid-cols-[2fr_auto_2fr_auto]">
+              <input
+                value={c.item}
+                onChange={(e) => updateSafetyCheck(idx, { item: e.target.value })}
+                placeholder="Item"
+                className={inputClass}
+              />
+              <label className="mt-1 flex items-center gap-2 text-sm text-ink-soft sm:mt-0 sm:justify-center">
+                <input
+                  type="checkbox"
+                  checked={c.accepted}
+                  onChange={(e) => updateSafetyCheck(idx, { accepted: e.target.checked })}
+                />
+                Accepted
+              </label>
+              <input
+                value={c.notes}
+                onChange={(e) => updateSafetyCheck(idx, { notes: e.target.value })}
+                placeholder="Notes"
+                className={inputClass}
+              />
+              <button
+                type="button"
+                onClick={() => removeSafetyCheck(idx)}
+                className="mt-1 rounded-lg border border-hairline px-3 py-2 text-xs text-red-400 hover:bg-surface-2 sm:mt-0"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+          {safetyChecks.length === 0 && (
+            <p className="text-sm text-slate-500">No safety items added yet.</p>
           )}
         </div>
       </div>

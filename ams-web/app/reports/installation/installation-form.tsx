@@ -9,6 +9,22 @@ import { SiteVisitVerification } from "@/components/site-visit-verification";
 const inputClass =
   "mt-1 w-full rounded-lg border border-hairline bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
 const labelClass = "block text-sm font-medium text-ink-soft";
+const checkboxLabelClass = "flex items-center gap-2 text-sm text-ink-soft";
+
+// Astrophysics' real Installation Report checklist — condensed to the
+// checkbox labels themselves (Other has its own free-text field on the
+// real form; here it's covered by the Comments box below instead).
+const OPTIONAL_FEATURES = [
+  "Exit Roller",
+  "Entry Roller",
+  "External UPS",
+  "External Voltage Stabilizer",
+  "Motorized Roller",
+  "Remote Table",
+  "Footmat",
+  "Extended Rollers",
+];
+const SOFTWARE_FEATURES = ["Screener Assist", "TIP", "CBT"];
 
 export function InstallationForm({
   assets,
@@ -61,6 +77,58 @@ export function InstallationForm({
       </div>
 
       <SiteVisitVerification />
+
+      <div className="space-y-4 rounded-xl border border-hairline bg-surface p-6">
+        <h3 className="text-sm font-semibold text-ink">Installation Details</h3>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label className={labelClass}>Installation Type</label>
+            <select name="installation_type" defaultValue="Conventional" className={inputClass}>
+              <option>Conventional</option>
+              <option>Cargo</option>
+            </select>
+          </div>
+          <div>
+            <label className={labelClass}>Parts Required?</label>
+            <select name="parts_required" defaultValue="no" className={inputClass}>
+              <option value="no">No</option>
+              <option value="yes">Yes</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label className={labelClass}>Parts List (if required)</label>
+          <input
+            name="parts_list"
+            placeholder="Comma-separated, e.g. Conveyor belt, PLC module"
+            className={inputClass}
+          />
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <span className={labelClass}>Optional Features Included</span>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {OPTIONAL_FEATURES.map((feature) => (
+                <label key={feature} className={checkboxLabelClass}>
+                  <input type="checkbox" name="optional_features" value={feature} />
+                  {feature}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div>
+            <span className={labelClass}>Software Features Included</span>
+            <div className="mt-2 grid grid-cols-1 gap-2">
+              {SOFTWARE_FEATURES.map((feature) => (
+                <label key={feature} className={checkboxLabelClass}>
+                  <input type="checkbox" name="software_features" value={feature} />
+                  {feature}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div className="space-y-4 rounded-xl border border-hairline bg-surface p-6">
         <h3 className="text-sm font-semibold text-ink">Service Timing</h3>

@@ -9,6 +9,16 @@ import { SignaturePad } from "@/components/signature-pad";
 const inputClass =
   "mt-1 w-full rounded-lg border border-hairline bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
 const labelClass = "block text-sm font-medium text-ink-soft";
+const checkboxLabelClass = "flex items-center gap-2 text-sm text-ink-soft";
+
+// Astrophysics' real Training Record's "Competence Assessment" checklist —
+// how the trainer verified the attendees actually absorbed the material.
+const COMPETENCE_OPTIONS = [
+  "Test Attached",
+  "Quiz Attached",
+  "Actual Instructions Performed by Trainee",
+  "Verbal Acknowledgement",
+];
 
 export function TrainingForm({
   sites,
@@ -88,12 +98,31 @@ export function TrainingForm({
 
       <div className="space-y-4 rounded-xl border border-hairline bg-surface p-6">
         <h3 className="text-sm font-semibold text-ink">Topics Covered &amp; Notes</h3>
+        <div>
+          <label className={labelClass}>Length of Training</label>
+          <input
+            name="training_length"
+            placeholder="e.g. 2 hours"
+            className={inputClass}
+          />
+        </div>
         <textarea
           name="notes"
           rows={4}
           placeholder="What was covered, questions raised, follow-up items…"
           className={inputClass}
         />
+        <div>
+          <span className={labelClass}>Competence Assessment</span>
+          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {COMPETENCE_OPTIONS.map((option) => (
+              <label key={option} className={checkboxLabelClass}>
+                <input type="checkbox" name="competence_assessment" value={option} />
+                {option}
+              </label>
+            ))}
+          </div>
+        </div>
       </div>
 
       <CustomerSurvey />

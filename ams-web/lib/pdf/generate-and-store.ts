@@ -6,7 +6,12 @@
 // block the user from seeing their submission succeed. The caller decides
 // how to surface a failure (both actions here append a soft warning to
 // their success redirect rather than erroring outright).
-import { buildServiceReportPdf, type ServiceReportInput, type RadiationReadingRow } from "./service-report";
+import {
+  buildServiceReportPdf,
+  type ServiceReportInput,
+  type RadiationReadingRow,
+  type SafetyCheckRow,
+} from "./service-report";
 import { reportRef } from "@/lib/format";
 import { REPORT_KIND_REF_PREFIX, type ReportKind } from "@/lib/report-types";
 import { LOGO_BASE64 } from "./logo-base64";
@@ -63,9 +68,12 @@ export type GeneratePdfParams = {
   parts: { part_name: string; quantity: number; status: string }[];
   radiationReadings: RadiationReadingRow[];
   surveyMeterModel: string | null;
+  surveyMeterManufacturer: string | null;
   surveyMeterSerial: string | null;
   surveyMeterCalibrationDate: string | null;
   reportReferenceNo: string | null;
+  backgroundRadiationReading: string | null;
+  safetyChecklist: SafetyCheckRow[];
   trainingAttendees: string | null;
 };
 
@@ -169,9 +177,12 @@ export async function generateAndStoreReportPdf(
       })),
       radiationReadings: params.radiationReadings,
       surveyMeterModel: params.surveyMeterModel,
+      surveyMeterManufacturer: params.surveyMeterManufacturer,
       surveyMeterSerial: params.surveyMeterSerial,
       surveyMeterCalibrationDate: params.surveyMeterCalibrationDate,
       reportReferenceNo: params.reportReferenceNo,
+      backgroundRadiationReading: params.backgroundRadiationReading,
+      safetyChecklist: params.safetyChecklist,
       trainingAttendees: params.trainingAttendees,
     };
 

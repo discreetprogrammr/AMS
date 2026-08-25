@@ -6,6 +6,42 @@ import { createSiteSurveyReport } from "../actions";
 import { SignaturePad } from "@/components/signature-pad";
 import { SiteVisitVerification } from "@/components/site-visit-verification";
 
+type Status = "ok" | "attention" | "fail";
+type Item = { section: string; item_label: string; status: Status; remarks: string };
+
+// Condensed from Astrophysics' real Site Survey Information-Questions form
+// (5 contact roles + Receiving Area + Receiving-to-Commissioning path +
+// Commissioning Site power/space + Site Environment, across 3 pages) down
+// to a 5-section, 15-item tap-cycle checklist — same UX/shape as the PM
+// checklist (preventive-form.tsx), reusing the same generic
+// service_record_checklist_items table (schema_step42.sql) rather than a
+// new one.
+const TEMPLATE: { section: string; items: string[] }[] = [
+  { section: "Receiving Area", items: ["Loading Dock Access", "Door Clearance", "Floor Condition"] },
+  { section: "Access Path", items: ["Elevator / Ramp Availability", "Doorway Width", "Path Obstructions"] },
+  { section: "Power & Space", items: ["Power Outlet Availability", "Voltage / Grounding", "Room Clearance"] },
+  { section: "Environment", items: ["Temperature Range (5–40°C)", "Humidity (<95%)", "Dust / Fumes Exposure"] },
+  { section: "Connectivity", items: ["Network Access", "Printer Availability", "Security / Access Control"] },
+];
+
+function initialItems(): Item[] {
+  const out: Item[] = [];
+  for (const group of TEMPLATE) {
+    for (const label of group.items) {
+      out.push({ section: group.section, item_label: label, status: "ok", remarks: "" });
+    }
+  }
+  return out;
+}
+
+const CYCLE: Record<Status, Status> = { ok: "attention", attention: "fail", fail: "ok" };
+const STYLES: Record<Status, string> = {
+  ok: "bg-emerald-500/15 text-emerald-400 ring-emerald-500/30",
+  attention: "bg-amber-500/15 text-amber-400 ring-amber-500/30",
+  fail: "bg-red-500/15 text-red-400 ring-red-500/30",
+};
+const LABELS: Record<Status, string> = { ok: "OK", attention: "ATTENTION", fail: "FAIL" };
+
 const inputClass =
   "mt-1 w-full rounded-lg border border-hairline bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
 const labelClass = "block text-sm font-medium text-ink-soft";
@@ -21,6 +57,17 @@ export function SiteSurveyForm({
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const [siteId, setSiteId] = useState("");
+  const [items, setItems] = useState<Item[]>(initialItems);
+
+  function cycle(index: number) {
+    setItems((prev) =>
+      prev.map((it, i) => (i === index ? { ...it, status: CYCLE[it.status] } : it)),
+    );
+  }
+
+  function setRemarks(index: number, remarks: string) {
+    setItems((prev) => prev.map((it, i) => (i === index ? { ...it, remarks } : it)));
+  }
 
   // Existing equipment at the selected site, if any — a site survey can
   // reference one (e.g. assessing an upgrade) even though it doesn't
@@ -30,6 +77,10 @@ export function SiteSurveyForm({
 
   return (
     <form action={createSiteSurveyReport} className="space-y-6">
+      {/* Same tap-to-cycle checklist pattern as the PM form — serialized
+          here and read server-side from FormData on submit. */}
+      <input type="hidden" name="items" value={JSON.stringify(items)} />
+
       <div className="grid grid-cols-1 gap-4 rounded-xl border border-hairline bg-surface p-6 sm:grid-cols-3">
         <div>
           <label className={labelClass}>Site</label>
@@ -79,6 +130,48 @@ export function SiteSurveyForm({
 
       <SiteVisitVerification />
 
+      <div className="space-y-4">
+        {TEMPLATE.map((group) => (
+          <div
+            key={group.section}
+            className="overflow-hidden rounded-xl border border-hairline bg-surface"
+          >
+            <div className="border-b border-hairline px-6 py-3 text-sm font-semibold text-ink">
+              {group.section}
+            </div>
+            <div className="divide-y divide-hairline">
+              {items
+                .map((it, idx) => ({ it, idx }))
+                .filter(({ it }) => it.section === group.section)
+                .map(({ it, idx }) => (
+                  <div
+                    key={idx}
+                    className="flex flex-wrap items-center gap-3 px-6 py-3"
+                  >
+                    <div className="w-56 shrink-0 text-sm text-ink-soft">
+                      {it.item_label}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => cycle(idx)}
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold tracking-wide ring-1 ring-inset ${STYLES[it.status]}`}
+                    >
+                      {LABELS[it.status]}
+                    </button>
+                    <input
+                      type="text"
+                      value={it.remarks}
+                      onChange={(e) => setRemarks(idx, e.target.value)}
+                      placeholder="Remarks (optional)"
+                      className="min-w-[160px] flex-1 rounded-lg border border-hairline bg-surface-2 px-2 py-1 text-xs text-ink placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
       <div className="space-y-4 rounded-xl border border-hairline bg-surface p-6">
         <h3 className="text-sm font-semibold text-ink">Service Timing</h3>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -119,11 +212,11 @@ export function SiteSurveyForm({
       </div>
 
       <div className="space-y-4 rounded-xl border border-hairline bg-surface p-6">
-        <h3 className="text-sm font-semibold text-ink">Site Assessment &amp; Sign-off</h3>
+        <h3 className="text-sm font-semibold text-ink">Additional Notes &amp; Sign-off</h3>
         <textarea
           name="notes"
           rows={4}
-          placeholder="Room dimensions, power availability, shielding needs, structural notes, recommendations…"
+          placeholder="Room dimensions, shielding needs, site contacts, structural notes, recommendations…"
           className={inputClass}
         />
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

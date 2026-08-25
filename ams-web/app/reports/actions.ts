@@ -134,9 +134,12 @@ export async function createPreventiveReport(formData: FormData) {
     parts: [],
     radiationReadings: [],
     surveyMeterModel: null,
+    surveyMeterManufacturer: null,
     surveyMeterSerial: null,
     surveyMeterCalibrationDate: null,
     reportReferenceNo: null,
+    backgroundRadiationReading: null,
+    safetyChecklist: [],
     trainingAttendees: null,
   });
 
@@ -276,9 +279,12 @@ export async function createCorrectiveReport(formData: FormData) {
     parts: partRows,
     radiationReadings: [],
     surveyMeterModel: null,
+    surveyMeterManufacturer: null,
     surveyMeterSerial: null,
     surveyMeterCalibrationDate: null,
     reportReferenceNo: null,
+    backgroundRadiationReading: null,
+    safetyChecklist: [],
     trainingAttendees: null,
   });
 
@@ -314,6 +320,11 @@ export async function createInstallationReport(formData: FormData) {
   const nextDueDate = String(formData.get("next_due_date") ?? "");
   const notes = String(formData.get("notes") ?? "").trim();
   const result = String(formData.get("result") ?? "pass");
+  const installationType = String(formData.get("installation_type") ?? "Conventional");
+  const partsRequired = String(formData.get("parts_required") ?? "no") === "yes";
+  const partsList = String(formData.get("parts_list") ?? "").trim();
+  const optionalFeatures = formData.getAll("optional_features").map(String);
+  const softwareFeatures = formData.getAll("software_features").map(String);
   const survey = readSurveyAndSignOff(formData);
   const timing = readServiceTiming(formData);
 
@@ -324,6 +335,21 @@ export async function createInstallationReport(formData: FormData) {
     redirect(`/reports/installation?error=${encodeURIComponent("Please enter the installation date.")}`);
   }
 
+  // Astrophysics' real form captures Installation Type, Parts Required, and
+  // Optional/Software Features checklists as their own sections — none of
+  // them get their own reuse elsewhere in the app, so rather than growing
+  // the schema, they're composed into findings the same way
+  // createCorrectiveReport already composes Fault/Root Cause/Action.
+  const findings = [
+    `Installation type: ${installationType}`,
+    partsRequired ? `Parts required: ${partsList || "yes (list not specified)"}` : "Parts required: No",
+    optionalFeatures.length > 0 ? `Optional features: ${optionalFeatures.join(", ")}` : null,
+    softwareFeatures.length > 0 ? `Software features: ${softwareFeatures.join(", ")}` : null,
+    notes ? `Notes: ${notes}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
   const { data: record, error } = await supabase
     .from("service_records")
     .insert({
@@ -331,7 +357,7 @@ export async function createInstallationReport(formData: FormData) {
       service_type: "installation",
       date_performed: datePerformed,
       performed_by: performedBy || null,
-      findings: notes || null,
+      findings,
       result,
       next_due_date: nextDueDate || null,
       created_by: user?.id ?? null,
@@ -353,7 +379,7 @@ export async function createInstallationReport(formData: FormData) {
     reportKind: "installation",
     datePerformed,
     performedBy: performedBy || null,
-    findings: notes || null,
+    findings,
     result,
     nextDueDate: nextDueDate || null,
     downtimeHours: null,
@@ -376,9 +402,12 @@ export async function createInstallationReport(formData: FormData) {
     parts: [],
     radiationReadings: [],
     surveyMeterModel: null,
+    surveyMeterManufacturer: null,
     surveyMeterSerial: null,
     surveyMeterCalibrationDate: null,
     reportReferenceNo: null,
+    backgroundRadiationReading: null,
+    safetyChecklist: [],
     trainingAttendees: null,
   });
 
@@ -403,6 +432,12 @@ export type RadiationReadingInput = {
   limit: string;
 };
 
+export type SafetyCheckInput = {
+  item: string;
+  accepted: boolean;
+  notes: string;
+};
+
 // Staff-only. Radiation Survey Test Report (schema_step41.sql) — the PNRI
 // compliance survey that accompanies every PM visit on X-ray/radiation-
 // emitting equipment. `performed_by` (the surveyor) is required here,
@@ -422,11 +457,14 @@ export async function createRadiationSurveyReport(formData: FormData) {
   const nextDueDate = String(formData.get("next_due_date") ?? "");
   const notes = String(formData.get("notes") ?? "").trim();
   const result = String(formData.get("result") ?? "pass");
+  const surveyMeterManufacturer = String(formData.get("survey_meter_manufacturer") ?? "").trim();
   const surveyMeterModel = String(formData.get("survey_meter_model") ?? "").trim();
   const surveyMeterSerial = String(formData.get("survey_meter_serial") ?? "").trim();
   const surveyMeterCalibrationDate = String(formData.get("survey_meter_calibration_date") ?? "");
   const reportReferenceNo = String(formData.get("report_reference_no") ?? "").trim();
+  const backgroundRadiationReading = String(formData.get("background_radiation_reading") ?? "").trim();
   const readingsRaw = String(formData.get("radiation_readings") ?? "[]");
+  const safetyChecklistRaw = String(formData.get("safety_checklist") ?? "[]");
   const survey = readSurveyAndSignOff(formData);
   const timing = readServiceTiming(formData);
 
@@ -450,6 +488,14 @@ export async function createRadiationSurveyReport(formData: FormData) {
   }
   const cleanReadings = readings.filter((r) => r.location?.trim() || r.reading?.trim());
 
+  let safetyChecklist: SafetyCheckInput[] = [];
+  try {
+    safetyChecklist = JSON.parse(safetyChecklistRaw);
+  } catch {
+    safetyChecklist = [];
+  }
+  const cleanSafetyChecklist = safetyChecklist.filter((c) => c.item?.trim());
+
   const { data: record, error } = await supabase
     .from("service_records")
     .insert({
@@ -461,10 +507,13 @@ export async function createRadiationSurveyReport(formData: FormData) {
       result,
       next_due_date: nextDueDate || null,
       radiation_readings: cleanReadings.length > 0 ? cleanReadings : null,
+      survey_meter_manufacturer: surveyMeterManufacturer || null,
       survey_meter_model: surveyMeterModel || null,
       survey_meter_serial: surveyMeterSerial || null,
       survey_meter_calibration_date: surveyMeterCalibrationDate || null,
       report_reference_no: reportReferenceNo || null,
+      background_radiation_reading: backgroundRadiationReading || null,
+      safety_checklist: cleanSafetyChecklist.length > 0 ? cleanSafetyChecklist : null,
       created_by: user?.id ?? null,
       ...survey,
       ...timing,
@@ -509,9 +558,12 @@ export async function createRadiationSurveyReport(formData: FormData) {
     parts: [],
     radiationReadings: cleanReadings,
     surveyMeterModel: surveyMeterModel || null,
+    surveyMeterManufacturer: surveyMeterManufacturer || null,
     surveyMeterSerial: surveyMeterSerial || null,
     surveyMeterCalibrationDate: surveyMeterCalibrationDate || null,
     reportReferenceNo: reportReferenceNo || null,
+    backgroundRadiationReading: backgroundRadiationReading || null,
+    safetyChecklist: cleanSafetyChecklist,
     trainingAttendees: null,
   });
 
@@ -548,6 +600,7 @@ export async function createSiteSurveyReport(formData: FormData) {
   const nextDueDate = String(formData.get("next_due_date") ?? "");
   const notes = String(formData.get("notes") ?? "").trim();
   const result = String(formData.get("result") ?? "").trim() || null;
+  const itemsRaw = String(formData.get("items") ?? "[]");
   const survey = readSurveyAndSignOff(formData);
   const timing = readServiceTiming(formData);
 
@@ -556,6 +609,13 @@ export async function createSiteSurveyReport(formData: FormData) {
   }
   if (!datePerformed) {
     redirect(`/reports/site-survey?error=${encodeURIComponent("Please enter the survey date.")}`);
+  }
+
+  let items: ChecklistItemInput[] = [];
+  try {
+    items = JSON.parse(itemsRaw);
+  } catch {
+    items = [];
   }
 
   const { data: record, error } = await supabase
@@ -579,6 +639,17 @@ export async function createSiteSurveyReport(formData: FormData) {
   if (error || !record) {
     redirect(`/reports/site-survey?error=${encodeURIComponent(error?.message ?? "Could not save report.")}`);
     return;
+  }
+
+  if (items.length > 0) {
+    const rows = items.map((i) => ({
+      service_record_id: record.id,
+      section: i.section,
+      item_label: i.item_label,
+      status: i.status,
+      remarks: i.remarks || null,
+    }));
+    await supabase.from("service_record_checklist_items").insert(rows);
   }
 
   const pdfResult = await generateAndStoreReportPdf(supabase, {
@@ -607,13 +678,21 @@ export async function createSiteSurveyReport(formData: FormData) {
     diagnosticDone: timing.diagnostic_done,
     repairStart: timing.repair_start,
     repairEnd: timing.repair_end,
-    checklistItems: [],
+    checklistItems: items.map((i) => ({
+      section: i.section,
+      item_label: i.item_label,
+      status: i.status,
+      remarks: i.remarks || null,
+    })),
     parts: [],
     radiationReadings: [],
     surveyMeterModel: null,
+    surveyMeterManufacturer: null,
     surveyMeterSerial: null,
     surveyMeterCalibrationDate: null,
     reportReferenceNo: null,
+    backgroundRadiationReading: null,
+    safetyChecklist: [],
     trainingAttendees: null,
   });
 
@@ -651,6 +730,8 @@ export async function createTrainingReport(formData: FormData) {
   const nextDueDate = String(formData.get("next_due_date") ?? "");
   const notes = String(formData.get("notes") ?? "").trim();
   const attendees = String(formData.get("training_attendees") ?? "").trim();
+  const trainingLength = String(formData.get("training_length") ?? "").trim();
+  const competenceAssessment = formData.getAll("competence_assessment").map(String);
   const survey = readSurveyAndSignOff(formData);
   const timing = readServiceTiming(formData);
 
@@ -661,6 +742,20 @@ export async function createTrainingReport(formData: FormData) {
     redirect(`/reports/training?error=${encodeURIComponent("Please enter the training date.")}`);
   }
 
+  // Astrophysics' real Training Record captures Length of Training and a
+  // Competence Assessment checklist as their own sections — neither has
+  // reuse value elsewhere, so (same as Installation Report) they're
+  // composed into findings rather than growing the schema.
+  const findings = [
+    trainingLength ? `Length of training: ${trainingLength}` : null,
+    competenceAssessment.length > 0
+      ? `Competence assessment: ${competenceAssessment.join(", ")}`
+      : null,
+    notes ? `Notes: ${notes}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
   const { data: record, error } = await supabase
     .from("service_records")
     .insert({
@@ -669,7 +764,7 @@ export async function createTrainingReport(formData: FormData) {
       service_type: "training",
       date_performed: datePerformed,
       performed_by: performedBy || null,
-      findings: notes || null,
+      findings: findings || null,
       result: null,
       next_due_date: nextDueDate || null,
       training_attendees: attendees || null,
@@ -692,7 +787,7 @@ export async function createTrainingReport(formData: FormData) {
     reportKind: "training",
     datePerformed,
     performedBy: performedBy || null,
-    findings: notes || null,
+    findings: findings || null,
     result: null,
     nextDueDate: nextDueDate || null,
     downtimeHours: null,
@@ -715,9 +810,12 @@ export async function createTrainingReport(formData: FormData) {
     parts: [],
     radiationReadings: [],
     surveyMeterModel: null,
+    surveyMeterManufacturer: null,
     surveyMeterSerial: null,
     surveyMeterCalibrationDate: null,
     reportReferenceNo: null,
+    backgroundRadiationReading: null,
+    safetyChecklist: [],
     trainingAttendees: attendees || null,
   });
 

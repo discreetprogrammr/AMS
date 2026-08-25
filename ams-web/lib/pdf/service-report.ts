@@ -43,6 +43,17 @@ export type RadiationReadingRow = {
   limit: string;
 };
 
+// Warning labels / X-Ray ON indicator / safety interlocks — the real
+// Astrophysics form's "Warning Label Verification", "X-Ray ON Indicator",
+// and "Safety Devices and Interlocks" sections are all the same shape
+// (an item, and whether it was found present/working), so one row type
+// covers all three instead of three separate tables.
+export type SafetyCheckRow = {
+  item: string;
+  accepted: boolean;
+  notes: string;
+};
+
 // Per-report-kind labels for the two meta-grid slots that mean something
 // different depending on what's being reported — everyone else (title,
 // findings heading) is looked up straight from lib/report-types.ts.
@@ -109,9 +120,12 @@ export type ServiceReportInput = {
   parts: PartRow[];
   radiationReadings: RadiationReadingRow[];
   surveyMeterModel: string | null;
+  surveyMeterManufacturer: string | null;
   surveyMeterSerial: string | null;
   surveyMeterCalibrationDate: string | null;
   reportReferenceNo: string | null;
+  backgroundRadiationReading: string | null;
+  safetyChecklist: SafetyCheckRow[];
   trainingAttendees: string | null;
 };
 
@@ -303,6 +317,44 @@ class ReportLayout {
     }
   }
 
+  safetyChecklistTable(rows: SafetyCheckRow[]) {
+    const colItem = MARGIN;
+    const colAccepted = MARGIN + 320;
+    const colNotes = MARGIN + 400;
+
+    const headerRow = () => {
+      this.ensure(22);
+      this.page.rect(MARGIN, this.y - 6, CONTENT_W, 20, { fill: PANEL });
+      this.page.text(colItem, this.y, "ITEM", { font: "F2", size: 8, color: SOFT });
+      this.page.text(colAccepted, this.y, "ACCEPTED", { font: "F2", size: 8, color: SOFT });
+      this.page.text(colNotes, this.y, "NOTES", { font: "F2", size: 8, color: SOFT });
+      this.y -= 20;
+    };
+
+    headerRow();
+    for (const row of rows) {
+      const beforeY = this.y;
+      this.ensure(20);
+      if (this.y !== beforeY) headerRow();
+      this.page.text(colItem, this.y, row.item, { font: "F1", size: 9, color: INK });
+      this.page.text(colAccepted, this.y, row.accepted ? "YES" : "NO", {
+        font: "F2",
+        size: 9,
+        color: row.accepted ? GREEN : RED,
+      });
+      this.page.text(colNotes, this.y, (row.notes || "—").slice(0, 30), {
+        font: "F1",
+        size: 9,
+        color: SOFT,
+      });
+      this.page.line(MARGIN, this.y - 6, PAGE_W - MARGIN, this.y - 6, {
+        color: HAIRLINE,
+        lineWidth: 0.5,
+      });
+      this.y -= 20;
+    }
+  }
+
   image(ref: ImageRef, x: number, y: number, w: number, h: number) {
     this.page.image(ref, x, y, w, h);
   }
@@ -373,8 +425,12 @@ export function buildServiceReportPdf(input: ServiceReportInput, logoBytes: Buff
   layout.metaGrid(metaPairs, 3);
   layout.space(6);
 
-  if (kind === "pm" && input.checklistItems.length > 0) {
-    layout.sectionTitle("Checklist");
+  // Site Survey's own checklist (schema_step42.sql widened this table's
+  // use beyond just PM) reuses the exact same section title/rendering as
+  // PM's — same tap-cycle OK/Attention/Fail shape, just a different set of
+  // items.
+  if ((kind === "pm" || kind === "site_survey") && input.checklistItems.length > 0) {
+    layout.sectionTitle(kind === "pm" ? "Checklist" : "Site Assessment Checklist");
     layout.checklistTable(input.checklistItems);
   }
 
@@ -384,14 +440,25 @@ export function buildServiceReportPdf(input: ServiceReportInput, logoBytes: Buff
   }
 
   if (kind === "radiation_survey") {
+    if (input.backgroundRadiationReading) {
+      layout.sectionTitle("Background Radiation");
+      layout.metaGrid([{ label: "Background Reading", value: input.backgroundRadiationReading }], 4);
+    }
     if (input.radiationReadings.length > 0) {
       layout.sectionTitle("Radiation Survey Readings");
       layout.radiationReadingsTable(input.radiationReadings);
     }
-    if (input.surveyMeterModel || input.surveyMeterSerial || input.surveyMeterCalibrationDate || input.reportReferenceNo) {
+    if (
+      input.surveyMeterModel ||
+      input.surveyMeterManufacturer ||
+      input.surveyMeterSerial ||
+      input.surveyMeterCalibrationDate ||
+      input.reportReferenceNo
+    ) {
       layout.sectionTitle("Survey Meter Used");
       layout.metaGrid(
         [
+          { label: "Manufacturer", value: input.surveyMeterManufacturer ?? "" },
           { label: "Meter Model", value: input.surveyMeterModel ?? "" },
           { label: "Meter Serial No.", value: input.surveyMeterSerial ?? "" },
           {
@@ -402,8 +469,12 @@ export function buildServiceReportPdf(input: ServiceReportInput, logoBytes: Buff
           },
           { label: "Report Reference #", value: input.reportReferenceNo ?? "" },
         ],
-        4,
+        3,
       );
+    }
+    if (input.safetyChecklist.length > 0) {
+      layout.sectionTitle("Safety Devices & Warning Labels");
+      layout.safetyChecklistTable(input.safetyChecklist);
     }
   }
 

@@ -54,8 +54,9 @@ export default async function ServiceReportPage({
     .select(
       `id, service_type, date_performed, performed_by, findings, result,
        next_due_date, downtime_hours, created_at, site_id,
-       radiation_readings, survey_meter_model, survey_meter_serial,
-       survey_meter_calibration_date, report_reference_no, training_attendees,
+       radiation_readings, survey_meter_manufacturer, survey_meter_model, survey_meter_serial,
+       survey_meter_calibration_date, report_reference_no, background_radiation_reading,
+       safety_checklist, training_attendees,
        csat_service, csat_machine, csat_support, csat_overall,
        customer_signatory, technician_signature, customer_signature,
        time_arrived, service_begin, service_completed, visit_status,
@@ -87,8 +88,9 @@ export default async function ServiceReportPage({
           .single()
       : { data: null };
 
+  const hasChecklist = isPM || kind === "site_survey";
   const [{ data: items }, { data: parts }] = await Promise.all([
-    isPM
+    hasChecklist
       ? supabase
           .from("service_record_checklist_items")
           .select("section, item_label, status, remarks")
@@ -115,6 +117,12 @@ export default async function ServiceReportPage({
     reading: string;
     unit: string;
     limit: string;
+  }[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const safetyChecklist = ((record as any).safety_checklist ?? []) as {
+    item: string;
+    accepted: boolean;
+    notes: string;
   }[];
 
   const csatRows: { label: string; value: number | null }[] = [
@@ -215,6 +223,15 @@ export default async function ServiceReportPage({
           />
         </div>
 
+        {/* Background radiation reading */}
+        {kind === "radiation_survey" && record.background_radiation_reading && (
+          <Section title="Background Radiation">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <Meta label="Background Reading" value={record.background_radiation_reading} />
+            </div>
+          </Section>
+        )}
+
         {/* Radiation survey readings */}
         {kind === "radiation_survey" && radiationReadings.length > 0 && (
           <Section title="Radiation Survey Readings">
@@ -244,12 +261,14 @@ export default async function ServiceReportPage({
         )}
 
         {kind === "radiation_survey" &&
-          (record.survey_meter_model ||
+          (record.survey_meter_manufacturer ||
+            record.survey_meter_model ||
             record.survey_meter_serial ||
             record.survey_meter_calibration_date ||
             record.report_reference_no) && (
             <Section title="Survey Meter Used">
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <Meta label="Manufacturer" value={record.survey_meter_manufacturer} />
                 <Meta label="Meter Model" value={record.survey_meter_model} />
                 <Meta label="Meter Serial No." value={record.survey_meter_serial} />
                 <Meta
@@ -265,6 +284,42 @@ export default async function ServiceReportPage({
             </Section>
           )}
 
+        {/* Safety devices, warning labels, and X-Ray ON indicator */}
+        {kind === "radiation_survey" && safetyChecklist.length > 0 && (
+          <Section title="Safety Devices & Warning Labels">
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-slate-300 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                    <th className="py-2 pr-3">Item</th>
+                    <th className="py-2 pr-3">Accepted</th>
+                    <th className="py-2">Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {safetyChecklist.map((c, idx) => (
+                    <tr key={idx} className="border-b border-slate-100">
+                      <td className="py-1.5 pr-3">{c.item || "—"}</td>
+                      <td className="py-1.5 pr-3">
+                        <span
+                          className={`rounded px-2 py-0.5 text-[11px] font-semibold tracking-wide ${
+                            c.accepted
+                              ? "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200"
+                              : "bg-red-50 text-red-700 ring-1 ring-inset ring-red-200"
+                          }`}
+                        >
+                          {c.accepted ? "YES" : "NO"}
+                        </span>
+                      </td>
+                      <td className="py-1.5 text-slate-600">{c.notes || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Section>
+        )}
+
         {/* Training attendees */}
         {kind === "training" && record.training_attendees && (
           <Section title="Attendees">
@@ -274,9 +329,11 @@ export default async function ServiceReportPage({
           </Section>
         )}
 
-        {/* PM checklist */}
-        {isPM && items && items.length > 0 && (
-          <Section title="Checklist">
+        {/* PM / Site Survey checklist — the latter reuses the same
+            service_record_checklist_items table and rendering
+            (schema_step42.sql widened the table beyond just PM). */}
+        {hasChecklist && items && items.length > 0 && (
+          <Section title={isPM ? "Checklist" : "Site Assessment Checklist"}>
             <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm">
               <thead>

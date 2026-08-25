@@ -3,7 +3,14 @@ import { createClient } from "@/lib/supabase/server";
 import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { getSlaPolicyMap, resolveSlaTargets } from "@/lib/sla";
-import { getAnalytics, getCsatRollup, type MonthlyAnalytics, type CsatMonthly, type OrgCsat } from "@/lib/analytics";
+import {
+  getAnalytics,
+  getCsatRollup,
+  type MonthlyAnalytics,
+  type CsatMonthly,
+  type OrgCsat,
+  type TechnicianCsat,
+} from "@/lib/analytics";
 
 function formatHours(hours: number | null): string {
   if (hours === null) return "—";
@@ -113,9 +120,13 @@ export default async function AnalyticsPage() {
                 <KpiCard label="Avg Support" value={formatStars(csatRollup.avgSupport)} />
               </div>
 
-              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <div className="mb-6">
                 <CsatTrendChart months={csatRollup.months} />
+              </div>
+
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 <ClientSatisfactionTable byOrg={csatRollup.byOrg} />
+                <TechnicianSatisfactionTable byTechnician={csatRollup.byTechnician} />
               </div>
             </>
           )}
@@ -129,7 +140,7 @@ export default async function AnalyticsPage() {
         resolved, for tickets closed in that month. Six-month trailing
         window.
         {isStaff && csatRollup && csatRollup.totalRated > 0 && (
-          <> Satisfaction trend uses the same six-month window; the KPI averages and by-client table use every rated visit ever recorded, not just this window.</>
+          <> Satisfaction trend uses the same six-month window; the KPI averages and by-client/by-technician tables use every rated visit ever recorded, not just this window. Technician is grouped by the free-text &quot;Performed By&quot; field on each report, so name typos or variations may split one person into two rows.</>
         )}
       </p>
     </AppShell>
@@ -369,6 +380,41 @@ function ClientSatisfactionTable({ byOrg }: { byOrg: OrgCsat[] }) {
                   {o.avgOverall.toFixed(1)} / 5
                 </td>
                 <td className="py-2 pr-3 text-ink-soft">{o.count}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+function TechnicianSatisfactionTable({ byTechnician }: { byTechnician: TechnicianCsat[] }) {
+  return (
+    <div className="rounded-xl border border-hairline bg-surface p-5">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-soft">By Technician</h2>
+      <p className="mb-4 text-xs text-slate-500">
+        All-time average overall rating from the &quot;Performed By&quot; field, lowest first.
+      </p>
+      {byTechnician.length === 0 ? (
+        <p className="text-sm text-slate-500">No rated visits yet.</p>
+      ) : (
+        <table className="w-full text-left text-sm">
+          <thead className="text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="py-2 pr-3">Technician</th>
+              <th className="py-2 pr-3">Avg</th>
+              <th className="py-2 pr-3">Rated Visits</th>
+            </tr>
+          </thead>
+          <tbody>
+            {byTechnician.map((t) => (
+              <tr key={t.name} className="border-t border-hairline">
+                <td className="py-2 pr-3 text-ink">{t.name}</td>
+                <td className={`py-2 pr-3 font-medium ${csatTextTone(t.avgOverall)}`}>
+                  {t.avgOverall.toFixed(1)} / 5
+                </td>
+                <td className="py-2 pr-3 text-ink-soft">{t.count}</td>
               </tr>
             ))}
           </tbody>

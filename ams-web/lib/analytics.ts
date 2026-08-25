@@ -201,6 +201,22 @@ export type OrgCsat = {
   count: number;
 };
 
+// Grouped by `performed_by` (schema.sql — free text on the PM/CM report
+// form, labeled "Service engineer / technician"), not `created_by` — the
+// latter is just whichever staff account was logged in when the report
+// was filed (could be a dispatcher/admin entering it on a technician's
+// behalf), while `performed_by` is the field that actually names who did
+// the visit. Trade-off: it's optional, free text, so a typo or casing
+// difference ("J. Cruz" vs "j cruz") creates a separate row rather than
+// merging — grouping key is trim+lowercase to absorb casing/whitespace
+// at least, but not spelling variants. Blank/never-filled-in rows land in
+// an explicit "Unspecified" bucket rather than being silently dropped.
+export type TechnicianCsat = {
+  name: string;
+  avgOverall: number;
+  count: number;
+};
+
 export type CsatRollup = {
   months: CsatMonthly[];
   avgOverall: number | null;
@@ -209,6 +225,7 @@ export type CsatRollup = {
   avgSupport: number | null;
   totalRated: number;
   byOrg: OrgCsat[];
+  byTechnician: TechnicianCsat[];
 };
 
 export async function getCsatRollup(): Promise<CsatRollup> {
@@ -218,7 +235,7 @@ export async function getCsatRollup(): Promise<CsatRollup> {
   const { data } = await supabase
     .from("service_records")
     .select(
-      "date_performed, csat_overall, csat_service, csat_machine, csat_support, assets(organization_id, organizations(name))",
+      "date_performed, performed_by, csat_overall, csat_service, csat_machine, csat_support, assets(organization_id, organizations(name))",
     )
     .not("csat_overall", "is", null);
 
@@ -267,6 +284,24 @@ export async function getCsatRollup(): Promise<CsatRollup> {
     // should be the first row, not buried under happier accounts.
     .sort((a, b) => a.avgOverall - b.avgOverall);
 
+  const byTechMap = new Map<string, { name: string; sum: number; count: number }>();
+  for (const r of rows) {
+    const raw: string | null = r.performed_by;
+    const trimmed = raw?.trim() || "";
+    const key = trimmed ? trimmed.toLowerCase() : "__unspecified__";
+    const name = trimmed || "Unspecified";
+    const entry = byTechMap.get(key) ?? { name, sum: 0, count: 0 };
+    entry.sum += r.csat_overall;
+    entry.count += 1;
+    byTechMap.set(key, entry);
+  }
+
+  const byTechnician: TechnicianCsat[] = Array.from(byTechMap.values())
+    .map((v) => ({ name: v.name, avgOverall: v.sum / v.count, count: v.count }))
+    // Same "lowest first" reasoning as byOrg — whoever's trending lowest
+    // is the one worth a conversation, not buried at the bottom.
+    .sort((a, b) => a.avgOverall - b.avgOverall);
+
   return {
     months,
     avgOverall: avgOf("csat_overall"),
@@ -275,5 +310,6 @@ export async function getCsatRollup(): Promise<CsatRollup> {
     avgSupport: avgOf("csat_support"),
     totalRated: rows.length,
     byOrg,
+    byTechnician,
   };
 }

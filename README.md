@@ -1681,7 +1681,7 @@ Seventh item off the list. Every PM/CM service report has captured four 1-5 star
 - The **Overall Satisfaction Trend** chart stays within the same six-month trailing window as the rest of Analytics, for visual consistency.
 - The **KPI averages** (Avg Overall/Service/Machine/Support) and the **By Client** table use **every rated visit ever recorded**, not just six months — CSAT is a newer, lower-volume data source than tickets or uptime, so restricting it to six months risked showing "no data" even with real ratings on the books. The page's footnote calls this out explicitly.
 
-The **By Client** table sorts lowest-satisfaction first — the account most worth checking in on should be the first row, not buried under happier ones.
+The **By Client** and **By Technician** tables both sort lowest-satisfaction first — whoever's trending lowest should be the first row, not buried under happier ones. **By Technician** groups on the report form's free-text "Performed By" field (not `created_by`, which is just whichever staff account was logged in filing the report — could be a dispatcher, not the actual field technician). That field is optional and free text, so a typo or casing difference (grouping is case/whitespace-insensitive, but not spelling-insensitive) can split one real person into two rows, and any report left blank rolls up into an "Unspecified" row rather than being silently dropped. The page's footnote calls this out.
 
 Verified with `npx tsc --noEmit` — clean aside from the two pre-existing, expected `Cannot find module` errors (`web-push`, `papaparse`).
 
@@ -1689,5 +1689,6 @@ Verified with `npx tsc --noEmit` — clean aside from the two pre-existing, expe
 
 1. Push to GitHub and let Vercel redeploy. No new schema, no new env vars.
 2. Sign in as a **client** — confirm the Analytics page looks exactly as before, with no Customer Satisfaction section at all.
-3. Sign in as **staff or Super Admin** — confirm a new **Customer Satisfaction** section appears below the existing three charts, with KPI cards, a trend chart, and a By Client table (or a "no surveys recorded yet" message, if none of your test PM/CM reports have ratings on them).
-4. Complete a PM or CM report with a customer survey rating on it (if you don't already have one), reload Analytics, and confirm the new rating is reflected in both the trend chart and the affected client's row in the By Client table.
+3. Sign in as **staff or Super Admin** — confirm a new **Customer Satisfaction** section appears below the existing three charts, with KPI cards, a trend chart, and By Client / By Technician tables side by side (or a "no surveys recorded yet" message, if none of your test PM/CM reports have ratings on them).
+4. Complete a PM or CM report with a customer survey rating and a "Performed By" name on it (if you don't already have one), reload Analytics, and confirm the new rating shows up in the trend chart, the affected client's row, and that technician's row.
+5. Leave "Performed By" blank on a rated report and confirm it rolls up into an "Unspecified" row in By Technician instead of disappearing.

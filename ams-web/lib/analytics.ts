@@ -166,3 +166,114 @@ export async function getAnalytics(): Promise<AnalyticsSummary> {
     },
   };
 }
+
+// CSAT rollup — staff/Super Admin only, by explicit product decision (a
+// client shouldn't see other clients' satisfaction scores, or even a
+// rollup of their own — this is an internal account-health view). The raw
+// data has existed since schema_step18.sql (four 1-5 star ratings +
+// signature captured on every PM/CM service report via
+// components/customer-survey.tsx) but until now only ever displayed on a
+// single service record's own detail page — never averaged or trended
+// anywhere. Callers MUST only invoke this for a staff/Super Admin session
+// (app/analytics/page.tsx gates it on isStaff before calling) — this
+// function itself has no role check, same trust boundary as the rest of
+// this file's exports, which all assume the caller already decided who
+// gets to see the result.
+//
+// Two different time scopes, both surfaced deliberately:
+//  - `months` (the trend chart) stays within the same 6-month trailing
+//    window as the rest of this page, for visual consistency.
+//  - `avgOverall`/`avgService`/`avgMachine`/`avgSupport`/`byOrg` (the KPI
+//    numbers and per-client table) use ALL rated visits ever, not just the
+//    6-month window — CSAT is a newer, lower-volume data source than
+//    tickets/uptime, so restricting it to 6 months risked showing "no
+//    data" even once ratings exist. The UI labels these as all-time.
+export type CsatMonthly = {
+  label: string;
+  avgOverall: number | null;
+  count: number;
+};
+
+export type OrgCsat = {
+  organizationId: string;
+  organizationName: string;
+  avgOverall: number;
+  count: number;
+};
+
+export type CsatRollup = {
+  months: CsatMonthly[];
+  avgOverall: number | null;
+  avgService: number | null;
+  avgMachine: number | null;
+  avgSupport: number | null;
+  totalRated: number;
+  byOrg: OrgCsat[];
+};
+
+export async function getCsatRollup(): Promise<CsatRollup> {
+  const supabase = await createClient();
+  const buckets = monthBuckets(TREND_MONTHS);
+
+  const { data } = await supabase
+    .from("service_records")
+    .select(
+      "date_performed, csat_overall, csat_service, csat_machine, csat_support, assets(organization_id, organizations(name))",
+    )
+    .not("csat_overall", "is", null);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows = (data ?? []) as any[];
+
+  const months: CsatMonthly[] = buckets.map((bucket) => {
+    const inMonth = rows.filter((r) => {
+      const d = new Date(r.date_performed);
+      return d >= bucket.start && d < bucket.end;
+    });
+    const avgOverall = inMonth.length
+      ? inMonth.reduce((sum, r) => sum + r.csat_overall, 0) / inMonth.length
+      : null;
+    return { label: bucket.label, avgOverall, count: inMonth.length };
+  });
+
+  function avgOf(field: "csat_overall" | "csat_service" | "csat_machine" | "csat_support"): number | null {
+    const values = rows
+      .map((r) => r[field])
+      .filter((v): v is number => v !== null && v !== undefined);
+    return values.length ? values.reduce((s, v) => s + v, 0) / values.length : null;
+  }
+
+  const byOrgMap = new Map<string, { name: string; sum: number; count: number }>();
+  for (const r of rows) {
+    const asset = Array.isArray(r.assets) ? r.assets[0] : r.assets;
+    const orgId: string | undefined = asset?.organization_id;
+    if (!orgId) continue;
+    const orgObj = Array.isArray(asset.organizations) ? asset.organizations[0] : asset.organizations;
+    const name: string = orgObj?.name ?? "Unknown client";
+    const entry = byOrgMap.get(orgId) ?? { name, sum: 0, count: 0 };
+    entry.sum += r.csat_overall;
+    entry.count += 1;
+    byOrgMap.set(orgId, entry);
+  }
+
+  const byOrg: OrgCsat[] = Array.from(byOrgMap.entries())
+    .map(([organizationId, v]) => ({
+      organizationId,
+      organizationName: v.name,
+      avgOverall: v.sum / v.count,
+      count: v.count,
+    }))
+    // Lowest satisfaction first — the client most worth checking in on
+    // should be the first row, not buried under happier accounts.
+    .sort((a, b) => a.avgOverall - b.avgOverall);
+
+  return {
+    months,
+    avgOverall: avgOf("csat_overall"),
+    avgService: avgOf("csat_service"),
+    avgMachine: avgOf("csat_machine"),
+    avgSupport: avgOf("csat_support"),
+    totalRated: rows.length,
+    byOrg,
+  };
+}

@@ -1668,3 +1668,26 @@ Verified with `npx tsc --noEmit` — clean aside from the two pre-existing, expe
 2. As a signed-in Super Admin, hit `/api/cron/weekly-digest` directly in the browser (same demo/testing path as the other cron routes) — confirm it returns `{ "sent": true, "data": {...} }` and that `STAFF_NOTIFICATION_EMAIL` receives the digest email within a minute or two.
 3. Check the numbers in the email against what Analytics/Alerts/Inventory show in the app right now — they should match (tickets, uptime %, SLA breaches, low/out-of-stock counts).
 4. No action needed for the real Monday 8am run — Vercel Cron will hit it automatically.
+
+## Follow-up — CSAT rollup
+
+Seventh item off the list. Every PM/CM service report has captured four 1-5 star client ratings (service quality, machine/unit experience, support, overall satisfaction) plus a signature since `schema_step18.sql`, but that data only ever showed up on that one report's own detail page — never averaged, trended, or compared across clients anywhere. This surfaces it as a proper rollup on the Analytics page.
+
+**Staff and Super Admin only, by explicit request — clients never see this section**, not even a rollup of their own scores. Gated in `app/analytics/page.tsx` before the query even runs (`isStaff ? await getCsatRollup() : null`), not just hidden in the rendered page, so a client session never even fetches the data.
+
+**No new schema** — the four `csat_*` columns already exist; this is a read-only rollup of data that was already being collected.
+
+**Two different time scopes on the same page, labeled accordingly:**
+- The **Overall Satisfaction Trend** chart stays within the same six-month trailing window as the rest of Analytics, for visual consistency.
+- The **KPI averages** (Avg Overall/Service/Machine/Support) and the **By Client** table use **every rated visit ever recorded**, not just six months — CSAT is a newer, lower-volume data source than tickets or uptime, so restricting it to six months risked showing "no data" even with real ratings on the books. The page's footnote calls this out explicitly.
+
+The **By Client** table sorts lowest-satisfaction first — the account most worth checking in on should be the first row, not buried under happier ones.
+
+Verified with `npx tsc --noEmit` — clean aside from the two pre-existing, expected `Cannot find module` errors (`web-push`, `papaparse`).
+
+## Setup steps
+
+1. Push to GitHub and let Vercel redeploy. No new schema, no new env vars.
+2. Sign in as a **client** — confirm the Analytics page looks exactly as before, with no Customer Satisfaction section at all.
+3. Sign in as **staff or Super Admin** — confirm a new **Customer Satisfaction** section appears below the existing three charts, with KPI cards, a trend chart, and a By Client table (or a "no surveys recorded yet" message, if none of your test PM/CM reports have ratings on them).
+4. Complete a PM or CM report with a customer survey rating on it (if you don't already have one), reload Analytics, and confirm the new rating is reflected in both the trend chart and the affected client's row in the By Client table.

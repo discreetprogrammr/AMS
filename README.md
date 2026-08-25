@@ -1692,3 +1692,42 @@ Verified with `npx tsc --noEmit` — clean aside from the two pre-existing, expe
 3. Sign in as **staff or Super Admin** — confirm a new **Customer Satisfaction** section appears below the existing three charts, with KPI cards, a trend chart, and By Client / By Technician tables side by side (or a "no surveys recorded yet" message, if none of your test PM/CM reports have ratings on them).
 4. Complete a PM or CM report with a customer survey rating and a "Performed By" name on it (if you don't already have one), reload Analytics, and confirm the new rating shows up in the trend chart, the affected client's row, and that technician's row.
 5. Leave "Performed By" blank on a rated report and confirm it rolls up into an "Unspecified" row in By Technician instead of disappearing.
+
+## Follow-up — Expanded Reports tab (Installation, Radiation Survey Test, Site Survey, Training)
+
+Real workflow ask: every PM visit on X-ray/radiation-emitting equipment also includes a Radiation Survey Test — a PNRI compliance requirement — and three more report types (Installation, Site Survey, Training) never had a form or a record at all. The Reports tab now covers six report types instead of two:
+
+1. Preventive Maintenance
+2. Corrective Maintenance
+3. Installation
+4. Radiation Survey Test
+5. Site Survey
+6. Training
+
+`radiation_survey` already existed as a database value since the very first schema, but was only ever filed through the generic PM checklist with none of its own fields — no readings, no surveyor, no meter used. It now has its own dedicated form.
+
+**`schema_step41.sql`** (new) — **run this in Supabase before deploying.** Three new `service_type` enum values (`installation`, `site_survey`, `training`). More significantly: `service_records.asset_id` is no longer required — a new nullable `site_id` lets Site Survey and Training reports attach to a site with no specific equipment yet (a pre-installation assessment, or a general safety orientation), which asset-scoped reports could never do before. A CHECK constraint keeps every row attached to at least one of the two. RLS is updated so a client can still see their own org's site-only reports, not just asset-scoped ones. New columns: `radiation_readings` (jsonb), `survey_meter_model`/`survey_meter_serial`/`survey_meter_calibration_date`/`report_reference_no`, and `training_attendees`.
+
+**No per-client digest, no Survey Meters registry yet, no RSO notification yet** — those were explicitly scoped as a separate follow-up (per the Super Admin's own build-order call: Reports tab first). The survey meter fields on the Radiation Survey Test form are plain text for now, so today's surveys are still fully documented; they can be linked to a proper meter registry later without losing any data.
+
+**What's new in the app:**
+- `lib/report-types.ts` — the single shared source of truth for the six report "kinds" (label, display order, PDF/reference-number prefix, PDF title). Replaces a `PM_TYPES` array that used to be duplicated independently in the Reports page and the CSV export route — exactly the kind of drift that would have silently dropped new types from one or the other.
+- Four new report forms, same visual conventions as the existing PM/CM checklists: `/reports/installation`, `/reports/radiation-survey`, `/reports/site-survey`, `/reports/training`.
+- Radiation Survey Test's form has a dynamic, add/remove-able table of measurement-point readings (pre-seeded with four common X-ray leakage-survey points you can edit or clear), survey meter fields, a report reference number, and defaults "Next Survey Due" to one year out the moment you set the survey date — PNRI surveys are annual. The surveyor's name is required on this form specifically (every other report's "Performed By" is optional) since identifying who performed the survey is compliance-critical.
+- Site Survey and Training both ask for a **Site** first (required) with an **optional** related asset — the only two report types that don't require picking equipment first.
+- The PDF and the printable HTML view (`/reports/service-record/[id]`) both got reworked from a hard `isPM: boolean` switch to a proper per-kind renderer — each report type gets its own title, its own "Findings" section heading, and only the sections relevant to it (checklist for PM, parts for CM, readings table + meter info for Radiation Survey Test, attendee list for Training).
+- The Reports page's "Exportable Report Logs" section and CSV export both now cover all six kinds instead of two, and reports filed against a site with no asset now show that site correctly instead of a blank Asset column.
+
+Verified with `npx tsc --noEmit` — clean aside from the two pre-existing, expected `Cannot find module` errors (`web-push`, `papaparse`).
+
+## Setup steps
+
+1. Run `schema_step41.sql` in Supabase.
+2. Push to GitHub and let Vercel redeploy.
+3. As staff, open **Reports** — confirm the "Digital Forms" section now shows all six report templates, and the "Exportable Report Logs" section shows six history cards instead of two.
+4. File an **Installation Report** against an existing asset — confirm it saves, generates a PDF, and shows up under Installation in the Reports list.
+5. File a **Radiation Survey Test Report** — add a couple of measurement readings, leave the meter fields filled in, and confirm the PDF shows a "Radiation Survey Readings" table and a "Survey Meter Used" section. Try submitting with the surveyor name blank and confirm it's rejected (the one report type where that field is required).
+6. File a **Site Survey Report** with no related asset selected — confirm it saves against the site alone, and that its row in the Reports list and its PDF both show the site/customer correctly with no asset.
+7. File a **Training Report** with a few attendee names — confirm the PDF shows an "Attendees" section, and that leaving the related asset blank still lets it save (site-only).
+8. Sign in as a **client** whose org owns the site/asset used above — confirm all four new reports are visible to them the same way PM/CM reports already are.
+9. Export CSV for one of the new types from the Reports page and confirm the new type's rows appear (previously, anything outside the old PM/CM split would have silently been excluded from every export).

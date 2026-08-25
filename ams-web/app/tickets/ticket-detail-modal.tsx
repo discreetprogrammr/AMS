@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/status-badge";
 import { ticketRef, woRef, reportRef, dateTimeLabel } from "@/lib/format";
+import { reportKindOf, REPORT_KIND_REF_PREFIX } from "@/lib/report-types";
 import { updateTicketStatus } from "@/app/assets/tickets-actions";
 import type { TicketRow } from "./tickets-table";
 
@@ -221,7 +222,7 @@ export function TicketDetailModal({
                         rel="noopener noreferrer"
                         className="font-medium text-blue-400 hover:underline"
                       >
-                        {reportRef(r.id, r.service_type === "preventive_maintenance" ? "PM" : "CM")}
+                        {reportRef(r.id, REPORT_KIND_REF_PREFIX[reportKindOf(r.service_type)])}
                       </a>
                       <p className="text-xs text-slate-500">{r.date_performed}</p>
                     </div>

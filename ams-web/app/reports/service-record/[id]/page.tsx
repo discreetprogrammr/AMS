@@ -2,7 +2,31 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { reportRef } from "@/lib/format";
+import {
+  reportKindOf,
+  REPORT_KIND_REF_PREFIX,
+  REPORT_KIND_TITLES,
+  type ReportKind,
+} from "@/lib/report-types";
 import { PrintButton } from "@/components/print-button";
+
+const NEXT_FIELD_LABEL: Record<ReportKind, string> = {
+  pm: "Next Due",
+  cm: "Downtime", // special-cased below — uses downtime_hours, not next_due_date
+  installation: "First PM Due",
+  radiation_survey: "Next Survey Due",
+  site_survey: "Target Install Date",
+  training: "Next Refresher Due",
+};
+
+const FINDINGS_TITLE: Record<ReportKind, string> = {
+  pm: "Findings & Comments",
+  cm: "Fault, Action Taken & Comments",
+  installation: "Installation Notes & Comments",
+  radiation_survey: "Observations & Recommendations",
+  site_survey: "Site Assessment Findings & Recommendations",
+  training: "Topics Covered & Notes",
+};
 
 // Printable / "download as PDF" view of a single service report (PM or
 // CM). No PDF-generation library (pdf-lib, jsPDF, etc.) is installable in
@@ -29,7 +53,9 @@ export default async function ServiceReportPage({
     .from("service_records")
     .select(
       `id, service_type, date_performed, performed_by, findings, result,
-       next_due_date, downtime_hours, created_at,
+       next_due_date, downtime_hours, created_at, site_id,
+       radiation_readings, survey_meter_model, survey_meter_serial,
+       survey_meter_calibration_date, report_reference_no, training_attendees,
        csat_service, csat_machine, csat_support, csat_overall,
        customer_signatory, technician_signature, customer_signature,
        time_arrived, service_begin, service_completed, visit_status,
@@ -44,7 +70,22 @@ export default async function ServiceReportPage({
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const asset = (record as any).assets;
-  const isPM = record.service_type !== "repair";
+  const kind = reportKindOf(record.service_type);
+  const isPM = kind === "pm";
+  const isCM = kind === "cm";
+
+  // Asset-less (site-only) records — Site Survey/Training filed with no
+  // specific unit selected (schema_step41.sql) — need their own site/org
+  // lookup, since the `assets(...)` join above returns nothing for them.
+  const siteRecordId = (record as { site_id: string | null }).site_id;
+  const { data: siteOnly } =
+    !asset && siteRecordId
+      ? await supabase
+          .from("sites")
+          .select("address, organizations(name)")
+          .eq("id", siteRecordId)
+          .single()
+      : { data: null };
 
   const [{ data: items }, { data: parts }] = await Promise.all([
     isPM
@@ -54,7 +95,7 @@ export default async function ServiceReportPage({
           .eq("service_record_id", params.id)
           .order("created_at", { ascending: true })
       : Promise.resolve({ data: [] as never[] }),
-    !isPM
+    isCM
       ? supabase
           .from("service_record_parts")
           .select("part_name, quantity, status")
@@ -62,10 +103,19 @@ export default async function ServiceReportPage({
       : Promise.resolve({ data: [] as never[] }),
   ]);
 
-  const ref = reportRef(record.id, isPM ? "PM" : "CM");
-  const reportTitle = isPM
-    ? "Preventive Maintenance Report"
-    : "Corrective Maintenance Report";
+  const ref = reportRef(record.id, REPORT_KIND_REF_PREFIX[kind]);
+  const reportTitle = REPORT_KIND_TITLES[kind];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const siteOnlyAny = siteOnly as any;
+  const organizationName = asset?.organizations?.name ?? siteOnlyAny?.organizations?.name;
+  const siteAddress = asset?.sites?.address ?? siteOnlyAny?.address;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const radiationReadings = ((record as any).radiation_readings ?? []) as {
+    location: string;
+    reading: string;
+    unit: string;
+    limit: string;
+  }[];
 
   const csatRows: { label: string; value: number | null }[] = [
     { label: "Service", value: record.csat_service },
@@ -129,18 +179,23 @@ export default async function ServiceReportPage({
 
         {/* Report meta */}
         <div className="mb-8 grid grid-cols-2 gap-x-6 gap-y-4 rounded-lg border border-slate-200 p-5 sm:grid-cols-3">
-          <Meta label="Customer" value={asset?.organizations?.name} />
-          <Meta label="Site" value={asset?.sites?.address} />
-          <Meta label="Asset" value={asset?.asset_tag} />
+          <Meta label="Customer" value={organizationName} />
+          <Meta label="Site" value={siteAddress} />
+          <Meta label="Asset" value={asset?.asset_tag ?? (asset ? null : "— (site-level report)")} />
           <Meta
             label="Equipment"
-            value={[asset?.brand, asset?.model].filter(Boolean).join(" ") || asset?.equipment_type}
+            value={asset ? [asset?.brand, asset?.model].filter(Boolean).join(" ") || asset?.equipment_type : null}
           />
           <Meta label="Serial No." value={asset?.serial_number} />
           <Meta label="Performed By" value={record.performed_by} />
-          {isPM && (
+          {isCM ? (
             <Meta
-              label="Next Due"
+              label="Downtime"
+              value={record.downtime_hours != null ? `${record.downtime_hours}h` : null}
+            />
+          ) : (
+            <Meta
+              label={NEXT_FIELD_LABEL[kind]}
               value={
                 record.next_due_date
                   ? new Date(record.next_due_date).toLocaleDateString()
@@ -148,17 +203,76 @@ export default async function ServiceReportPage({
               }
             />
           )}
-          {!isPM && (
-            <Meta
-              label="Downtime"
-              value={record.downtime_hours != null ? `${record.downtime_hours}h` : null}
-            />
-          )}
           <Meta
             label="Outcome"
-            value={record.result === "fail" ? "Needs Follow-up / Failed" : "Pass / Resolved"}
+            value={
+              record.result === "fail"
+                ? "Needs Follow-up / Failed"
+                : record.result === "pass"
+                  ? "Pass / Resolved"
+                  : null
+            }
           />
         </div>
+
+        {/* Radiation survey readings */}
+        {kind === "radiation_survey" && radiationReadings.length > 0 && (
+          <Section title="Radiation Survey Readings">
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-slate-300 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                    <th className="py-2 pr-3">Measurement Point</th>
+                    <th className="py-2 pr-3">Reading</th>
+                    <th className="py-2 pr-3">Unit</th>
+                    <th className="py-2">PNRI Limit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {radiationReadings.map((r, idx) => (
+                    <tr key={idx} className="border-b border-slate-100">
+                      <td className="py-1.5 pr-3">{r.location || "—"}</td>
+                      <td className="py-1.5 pr-3">{r.reading || "—"}</td>
+                      <td className="py-1.5 pr-3 text-slate-600">{r.unit || "—"}</td>
+                      <td className="py-1.5 text-slate-600">{r.limit || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Section>
+        )}
+
+        {kind === "radiation_survey" &&
+          (record.survey_meter_model ||
+            record.survey_meter_serial ||
+            record.survey_meter_calibration_date ||
+            record.report_reference_no) && (
+            <Section title="Survey Meter Used">
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <Meta label="Meter Model" value={record.survey_meter_model} />
+                <Meta label="Meter Serial No." value={record.survey_meter_serial} />
+                <Meta
+                  label="Meter Cal. Date"
+                  value={
+                    record.survey_meter_calibration_date
+                      ? new Date(record.survey_meter_calibration_date).toLocaleDateString()
+                      : null
+                  }
+                />
+                <Meta label="Report Reference #" value={record.report_reference_no} />
+              </div>
+            </Section>
+          )}
+
+        {/* Training attendees */}
+        {kind === "training" && record.training_attendees && (
+          <Section title="Attendees">
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+              {record.training_attendees}
+            </p>
+          </Section>
+        )}
 
         {/* PM checklist */}
         {isPM && items && items.length > 0 && (
@@ -192,7 +306,7 @@ export default async function ServiceReportPage({
         )}
 
         {/* CM parts */}
-        {!isPM && parts && parts.length > 0 && (
+        {isCM && parts && parts.length > 0 && (
           <Section title="Parts Replaced">
             <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm">
@@ -222,7 +336,7 @@ export default async function ServiceReportPage({
             taken, and any free-text comments — see app/reports/actions.ts,
             which composes this single field at submit time). */}
         {record.findings && (
-          <Section title={isPM ? "Findings & Comments" : "Fault, Action Taken & Comments"}>
+          <Section title={FINDINGS_TITLE[kind]}>
             <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
               {record.findings}
             </p>

@@ -10,10 +10,10 @@ export function woRef(id: string): string {
   return `WO-${id.slice(0, 8).toUpperCase()}`;
 }
 
-// Same derivation approach, for service reports (PM/CM). Prefix reflects
-// service_records.service_type at the call site since one function covers
-// both report kinds.
-export function reportRef(id: string, prefix: "PM" | "CM"): string {
+// Same derivation approach, for service reports. Prefix reflects the
+// report's kind (lib/report-types.ts's REPORT_KIND_REF_PREFIX) at the call
+// site since one function covers all six report kinds.
+export function reportRef(id: string, prefix: string): string {
   return `${prefix}-${id.slice(0, 8).toUpperCase()}`;
 }
 

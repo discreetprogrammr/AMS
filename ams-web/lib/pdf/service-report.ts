@@ -6,6 +6,7 @@
 import type { ImageRef, PageBuilder } from "./writer";
 import { PdfWriter } from "./writer";
 import { wrapText } from "./text-metrics";
+import { REPORT_KIND_TITLES, type ReportKind } from "@/lib/report-types";
 
 const PAGE_W = 595.28; // A4
 const PAGE_H = 841.89;
@@ -35,9 +36,37 @@ export type PartRow = {
   status: string;
 };
 
+export type RadiationReadingRow = {
+  location: string;
+  reading: string;
+  unit: string;
+  limit: string;
+};
+
+// Per-report-kind labels for the two meta-grid slots that mean something
+// different depending on what's being reported — everyone else (title,
+// findings heading) is looked up straight from lib/report-types.ts.
+const NEXT_FIELD_LABEL: Record<ReportKind, string> = {
+  pm: "Next Due",
+  cm: "Downtime", // special-cased below — uses downtimeHours, not nextDueDate
+  installation: "First PM Due",
+  radiation_survey: "Next Survey Due",
+  site_survey: "Target Install Date",
+  training: "Next Refresher Due",
+};
+
+const FINDINGS_TITLE: Record<ReportKind, string> = {
+  pm: "Findings & Comments",
+  cm: "Fault, Action Taken & Comments",
+  installation: "Installation Notes & Comments",
+  radiation_survey: "Observations & Recommendations",
+  site_survey: "Site Assessment Findings & Recommendations",
+  training: "Topics Covered & Notes",
+};
+
 export type ServiceReportInput = {
   id: string;
-  isPM: boolean;
+  reportKind: ReportKind;
   reportRef: string;
   datePerformed: string | null;
   performedBy: string | null;
@@ -60,6 +89,9 @@ export type ServiceReportInput = {
   diagnosticDone: string | null;
   repairStart: string | null;
   repairEnd: string | null;
+  // Asset-scoped reports populate `asset`; site-only reports (Site Survey/
+  // Training filed with no specific unit selected) populate `site` instead
+  // — schema_step41.sql made asset_id nullable for exactly this case.
   asset: {
     assetTag: string | null;
     equipmentType: string | null;
@@ -68,9 +100,19 @@ export type ServiceReportInput = {
     serialNumber: string | null;
     siteAddress: string | null;
     organizationName: string | null;
-  };
+  } | null;
+  site: {
+    address: string | null;
+    organizationName: string | null;
+  } | null;
   checklistItems: ChecklistRow[];
   parts: PartRow[];
+  radiationReadings: RadiationReadingRow[];
+  surveyMeterModel: string | null;
+  surveyMeterSerial: string | null;
+  surveyMeterCalibrationDate: string | null;
+  reportReferenceNo: string | null;
+  trainingAttendees: string | null;
 };
 
 function dataUrlToBuffer(dataUrl: string): Buffer | null {
@@ -228,6 +270,39 @@ class ReportLayout {
     }
   }
 
+  radiationReadingsTable(rows: RadiationReadingRow[]) {
+    const colLoc = MARGIN;
+    const colReading = MARGIN + 230;
+    const colUnit = MARGIN + 320;
+    const colLimit = MARGIN + 400;
+
+    const headerRow = () => {
+      this.ensure(22);
+      this.page.rect(MARGIN, this.y - 6, CONTENT_W, 20, { fill: PANEL });
+      this.page.text(colLoc, this.y, "MEASUREMENT POINT", { font: "F2", size: 8, color: SOFT });
+      this.page.text(colReading, this.y, "READING", { font: "F2", size: 8, color: SOFT });
+      this.page.text(colUnit, this.y, "UNIT", { font: "F2", size: 8, color: SOFT });
+      this.page.text(colLimit, this.y, "PNRI LIMIT", { font: "F2", size: 8, color: SOFT });
+      this.y -= 20;
+    };
+
+    headerRow();
+    for (const row of rows) {
+      const beforeY = this.y;
+      this.ensure(20);
+      if (this.y !== beforeY) headerRow();
+      this.page.text(colLoc, this.y, row.location || "—", { font: "F1", size: 9, color: INK });
+      this.page.text(colReading, this.y, row.reading || "—", { font: "F1", size: 9, color: INK });
+      this.page.text(colUnit, this.y, row.unit || "—", { font: "F1", size: 9, color: SOFT });
+      this.page.text(colLimit, this.y, row.limit || "—", { font: "F1", size: 9, color: SOFT });
+      this.page.line(MARGIN, this.y - 6, PAGE_W - MARGIN, this.y - 6, {
+        color: HAIRLINE,
+        lineWidth: 0.5,
+      });
+      this.y -= 20;
+    }
+  }
+
   image(ref: ImageRef, x: number, y: number, w: number, h: number) {
     this.page.image(ref, x, y, w, h);
   }
@@ -236,6 +311,7 @@ class ReportLayout {
 export function buildServiceReportPdf(input: ServiceReportInput, logoBytes: Buffer): Buffer {
   const layout = new ReportLayout();
   const asset = input.asset;
+  const kind = input.reportKind;
 
   // Letterhead
   const logoRef = layout.writer.embedPng(logoBytes);
@@ -244,7 +320,7 @@ export function buildServiceReportPdf(input: ServiceReportInput, logoBytes: Buff
   layout.image(logoRef, MARGIN, layout.y - logoH + 4, logoW, logoH);
 
   const titleX = PAGE_W - MARGIN - 240;
-  layout.page.text(titleX, layout.y - 4, (input.isPM ? "PREVENTIVE MAINTENANCE REPORT" : "CORRECTIVE MAINTENANCE REPORT"), {
+  layout.page.text(titleX, layout.y - 4, REPORT_KIND_TITLES[kind].toUpperCase(), {
     font: "F2",
     size: 9,
     color: BLUE,
@@ -266,43 +342,78 @@ export function buildServiceReportPdf(input: ServiceReportInput, logoBytes: Buff
   layout.y -= Math.max(logoH + 8, 55);
   layout.divider(INK, 1.4);
 
-  // Meta grid
+  // Meta grid — asset-scoped reports (PM/CM/Installation/Radiation Survey)
+  // pull Customer/Site/Asset from `asset`; site-only reports (Site Survey/
+  // Training filed with no unit selected) fall back to `site`.
+  const siteAddress = asset?.siteAddress ?? input.site?.address ?? "";
+  const organizationName = asset?.organizationName ?? input.site?.organizationName ?? "";
+  const nextFieldSlot =
+    kind === "cm"
+      ? { label: "Downtime", value: input.downtimeHours != null ? `${input.downtimeHours}h` : "" }
+      : {
+          label: NEXT_FIELD_LABEL[kind],
+          value: input.nextDueDate ? new Date(input.nextDueDate).toLocaleDateString() : "",
+        };
+  const outcomeValue =
+    input.result === "fail" ? "Needs Follow-up / Failed" : input.result === "pass" ? "Pass / Resolved" : "—";
+
   const metaPairs = [
-    { label: "Customer", value: asset.organizationName ?? "" },
-    { label: "Site", value: asset.siteAddress ?? "" },
-    { label: "Asset", value: asset.assetTag ?? "" },
+    { label: "Customer", value: organizationName },
+    { label: "Site", value: siteAddress },
+    { label: "Asset", value: asset?.assetTag ?? (asset ? "" : "— (site-level report)") },
     {
       label: "Equipment",
-      value: [asset.brand, asset.model].filter(Boolean).join(" ") || asset.equipmentType || "",
+      value: asset ? [asset.brand, asset.model].filter(Boolean).join(" ") || asset.equipmentType || "" : "",
     },
-    { label: "Serial No.", value: asset.serialNumber ?? "" },
+    { label: "Serial No.", value: asset?.serialNumber ?? "" },
     { label: "Performed By", value: input.performedBy ?? "" },
-    input.isPM
-      ? {
-          label: "Next Due",
-          value: input.nextDueDate ? new Date(input.nextDueDate).toLocaleDateString() : "",
-        }
-      : { label: "Downtime", value: input.downtimeHours != null ? `${input.downtimeHours}h` : "" },
-    {
-      label: "Outcome",
-      value: input.result === "fail" ? "Needs Follow-up / Failed" : "Pass / Resolved",
-    },
+    nextFieldSlot,
+    { label: "Outcome", value: outcomeValue },
   ];
   layout.metaGrid(metaPairs, 3);
   layout.space(6);
 
-  if (input.isPM && input.checklistItems.length > 0) {
+  if (kind === "pm" && input.checklistItems.length > 0) {
     layout.sectionTitle("Checklist");
     layout.checklistTable(input.checklistItems);
   }
 
-  if (!input.isPM && input.parts.length > 0) {
+  if (kind === "cm" && input.parts.length > 0) {
     layout.sectionTitle("Parts Replaced");
     layout.partsTable(input.parts);
   }
 
+  if (kind === "radiation_survey") {
+    if (input.radiationReadings.length > 0) {
+      layout.sectionTitle("Radiation Survey Readings");
+      layout.radiationReadingsTable(input.radiationReadings);
+    }
+    if (input.surveyMeterModel || input.surveyMeterSerial || input.surveyMeterCalibrationDate || input.reportReferenceNo) {
+      layout.sectionTitle("Survey Meter Used");
+      layout.metaGrid(
+        [
+          { label: "Meter Model", value: input.surveyMeterModel ?? "" },
+          { label: "Meter Serial No.", value: input.surveyMeterSerial ?? "" },
+          {
+            label: "Meter Cal. Date",
+            value: input.surveyMeterCalibrationDate
+              ? new Date(input.surveyMeterCalibrationDate).toLocaleDateString()
+              : "",
+          },
+          { label: "Report Reference #", value: input.reportReferenceNo ?? "" },
+        ],
+        4,
+      );
+    }
+  }
+
+  if (kind === "training" && input.trainingAttendees) {
+    layout.sectionTitle("Attendees");
+    layout.paragraph(input.trainingAttendees);
+  }
+
   if (input.findings) {
-    layout.sectionTitle(input.isPM ? "Findings & Comments" : "Fault, Action Taken & Comments");
+    layout.sectionTitle(FINDINGS_TITLE[kind]);
     layout.paragraph(input.findings);
   }
 
@@ -311,8 +422,8 @@ export function buildServiceReportPdf(input: ServiceReportInput, logoBytes: Buff
     layout.metaGrid(
       [
         { label: "Time Arrived", value: input.timeArrived ?? "" },
-        { label: input.isPM ? "Begin PM" : "Service Begin", value: input.serviceBegin ?? "" },
-        { label: input.isPM ? "PM Completed" : "Service Completed", value: input.serviceCompleted ?? "" },
+        { label: kind === "pm" ? "Begin PM" : "Service Begin", value: input.serviceBegin ?? "" },
+        { label: kind === "pm" ? "PM Completed" : "Service Completed", value: input.serviceCompleted ?? "" },
         { label: "Status", value: input.visitStatus ?? "" },
       ],
       4,

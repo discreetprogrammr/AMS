@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { reportRef } from "@/lib/format";
+import { reportKindOf, REPORT_KIND_REF_PREFIX } from "@/lib/report-types";
 
 // Streams the stored PDF (schema_step20.sql / lib/pdf/generate-and-store.ts)
 // back as a real file download. Falls back to the live-rendered report
@@ -40,8 +41,8 @@ export async function GET(
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const isPM = record.service_type !== "repair";
-  const filename = `${reportRef(record.id, isPM ? "PM" : "CM")}.pdf`;
+  const kind = reportKindOf(record.service_type);
+  const filename = `${reportRef(record.id, REPORT_KIND_REF_PREFIX[kind])}.pdf`;
 
   return new NextResponse(buffer, {
     headers: {

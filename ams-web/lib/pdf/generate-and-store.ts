@@ -6,8 +6,9 @@
 // block the user from seeing their submission succeed. The caller decides
 // how to surface a failure (both actions here append a soft warning to
 // their success redirect rather than erroring outright).
-import { buildServiceReportPdf, type ServiceReportInput } from "./service-report";
+import { buildServiceReportPdf, type ServiceReportInput, type RadiationReadingRow } from "./service-report";
 import { reportRef } from "@/lib/format";
+import { REPORT_KIND_REF_PREFIX, type ReportKind } from "@/lib/report-types";
 import { LOGO_BASE64 } from "./logo-base64";
 
 // Embedded as base64 (logo-base64.ts) rather than read from
@@ -31,8 +32,12 @@ function loadLogo(): Buffer {
 
 export type GeneratePdfParams = {
   recordId: string;
-  assetId: string;
-  isPM: boolean;
+  // Nullable — Site Survey/Training reports can be filed with no specific
+  // asset selected (schema_step41.sql), in which case siteId is required
+  // instead so the meta grid still has a Customer/Site to show.
+  assetId: string | null;
+  siteId: string | null;
+  reportKind: ReportKind;
   datePerformed: string | null;
   performedBy: string | null;
   findings: string | null;
@@ -56,6 +61,12 @@ export type GeneratePdfParams = {
   repairEnd: string | null;
   checklistItems: { section: string; item_label: string; status: string; remarks: string | null }[];
   parts: { part_name: string; quantity: number; status: string }[];
+  radiationReadings: RadiationReadingRow[];
+  surveyMeterModel: string | null;
+  surveyMeterSerial: string | null;
+  surveyMeterCalibrationDate: string | null;
+  reportReferenceNo: string | null;
+  trainingAttendees: string | null;
 };
 
 export async function generateAndStoreReportPdf(
@@ -68,18 +79,45 @@ export async function generateAndStoreReportPdf(
   params: GeneratePdfParams,
 ): Promise<{ ok: true } | { ok: false; message: string }> {
   try {
-    const { data: asset } = await supabase
-      .from("assets")
-      .select(
-        "asset_tag, equipment_type, brand, model, serial_number, sites(address), organizations(name)",
-      )
-      .eq("id", params.assetId)
-      .single();
+    let asset: {
+      asset_tag: string | null;
+      equipment_type: string | null;
+      brand: string | null;
+      model: string | null;
+      serial_number: string | null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      sites: any;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      organizations: any;
+    } | null = null;
+    if (params.assetId) {
+      const { data } = await supabase
+        .from("assets")
+        .select(
+          "asset_tag, equipment_type, brand, model, serial_number, sites(address), organizations(name)",
+        )
+        .eq("id", params.assetId)
+        .single();
+      asset = data;
+    }
+
+    // Only needed for a site-only report (no asset selected) — an
+    // asset-scoped report already gets site/org via the join above.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let site: any = null;
+    if (!params.assetId && params.siteId) {
+      const { data } = await supabase
+        .from("sites")
+        .select("address, organizations(name)")
+        .eq("id", params.siteId)
+        .single();
+      site = data;
+    }
 
     const input: ServiceReportInput = {
       id: params.recordId,
-      isPM: params.isPM,
-      reportRef: reportRef(params.recordId, params.isPM ? "PM" : "CM"),
+      reportKind: params.reportKind,
+      reportRef: reportRef(params.recordId, REPORT_KIND_REF_PREFIX[params.reportKind]),
       datePerformed: params.datePerformed,
       performedBy: params.performedBy,
       findings: params.findings,
@@ -101,15 +139,23 @@ export async function generateAndStoreReportPdf(
       diagnosticDone: params.diagnosticDone,
       repairStart: params.repairStart,
       repairEnd: params.repairEnd,
-      asset: {
-        assetTag: asset?.asset_tag ?? null,
-        equipmentType: asset?.equipment_type ?? null,
-        brand: asset?.brand ?? null,
-        model: asset?.model ?? null,
-        serialNumber: asset?.serial_number ?? null,
-        siteAddress: asset?.sites?.address ?? null,
-        organizationName: asset?.organizations?.name ?? null,
-      },
+      asset: asset
+        ? {
+            assetTag: asset.asset_tag ?? null,
+            equipmentType: asset.equipment_type ?? null,
+            brand: asset.brand ?? null,
+            model: asset.model ?? null,
+            serialNumber: asset.serial_number ?? null,
+            siteAddress: asset.sites?.address ?? null,
+            organizationName: asset.organizations?.name ?? null,
+          }
+        : null,
+      site: site
+        ? {
+            address: site.address ?? null,
+            organizationName: site.organizations?.name ?? null,
+          }
+        : null,
       checklistItems: params.checklistItems.map((i) => ({
         section: i.section,
         itemLabel: i.item_label,
@@ -121,6 +167,12 @@ export async function generateAndStoreReportPdf(
         quantity: p.quantity,
         status: p.status,
       })),
+      radiationReadings: params.radiationReadings,
+      surveyMeterModel: params.surveyMeterModel,
+      surveyMeterSerial: params.surveyMeterSerial,
+      surveyMeterCalibrationDate: params.surveyMeterCalibrationDate,
+      reportReferenceNo: params.reportReferenceNo,
+      trainingAttendees: params.trainingAttendees,
     };
 
     const pdfBuffer = buildServiceReportPdf(input, loadLogo());

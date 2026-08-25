@@ -3,13 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { StatusBadge } from "@/components/status-badge";
-
-const PM_TYPES = [
-  "preventive_maintenance",
-  "calibration",
-  "radiation_survey",
-  "water_quality_test",
-];
+import { reportKindOf, REPORT_KIND_ORDER, REPORT_KIND_LABELS, type ReportKind } from "@/lib/report-types";
 
 export default async function ReportsPage({
   searchParams,
@@ -36,7 +30,7 @@ export default async function ReportsPage({
       supabase
         .from("service_records")
         .select(
-          "id, service_type, date_performed, performed_by, result, downtime_hours, assets(serial_number, sites(address), organizations(name))",
+          "id, service_type, date_performed, performed_by, result, downtime_hours, assets(serial_number, sites(address), organizations(name)), sites(address, organizations(name))",
         )
         .order("date_performed", { ascending: false }),
     ]);
@@ -64,14 +58,13 @@ export default async function ReportsPage({
     ? resolutionHours.reduce((a, b) => a + b, 0) / resolutionHours.length
     : 0;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const pmRecords = (records ?? []).filter((r: any) =>
-    PM_TYPES.includes(r.service_type),
+  const recordsByKind = new Map<ReportKind, unknown[]>(
+    REPORT_KIND_ORDER.map((kind) => [kind, []]),
   );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const cmRecords = (records ?? []).filter(
-    (r: any) => r.service_type === "repair",
-  );
+  for (const r of (records ?? []) as any[]) {
+    recordsByKind.get(reportKindOf(r.service_type))!.push(r);
+  }
 
   return (
     <AppShell
@@ -219,19 +212,17 @@ export default async function ReportsPage({
         <SectionHeader
           kicker="Maintenance & Compliance"
           title="Exportable Report Logs"
-          hint="Audit-ready records of preventive and corrective service"
+          hint="Audit-ready records across all six report types"
         />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <HistoryCard
-            title="Preventive Maintenance"
-            records={pmRecords}
-            exportHref="/api/reports/service-records/export?type=preventive"
-          />
-          <HistoryCard
-            title="Corrective Maintenance"
-            records={cmRecords}
-            exportHref="/api/reports/service-records/export?type=corrective"
-          />
+          {REPORT_KIND_ORDER.map((kind) => (
+            <HistoryCard
+              key={kind}
+              title={REPORT_KIND_LABELS[kind]}
+              records={recordsByKind.get(kind) ?? []}
+              exportHref={`/api/reports/service-records/export?type=${kind}`}
+            />
+          ))}
         </div>
       </section>
 
@@ -252,6 +243,26 @@ export default async function ReportsPage({
               title="Corrective Maintenance Report"
               subtitle="Fault response · repair record"
               href="/reports/corrective-checklist"
+            />
+            <TemplateCard
+              title="Installation Report"
+              subtitle="New equipment commissioning"
+              href="/reports/installation"
+            />
+            <TemplateCard
+              title="Radiation Survey Test Report"
+              subtitle="PNRI compliance survey"
+              href="/reports/radiation-survey"
+            />
+            <TemplateCard
+              title="Site Survey Report"
+              subtitle="Pre-installation site assessment"
+              href="/reports/site-survey"
+            />
+            <TemplateCard
+              title="Training Report"
+              subtitle="Client staff training / orientation"
+              href="/reports/training"
             />
           </div>
         </section>
@@ -351,11 +362,11 @@ function HistoryCard({
           >
             <div className="min-w-0">
               <div className="truncate text-sm text-ink">
-                {r.assets?.sites?.address ?? "—"}
+                {r.assets?.sites?.address ?? r.sites?.address ?? "—"}
                 {r.assets?.serial_number ? ` · SN ${r.assets.serial_number}` : ""}
               </div>
               <div className="truncate text-xs text-slate-500">
-                {r.assets?.organizations?.name ?? ""}
+                {r.assets?.organizations?.name ?? r.sites?.organizations?.name ?? ""}
                 {r.performed_by ? ` · ${r.performed_by}` : ""}
               </div>
             </div>

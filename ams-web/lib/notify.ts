@@ -25,7 +25,10 @@ import { ticketRef, assetLabel } from "./format";
 
 const APP_NAME = "HorizonCare360";
 
-function wrapEmail(title: string, bodyHtml: string): string {
+// Exported so lib/report-digest.ts (Scheduled report digests) can reuse the
+// exact same header/footer chrome instead of a second copy drifting out of
+// sync with this one.
+export function wrapEmail(title: string, bodyHtml: string): string {
   return `
     <div style="font-family: -apple-system, Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1a1a1a; line-height: 1.5;">
       <p style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; margin: 0 0 6px;">${APP_NAME} — Pacific Horizon Tek</p>

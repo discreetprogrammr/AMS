@@ -1645,3 +1645,26 @@ Verified with `npx tsc --noEmit` — clean aside from the two pre-existing, expe
 5. Add a per-client override for one of your test organizations — confirm it appears in the overrides table, and that signing in as a client under that org now shows their dashboard/analytics using the override's numbers instead of the global default, while staff's fleet-wide view still shows the global default unchanged.
 6. Back-date a ticket under that overridden client and hit `/api/cron/sla-check` — confirm the escalation (or lack of one) reflects the override's target hours, not the global ones.
 7. Click **Remove** on the override — confirm that client's dashboard reverts to showing the global default again.
+
+## Follow-up — Scheduled report digests
+
+Sixth item off the list. Every metric on Analytics and Alerts was already correct, but only ever seen if someone remembered to open the app. This adds a weekly, staff-only email — every Monday at 8am — summarizing the last 7 days plus a live snapshot: tickets opened/resolved, average repair time, current open backlog, current fleet uptime, SLA breaches in the past week, and current low/out-of-stock parts counts.
+
+**No new schema.** Deliberately reuses tables that already exist — `service_tickets`, `assets`, `sla_escalations`, `low_stock_alerts` — rather than adding a digest-specific ledger. There's also nothing to de-dupe: unlike the SLA/PM/low-stock cron jobs, which guard against re-raising the same event on every run of a frequent job, this is a scheduled summary, not an event — Vercel Cron fires it once, on its own weekly schedule, and each firing is naturally a distinct week.
+
+**Staff-only, by explicit scoping choice** — goes to the same `STAFF_NOTIFICATION_EMAIL` distribution address the SLA/PM/low-stock alerts already use, so no new env var either. No per-client digest yet (each client already has their own live Analytics/Dashboard view, and this can be revisited later if wanted).
+
+**What's new:**
+- `lib/report-digest.ts` — `buildWeeklyDigest()` (data) and `sendWeeklyDigest()` (data + email)
+- `app/api/cron/weekly-digest/route.ts` — same dual-auth (`CRON_SECRET` bearer or signed-in Super Admin) shape as the other four cron routes
+- `vercel.json` — new cron entry, Mondays at 8am
+- `lib/notify.ts` — `wrapEmail()` exported so the digest reuses the same header/footer chrome as every other notification email instead of a second copy
+
+Verified with `npx tsc --noEmit` — clean aside from the two pre-existing, expected `Cannot find module` errors (`web-push`, `papaparse`).
+
+## Setup steps
+
+1. Push to GitHub and let Vercel redeploy. No new schema, no new env vars.
+2. As a signed-in Super Admin, hit `/api/cron/weekly-digest` directly in the browser (same demo/testing path as the other cron routes) — confirm it returns `{ "sent": true, "data": {...} }` and that `STAFF_NOTIFICATION_EMAIL` receives the digest email within a minute or two.
+3. Check the numbers in the email against what Analytics/Alerts/Inventory show in the app right now — they should match (tickets, uptime %, SLA breaches, low/out-of-stock counts).
+4. No action needed for the real Monday 8am run — Vercel Cron will hit it automatically.

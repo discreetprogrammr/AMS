@@ -100,15 +100,40 @@ export function DashboardGrid({
   // What react-grid-layout actually renders — w/h always derived fresh
   // from each item's `size`, never stored independently, so there's no
   // way for a saved size and its footprint to ever drift apart.
-  const rglLayout: Layout[] = items.map((it) => ({ i: it.i, x: it.x, y: it.y, ...SIZE_DIMENSIONS[it.size] }));
+  //
+  // Root cause of the browser-freeze incident: this used to be recomputed
+  // as a brand-new array (with brand-new object literals) on *every*
+  // render, unmemoized, and handed straight to react-grid-layout's
+  // `layout` prop. RGL's own componentDidUpdate compares the incoming
+  // layout against its previous one and, on anything it treats as a
+  // change (a fresh object reference was enough), recomputes and fires
+  // `onLayoutChange` — which called setItems — which triggered a
+  // re-render — which built a fresh `rglLayout` array again — forever,
+  // synchronously, with no yield back to the browser. That's exactly
+  // what "Page Unresponsive" looks like. Memoizing on `items` means a
+  // new array is only ever built when the data actually changes.
+  const rglLayout: Layout[] = useMemo(
+    () => items.map((it) => ({ i: it.i, x: it.x, y: it.y, ...SIZE_DIMENSIONS[it.size] })),
+    [items],
+  );
 
   function handlePositionsChange(next: Layout[]) {
-    setItems((prev) =>
-      prev.map((it) => {
+    setItems((prev) => {
+      const changed = prev.some((it) => {
+        const match = next.find((n) => n.i === it.i);
+        return match && (match.x !== it.x || match.y !== it.y);
+      });
+      // Extra belt-and-suspenders guard, on top of the useMemo above: RGL
+      // can call onLayoutChange with positions identical to what we
+      // already have (e.g. on mount). Skipping the setState entirely when
+      // nothing actually moved means there's no re-render to feed a new
+      // array back into RGL in the first place.
+      if (!changed) return prev;
+      return prev.map((it) => {
         const match = next.find((n) => n.i === it.i);
         return match ? { ...it, x: match.x, y: match.y } : it;
-      }),
-    );
+      });
+    });
   }
 
   function setWidgetSize(id: string, size: WidgetSize) {
@@ -176,6 +201,8 @@ export function DashboardGrid({
           rowHeight={ROW_HEIGHT}
           isDraggable={editMode}
           isResizable={false}
+          compactType={null}
+          preventCollision
           draggableCancel="a, button"
           onLayoutChange={handlePositionsChange}
           margin={[16, 16]}

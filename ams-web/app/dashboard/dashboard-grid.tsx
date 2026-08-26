@@ -204,7 +204,7 @@ export function DashboardGrid({
           compactType={null}
           preventCollision
           draggableCancel="a, button"
-          onLayoutChange={handlePositionsChange}
+          onDragStop={(layout: Layout[]) => handlePositionsChange(layout)}
           margin={[16, 16]}
         >
           {widgets.map((w) => {

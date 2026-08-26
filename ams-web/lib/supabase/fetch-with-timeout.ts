@@ -14,13 +14,28 @@
 // logs it to error_logs per the Error Monitoring feature) instead of
 // hanging silently for minutes. The user sees an error in ~20s and can just
 // retry, rather than staring at a blank loading screen indefinitely.
+// lib/supabase/middleware.ts (which uses this too) runs on the Vercel Edge
+// Runtime for every request, not full Node.js — a much more restricted
+// environment. Deliberately built from only the oldest, most universally
+// supported primitives (AbortController + setTimeout) rather than newer
+// static helpers like AbortSignal.timeout()/AbortSignal.any(), which are
+// less certain to exist there and would otherwise risk breaking every
+// single request if unsupported.
 const SUPABASE_FETCH_TIMEOUT_MS = 20_000;
 
 export function fetchWithTimeout(
   input: RequestInfo | URL,
   init: RequestInit = {},
 ): Promise<Response> {
-  const timeoutSignal = AbortSignal.timeout(SUPABASE_FETCH_TIMEOUT_MS);
-  const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
-  return fetch(input, { ...init, signal });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SUPABASE_FETCH_TIMEOUT_MS);
+
+  // If the caller already passed a signal, honor its abort too — but don't
+  // depend on AbortSignal.any() to combine them.
+  if (init.signal) {
+    if (init.signal.aborted) controller.abort();
+    else init.signal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
 }

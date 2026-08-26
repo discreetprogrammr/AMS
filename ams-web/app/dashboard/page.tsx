@@ -6,7 +6,9 @@ import { NotificationBell } from "@/components/notification-bell";
 import { SearchBar } from "@/components/search-bar";
 import { ticketRef, assetLabel } from "@/lib/format";
 import { hoursBetween, getSlaPolicyMap, resolveSlaTargets } from "@/lib/sla";
-import { DashboardGrid, type DashboardWidget } from "./dashboard-grid";
+// Type-only import, deliberately — this pulls in nothing at runtime (no
+// react-grid-layout), since DashboardGrid itself is rolled back below.
+import type { DashboardWidget } from "./dashboard-grid";
 import type { LayoutItem } from "./actions";
 import {
   KpiCard,
@@ -563,7 +565,18 @@ export default async function DashboardPage({
           You don&apos;t have access to that page. Contact your Super Admin if you think this is wrong.
         </p>
       )}
-      <DashboardGrid widgets={widgets} savedLayout={savedLayout} />
+      {/* EMERGENCY ROLLBACK — <DashboardGrid> (react-grid-layout-based
+          drag/resize) was freezing the browser tab solid ("Page
+          Unresponsive") client-side even though the server responded fine.
+          Swapped back to a plain static grid — same widgets, same data, no
+          editing — to restore access immediately. Re-enable DashboardGrid
+          only after the freeze is reproduced and fixed outside of
+          production. savedLayout is intentionally unused here for now. */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {widgets.map((w) => (
+          <div key={w.id}>{w.content}</div>
+        ))}
+      </div>
     </AppShell>
   );
 }

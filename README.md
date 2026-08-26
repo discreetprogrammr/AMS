@@ -1845,3 +1845,19 @@ Verified with `npx tsc --noEmit` — clean aside from the *three* expected `Cann
 8. While in Edit Layout, confirm clicking a link inside a card (e.g. "View ticket queue") still navigates normally instead of starting a drag.
 9. Shrink your browser to phone width — confirm the Dashboard shows a plain stacked list, always at full detail, with no Edit Layout control.
 10. Sign in as a different user (staff and client) — confirm each person's saved layout is their own.
+
+## Incident — Login/Dashboard hanging for minutes, then 504
+
+**What happened:** Right after the widget redesign above shipped, login and the Dashboard started hanging indefinitely (Vercel logs showed `GET /dashboard` sitting with no status for minutes, eventually resolving to `504 FUNCTION_INVOCATION_TIMEOUT` after the full 5-minute function limit). Two contributing causes, found via Vercel's Logs tab (click a request → expand the detail panel):
+
+1. **Region mismatch.** Vercel Functions default to `iad1` (Washington, D.C.) for new projects; this Supabase project runs in `sin1` (Singapore). Every one of the Dashboard's ~20 queries was round-tripping across the Pacific before any of them could resolve. Fixed by pinning `"regions": ["sin1"]` in `vercel.json` (Hobby plan allows one region — this fully replaces the default rather than adding to it).
+2. **No timeout on Supabase calls, even after the region fix.** The `/dashboard` route fires ~20 queries at once via `Promise.all`. Supabase's own JS client has no built-in timeout — if their connection pooler stalls handing out even one connection (they've logged several pooler incidents on [status.supabase.com](https://status.supabase.com) this same week), that one query just never resolves *or* rejects, so `Promise.all` never settles, and the page hangs until Vercel force-kills the whole function 5 minutes later. This reproduced even from the correct `sin1` region, confirming it wasn't purely latency.
+
+**Fix — `lib/supabase/fetch-with-timeout.ts`** (new): every Supabase client in the app (`server.ts`, `middleware.ts`, `client.ts`, `service-role.ts`) now passes `global: { fetch: fetchWithTimeout }`, which wraps every underlying HTTP call in a 20-second `AbortSignal.timeout()`. A stalled request now fails fast with a real error (caught by `app/global-error.tsx`, and logged to `error_logs` per the Error Monitoring feature) instead of hanging silently for minutes. This doesn't fix Supabase-side pooler stalls if they happen — nothing on our end can — but it turns "completely unusable for 5 minutes, no feedback" into "an error appears in ~20 seconds, just retry."
+
+No schema changes, no new dependencies. Verified with `npx tsc --noEmit` — same three pre-existing `Cannot find module` errors, no new ones.
+
+**Setup steps:**
+1. Push to GitHub and let Vercel redeploy.
+2. Try logging in — should be fast now (region fix). If Supabase's pooler is still having issues that day, a failed attempt should now show a visible error within ~20 seconds instead of hanging — just retry.
+3. Check Vercel Logs for a `/dashboard` request afterward — "Received in" should say Singapore (`sin1`), not Washington, D.C.

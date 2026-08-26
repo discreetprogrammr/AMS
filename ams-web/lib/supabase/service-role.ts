@@ -1,4 +1,5 @@
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { fetchWithTimeout } from "./fetch-with-timeout";
 
 // Service-role client for code that runs with no signed-in user at all —
 // currently just the PM-due cron job (app/api/cron/pm-due/route.ts).
@@ -21,5 +22,6 @@ export function createServiceRoleClient() {
 
   return createSupabaseClient(url, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
+    global: { fetch: fetchWithTimeout },
   });
 }

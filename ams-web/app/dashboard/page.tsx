@@ -26,7 +26,10 @@ import {
 
 // TEMPORARY — see the diagnostic split near the bottom of DashboardPage.
 // true = plain static grid (known-good rollback), false = DashboardGrid.
-const DEBUG_STATIC_GRID = true;
+// Static grid just confirmed fast + reliable across two reloads — flipping
+// back to false to confirm the hang reproduces specifically with
+// DashboardGrid, isolating it definitively before digging into why.
+const DEBUG_STATIC_GRID = false;
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);

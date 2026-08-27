@@ -24,6 +24,10 @@ import {
   type ComplianceItem,
 } from "./widget-cards";
 
+// TEMPORARY — see the diagnostic split near the bottom of DashboardPage.
+// true = plain static grid (known-good rollback), false = DashboardGrid.
+const DEBUG_STATIC_GRID = true;
+
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -581,6 +585,9 @@ export default async function DashboardPage({
     },
   ];
 
+  // eslint-disable-next-line no-console
+  console.log("[timing] dashboard.reachedReturn");
+
   return (
     <AppShell
       profile={profile}
@@ -615,7 +622,24 @@ export default async function DashboardPage({
           You don&apos;t have access to that page. Contact your Super Admin if you think this is wrong.
         </p>
       )}
-      <DashboardGrid widgets={widgets} savedLayout={savedLayout} />
+      {/* TEMPORARY diagnostic split — every Supabase query on this page
+          confirmed fast (all ~450ms) via [timing] logs, yet /dashboard still
+          hangs the full 300s and times out. This isolates whether the hang
+          is inside DashboardGrid's render/serialization specifically, or
+          somewhere else (Next.js still has to serialize this same widgets
+          array either way, so a static grid ruling it out points at
+          DashboardGrid/react-grid-layout itself; still hanging with the
+          static grid points elsewhere). DEBUG_STATIC_GRID flipped by hand
+          for one deploy at a time — remove this whole split once found. */}
+      {DEBUG_STATIC_GRID ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {widgets.map((w) => (
+            <div key={w.id}>{w.content}</div>
+          ))}
+        </div>
+      ) : (
+        <DashboardGrid widgets={widgets} savedLayout={savedLayout} />
+      )}
     </AppShell>
   );
 }

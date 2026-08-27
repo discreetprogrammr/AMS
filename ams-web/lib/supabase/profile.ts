@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "./server";
 import { isStaffRole, isSuperAdminRole, type Role } from "./roles";
+import { timed } from "./timed";
 
 export type Profile = {
   id: string;
@@ -30,15 +31,18 @@ export async function getProfile(): Promise<Profile | null> {
 
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await timed("getProfile.getUser", supabase.auth.getUser());
 
   if (!user) return null;
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("id, full_name, role, organization_id, avatar_url, hidden_modules")
-    .eq("id", user.id)
-    .single();
+  const { data: profile } = await timed(
+    "getProfile.profileSelect",
+    supabase
+      .from("profiles")
+      .select("id, full_name, role, organization_id, avatar_url, hidden_modules")
+      .eq("id", user.id)
+      .single(),
+  );
 
   return (profile as Profile) ?? null;
 }

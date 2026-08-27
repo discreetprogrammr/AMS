@@ -6,6 +6,7 @@ import { NotificationBell } from "@/components/notification-bell";
 import { SearchBar } from "@/components/search-bar";
 import { ticketRef, assetLabel } from "@/lib/format";
 import { hoursBetween, getSlaPolicyMap, resolveSlaTargets } from "@/lib/sla";
+import { timed } from "@/lib/supabase/timed";
 import { DashboardGrid, type DashboardWidget } from "./dashboard-grid";
 import type { LayoutItem } from "./actions";
 import {
@@ -44,8 +45,26 @@ export default async function DashboardPage({
 }: {
   searchParams?: { access_denied?: string };
 }) {
+  // TEMPORARY — pins down which package versions actually shipped in this
+  // deployment (the SDK upgrade meant to fix the Supabase auth-js lock
+  // deadlock had no observed effect on the 300s /dashboard hang, so this
+  // confirms whether it was even installed before chasing further theories).
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const supabaseJsPkg = require("@supabase/supabase-js/package.json");
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const ssrPkg = require("@supabase/ssr/package.json");
+    // eslint-disable-next-line no-console
+    console.log(
+      `[timing] versions supabase-js=${supabaseJsPkg.version} ssr=${ssrPkg.version}`,
+    );
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.log("[timing] version check failed", err);
+  }
+
   const supabase = await createClient();
-  const profile = await getProfile();
+  const profile = await timed("dashboard.getProfile", getProfile());
   const isStaff = isStaffRole(profile?.role);
 
   // Editable/movable/resizable widgets (schema_step45.sql). Fetched
@@ -53,7 +72,10 @@ export default async function DashboardPage({
   // Profile type everyone else reads too — this jsonb blob is only ever
   // relevant on this one page.
   const { data: layoutRow } = profile
-    ? await supabase.from("profiles").select("dashboard_layout").eq("id", profile.id).single()
+    ? await timed(
+        "dashboard.layoutRowSelect",
+        supabase.from("profiles").select("dashboard_layout").eq("id", profile.id).single(),
+      )
     : { data: null };
   const savedLayout = (layoutRow?.dashboard_layout ?? null) as LayoutItem[] | null;
 
@@ -63,7 +85,7 @@ export default async function DashboardPage({
   // intentionally doesn't try). A client_viewer sees their own org's
   // override if one's been set, same target lib/sla-escalation.ts actually
   // escalates their tickets against (schema_step40.sql).
-  const slaPolicyMap = await getSlaPolicyMap(supabase);
+  const slaPolicyMap = await timed("dashboard.getSlaPolicyMap", getSlaPolicyMap(supabase));
   const slaTargets = resolveSlaTargets(slaPolicyMap, isStaff ? null : (profile?.organization_id ?? null));
 
   const [
@@ -86,110 +108,140 @@ export default async function DashboardPage({
     { data: latestAlerts },
     { data: attentionAssets },
   ] = await Promise.all([
-    supabase.from("assets").select("*", { count: "exact", head: true }),
-    supabase
-      .from("assets")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "operational"),
-    supabase
-      .from("assets")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "attention"),
-    supabase
-      .from("assets")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "down"),
-    supabase
-      .from("assets")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "unserviceable"),
-    supabase
-      .from("compliance_certificates")
-      .select("id, certificate_type, expiry_date, assets(asset_tag, serial_number, sites(address))", {
-        count: "exact",
-      })
-      .lte("expiry_date", daysFromNow(30))
-      .order("expiry_date", { ascending: true }),
+    timed("q.totalAssets", supabase.from("assets").select("*", { count: "exact", head: true })),
+    timed(
+      "q.operationalCount",
+      supabase.from("assets").select("*", { count: "exact", head: true }).eq("status", "operational"),
+    ),
+    timed(
+      "q.attentionCount",
+      supabase.from("assets").select("*", { count: "exact", head: true }).eq("status", "attention"),
+    ),
+    timed(
+      "q.downCount",
+      supabase.from("assets").select("*", { count: "exact", head: true }).eq("status", "down"),
+    ),
+    timed(
+      "q.unserviceableCount",
+      supabase.from("assets").select("*", { count: "exact", head: true }).eq("status", "unserviceable"),
+    ),
+    timed(
+      "q.expiringCerts",
+      supabase
+        .from("compliance_certificates")
+        .select("id, certificate_type, expiry_date, assets(asset_tag, serial_number, sites(address))", {
+          count: "exact",
+        })
+        .lte("expiry_date", daysFromNow(30))
+        .order("expiry_date", { ascending: true }),
+    ),
     // Warranty half of the same "Compliance & Warranty" panel below —
     // assets.warranty_end_date already existed but had never been
     // surfaced anywhere in the app until now. RLS ("read own org assets
     // or all if staff") scopes this the same way every other assets query
     // already does.
-    supabase
-      .from("assets")
-      .select("id, asset_tag, serial_number, warranty_end_date, sites(address)", {
-        count: "exact",
-      })
-      .not("warranty_end_date", "is", null)
-      .lte("warranty_end_date", daysFromNow(30))
-      .order("warranty_end_date", { ascending: true }),
-    supabase
-      .from("assets")
-      .select("id, asset_tag, serial_number, next_service_due, sites(address)")
-      .not("next_service_due", "is", null)
-      .lte("next_service_due", daysFromNow(30))
-      .order("next_service_due", { ascending: true }),
-    supabase
-      .from("service_tickets")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "open"),
-    supabase
-      .from("service_tickets")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "in_progress"),
-    supabase
-      .from("service_tickets")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "parts_pending"),
-    supabase
-      .from("service_tickets")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "closed"),
-    supabase
-      .from("service_tickets")
-      .select("id, created_at, first_response_at, resolved_at")
-      .gte("created_at", daysAgo(30)),
-    supabase
-      .from("service_tickets")
-      .select("id, created_at, resolved_at")
-      .not("resolved_at", "is", null)
-      .gte("resolved_at", daysAgo(35)),
+    timed(
+      "q.expiringWarranties",
+      supabase
+        .from("assets")
+        .select("id, asset_tag, serial_number, warranty_end_date, sites(address)", {
+          count: "exact",
+        })
+        .not("warranty_end_date", "is", null)
+        .lte("warranty_end_date", daysFromNow(30))
+        .order("warranty_end_date", { ascending: true }),
+    ),
+    timed(
+      "q.dueAssets",
+      supabase
+        .from("assets")
+        .select("id, asset_tag, serial_number, next_service_due, sites(address)")
+        .not("next_service_due", "is", null)
+        .lte("next_service_due", daysFromNow(30))
+        .order("next_service_due", { ascending: true }),
+    ),
+    timed(
+      "q.openTicketsCount",
+      supabase.from("service_tickets").select("*", { count: "exact", head: true }).eq("status", "open"),
+    ),
+    timed(
+      "q.inProgressTicketsCount",
+      supabase
+        .from("service_tickets")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "in_progress"),
+    ),
+    timed(
+      "q.partsPendingTicketsCount",
+      supabase
+        .from("service_tickets")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "parts_pending"),
+    ),
+    timed(
+      "q.resolvedTicketsCount",
+      supabase.from("service_tickets").select("*", { count: "exact", head: true }).eq("status", "closed"),
+    ),
+    timed(
+      "q.slaTickets",
+      supabase
+        .from("service_tickets")
+        .select("id, created_at, first_response_at, resolved_at")
+        .gte("created_at", daysAgo(30)),
+    ),
+    timed(
+      "q.slaHistoryTickets",
+      supabase
+        .from("service_tickets")
+        .select("id, created_at, resolved_at")
+        .not("resolved_at", "is", null)
+        .gte("resolved_at", daysAgo(35)),
+    ),
     // RLS restricts this to staff only — a client_viewer's query just comes
     // back empty, no error, so it's safe to always run this. new_data is a
     // full row snapshot (see log_audit() in schema.sql), so table-specific
     // fields like an asset's asset_tag are already right there — no extra
     // join needed for most rows.
-    supabase
-      .from("audit_log")
-      .select(
-        "id, table_name, record_id, action, changed_at, old_data, new_data, profiles(full_name)",
-      )
-      .order("changed_at", { ascending: false })
-      .limit(8),
+    timed(
+      "q.recentActivity",
+      supabase
+        .from("audit_log")
+        .select(
+          "id, table_name, record_id, action, changed_at, old_data, new_data, profiles(full_name)",
+        )
+        .order("changed_at", { ascending: false })
+        .limit(8),
+    ),
     // Same RLS note as audit_log above — alerts is staff-only (Step 10), so
     // a client_viewer's query just comes back with count 0, no error.
-    supabase
-      .from("alerts")
-      .select("*", { count: "exact", head: true })
-      .eq("is_read", false),
+    timed(
+      "q.unreadAlertsCount",
+      supabase.from("alerts").select("*", { count: "exact", head: true }).eq("is_read", false),
+    ),
     // Feeds the bell's dropdown — same RLS note applies (staff-only table,
     // client_viewer just gets an empty array back).
-    supabase
-      .from("alerts")
-      .select("id, title, severity, is_read, created_at")
-      .order("created_at", { ascending: false })
-      .limit(5),
+    timed(
+      "q.latestAlerts",
+      supabase
+        .from("alerts")
+        .select("id, title, severity, is_read, created_at")
+        .order("created_at", { ascending: false })
+        .limit(5),
+    ),
     // Client-facing "Equipment Alerts" card — unlike the `alerts` table
     // above (staff-only, manually raised triage alerts), this is derived
     // straight from asset status, which a client can already see on
     // /assets. RLS ("read own org assets or all if staff") scopes this to
     // just the signed-in org for a client; only rendered for clients
     // below, so the fleet-wide result for staff is simply unused.
-    supabase
-      .from("assets")
-      .select("id, asset_tag, serial_number, status, sites(address)")
-      .in("status", ["down", "attention"])
-      .order("status"),
+    timed(
+      "q.attentionAssets",
+      supabase
+        .from("assets")
+        .select("id, asset_tag, serial_number, status, sites(address)")
+        .in("status", ["down", "attention"])
+        .order("status"),
+    ),
   ]);
 
   const operationalPct = totalAssets
@@ -291,10 +343,10 @@ export default async function DashboardPage({
     ),
   );
   const { data: activityAssets } = ticketAssetIds.length
-    ? await supabase
-        .from("assets")
-        .select("id, asset_tag, organizations(name)")
-        .in("id", ticketAssetIds)
+    ? await timed(
+        "q.activityAssets",
+        supabase.from("assets").select("id, asset_tag, organizations(name)").in("id", ticketAssetIds),
+      )
     : // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ({ data: [] as any[] } as { data: any[] });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -2,6 +2,7 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { NAV_MODULES, ALWAYS_ACCESSIBLE_HREFS } from "@/lib/nav-items";
 import { fetchWithTimeout } from "./fetch-with-timeout";
+import { timed } from "./timed";
 
 // Given a request path, finds which sidebar module (if any) it belongs to
 // — the longest-matching href wins, same rule components/sidebar.tsx uses
@@ -55,7 +56,7 @@ export async function updateSession(request: NextRequest) {
 
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await timed(`middleware.getUser ${request.nextUrl.pathname}`, supabase.auth.getUser());
 
   if (!user && !request.nextUrl.pathname.startsWith("/login")) {
     const url = request.nextUrl.clone();
@@ -68,11 +69,10 @@ export async function updateSession(request: NextRequest) {
     const matched = ALWAYS_ACCESSIBLE_HREFS.includes(pathname) ? undefined : matchModule(pathname);
 
     if (matched && !ALWAYS_ACCESSIBLE_HREFS.includes(matched.href)) {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role, hidden_modules")
-        .eq("id", user.id)
-        .single();
+      const { data: profile } = await timed(
+        `middleware.profileSelect ${pathname}`,
+        supabase.from("profiles").select("role, hidden_modules").eq("id", user.id).single(),
+      );
 
       // super_admin is never subject to hidden_modules at all — there's
       // normally only one, and app/user-access excludes Super Admin rows

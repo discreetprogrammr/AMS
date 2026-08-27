@@ -1,3 +1,4 @@
+import { Fragment, type ReactElement } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile, isStaffRole } from "@/lib/supabase/profile";
@@ -440,7 +441,13 @@ export default async function DashboardPage({
   // dashboard_layout always takes over from these defaults once one
   // exists — role-conditional membership below is the only thing that
   // still varies by who's signed in.
-  const widgets: DashboardWidget[] = [
+  // Built with each widget's rendered `content` element inline for ease of
+  // authoring — but see the comment on DashboardGrid's `children` prop:
+  // that content is passed down as ordinary JSX children, not as part of
+  // the `widgets` prop, so `widgetDefs` gets split into a content-free
+  // `widgets` (plain metadata, guaranteed serializable) and the elements
+  // themselves (rendered as children, same order) right below.
+  const widgetDefs: (DashboardWidget & { content: ReactElement })[] = [
     {
       id: "kpi-total-assets",
       defaultSize: "sm",
@@ -590,6 +597,8 @@ export default async function DashboardPage({
     },
   ];
 
+  const widgets: DashboardWidget[] = widgetDefs.map(({ content: _content, ...meta }) => meta);
+
   // eslint-disable-next-line no-console
   console.log("[timing] dashboard.reachedReturn");
 
@@ -629,21 +638,24 @@ export default async function DashboardPage({
       )}
       {/* TEMPORARY diagnostic split — every Supabase query on this page
           confirmed fast (all ~450ms) via [timing] logs, yet /dashboard still
-          hangs the full 300s and times out. This isolates whether the hang
-          is inside DashboardGrid's render/serialization specifically, or
-          somewhere else (Next.js still has to serialize this same widgets
-          array either way, so a static grid ruling it out points at
-          DashboardGrid/react-grid-layout itself; still hanging with the
-          static grid points elsewhere). DEBUG_STATIC_GRID flipped by hand
-          for one deploy at a time — remove this whole split once found. */}
+          hangs the full 300s and times out. Root cause narrowed to prop
+          serialization of widget elements across the DashboardGrid Server
+          → Client boundary (see comments on DashboardWidget /
+          DashboardGrid's children prop); elements now pass as children
+          instead. DEBUG_STATIC_GRID flipped by hand for one deploy at a
+          time — remove this whole split once confirmed fixed. */}
       {DEBUG_STATIC_GRID ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {widgets.map((w) => (
+          {widgetDefs.map((w) => (
             <div key={w.id}>{w.content}</div>
           ))}
         </div>
       ) : (
-        <DashboardGrid widgets={widgets} savedLayout={savedLayout} />
+        <DashboardGrid widgets={widgets} savedLayout={savedLayout}>
+          {widgetDefs.map((w) => (
+            <Fragment key={w.id}>{w.content}</Fragment>
+          ))}
+        </DashboardGrid>
       )}
     </AppShell>
   );

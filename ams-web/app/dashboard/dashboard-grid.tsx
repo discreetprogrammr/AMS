@@ -1,6 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition, cloneElement, type ReactElement } from "react";
+import {
+  Children,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+  cloneElement,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import GridLayout, { type Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import { saveDashboardLayout, type LayoutItem, type WidgetSize } from "./actions";
@@ -61,15 +71,21 @@ const SIZE_DIMENSIONS: Record<WidgetSize, { w: number; h: number }> = {
   lg: { w: 6, h: 12 },
 };
 
+// Metadata only — deliberately NOT carrying a `content: ReactElement` field
+// anymore. Second root cause of the freeze incidents: this array used to
+// hold one already-built ReactElement per widget and got passed straight
+// into DashboardGrid as a prop. Every one of those elements' own props
+// (ticket lists, compliance dates, activity rows — real Supabase data) had
+// to be serialized across the Server → Client Component boundary as part
+// of *this* prop, and that serialization pass was where the request
+// actually hung — server logs showed every single Supabase query
+// finishing in under a second, reaching the final `return` statement, and
+// then nothing: no error, no response, until Vercel's own 300s watchdog
+// killed the function. Passing elements as `children` instead (the
+// conventional, well-trodden Server→Client slot pattern) sidesteps
+// whatever in that specific prop-serialization path was hanging.
 export type DashboardWidget = {
   id: string;
-  // An already-instantiated element (built server-side in page.tsx with
-  // its data) rather than raw content — DashboardGrid injects the current
-  // `size` into it via cloneElement right before rendering, since
-  // page.tsx can't know a size chosen later, client-side, ahead of time.
-  // The underlying components (widget-cards.tsx) are Client Components
-  // specifically so this actually re-renders when size changes.
-  content: ReactElement;
   defaultSize: WidgetSize;
   defaultPosition: { x: number; y: number };
 };
@@ -110,10 +126,25 @@ function ResetIcon() {
 export function DashboardGrid({
   widgets,
   savedLayout,
+  children,
 }: {
   widgets: DashboardWidget[];
   savedLayout: LayoutItem[] | null;
+  // The actual widget elements (KpiCard, ActiveTicketsCard, etc.), in the
+  // exact same order as `widgets` — page.tsx renders them as ordinary JSX
+  // children rather than building them into the `widgets` array, see the
+  // comment on DashboardWidget above for why. Matched back up to each
+  // widget's id purely by array position (Children.toArray preserves
+  // order), not by React's internal `.key`, since key values aren't a
+  // reliable public API to read back out.
+  children: ReactNode;
 }) {
+  const contentById = useMemo(() => {
+    const childArray = Children.toArray(children) as ReactElement[];
+    return new Map(widgets.map((w, i) => [w.id, childArray[i]]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [widgets, children]);
+
   const defaultItems: LayoutItem[] = useMemo(
     () => widgets.map((w) => ({ i: w.id, x: w.defaultPosition.x, y: w.defaultPosition.y, size: w.defaultSize })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -273,7 +304,10 @@ export function DashboardGrid({
                     ))}
                   </div>
                 )}
-                {cloneElement(w.content, { size })}
+                {(() => {
+                  const content = contentById.get(w.id);
+                  return content ? cloneElement(content, { size }) : null;
+                })()}
               </div>
             );
           })}
@@ -289,9 +323,10 @@ export function DashboardGrid({
             const ib = items.find((i) => i.i === b.id);
             return (ia?.y ?? 0) - (ib?.y ?? 0) || (ia?.x ?? 0) - (ib?.x ?? 0);
           })
-          .map((w) => (
-            <div key={w.id}>{cloneElement(w.content, { size: "lg" as WidgetSize })}</div>
-          ))}
+          .map((w) => {
+            const content = contentById.get(w.id);
+            return <div key={w.id}>{content ? cloneElement(content, { size: "lg" as WidgetSize }) : null}</div>;
+          })}
       </div>
     </div>
   );

@@ -1,14 +1,54 @@
 "use client";
 
-import { useMemo, useState, useTransition, cloneElement, type ReactElement } from "react";
-import GridLayout, { WidthProvider, type Layout } from "react-grid-layout";
+import { useEffect, useMemo, useRef, useState, useTransition, cloneElement, type ReactElement } from "react";
+import GridLayout, { type Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import { saveDashboardLayout, type LayoutItem, type WidgetSize } from "./actions";
 
-const ResponsiveGridLayout = WidthProvider(GridLayout);
 const COLS = 12;
 const ROW_HEIGHT = 30;
 const SIZES: WidgetSize[] = ["sm", "md", "lg"];
+// Sane default matching react-grid-layout's own WidthProvider default —
+// only ever visible for the first frame before ResizeObserver reports the
+// real width.
+const DEFAULT_GRID_WIDTH = 1280;
+
+// Deliberately NOT using react-grid-layout's own WidthProvider HOC here —
+// root cause of the recurring browser-freeze incidents. WidthProvider is a
+// class component that calls `this.setState({ width })` on *every single*
+// ResizeObserver notification with no check for whether the width actually
+// changed, and class components re-render on every setState regardless of
+// whether the new value differs. If a render nudges the container's
+// measured width by even a sub-pixel (e.g. a scrollbar toggling, or the
+// grid's own re-render changing document height right at the viewport
+// boundary), that re-triggers the observer, which re-renders, which can
+// nudge it again — a feedback loop that spans React's async render cycle,
+// so it never trips the browser's own same-frame ResizeObserver loop
+// guard. That matches every symptom seen: freezes on mount (not just
+// during drag), no console errors, no server involvement at all.
+// This replaces it with a function-component + useState version of the
+// same idea, but with an actual equality check — React 18 bails out of
+// re-rendering a function component when useState's setter is called with
+// a value that hasn't changed, which is exactly the safety net
+// WidthProvider's class-component implementation doesn't have.
+function useContainerWidth() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(DEFAULT_GRID_WIDTH);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+
+    const observer = new ResizeObserver((entries) => {
+      const measured = Math.round(entries[0].contentRect.width);
+      setWidth((prev) => (prev === measured ? prev : measured));
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  return { ref, width };
+}
 
 // Uniform footprint per size preset — every widget at "S" is exactly this
 // size, regardless of which widget it is; same for M/L. Fixed presets
@@ -96,6 +136,7 @@ export function DashboardGrid({
   const [items, setItems] = useState<LayoutItem[]>(initialItems);
   const [editMode, setEditMode] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const { ref: gridContainerRef, width: gridWidth } = useContainerWidth();
 
   // What react-grid-layout actually renders — w/h always derived fresh
   // from each item's `size`, never stored independently, so there's no
@@ -193,9 +234,10 @@ export function DashboardGrid({
         )}
       </div>
 
-      <div className="hidden sm:block">
-        <ResponsiveGridLayout
+      <div ref={gridContainerRef} className="hidden sm:block">
+        <GridLayout
           className="layout"
+          width={gridWidth}
           layout={rglLayout}
           cols={COLS}
           rowHeight={ROW_HEIGHT}
@@ -235,7 +277,7 @@ export function DashboardGrid({
               </div>
             );
           })}
-        </ResponsiveGridLayout>
+        </GridLayout>
       </div>
 
       {/* Mobile fallback — plain stacked column, always full detail, not

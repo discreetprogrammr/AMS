@@ -26,9 +26,11 @@ import {
 
 // TEMPORARY — see the diagnostic split near the bottom of DashboardPage.
 // true = plain static grid (known-good rollback), false = DashboardGrid.
-// Static grid just confirmed fast + reliable across two reloads — flipping
-// back to false to confirm the hang reproduces specifically with
-// DashboardGrid, isolating it definitively before digging into why.
+// Root cause found: dashboard-grid.tsx's WidthProvider HOC re-rendered
+// unconditionally on every ResizeObserver tick (no equality check), which
+// could feedback-loop with a scrollbar toggling and freeze the tab. Fixed
+// by replacing WidthProvider with a hand-rolled width hook that actually
+// checks for change. Flipping to false to test the real fix live.
 const DEBUG_STATIC_GRID = false;
 
 function today(): string {

@@ -27,12 +27,16 @@ import {
 
 // TEMPORARY — see the diagnostic split near the bottom of DashboardPage.
 // true = plain static grid (known-good rollback), false = DashboardGrid.
-// Root cause found: dashboard-grid.tsx's WidthProvider HOC re-rendered
-// unconditionally on every ResizeObserver tick (no equality check), which
-// could feedback-loop with a scrollbar toggling and freeze the tab. Fixed
-// by replacing WidthProvider with a hand-rolled width hook that actually
-// checks for change. Flipping to false to test the real fix live.
-const DEBUG_STATIC_GRID = false;
+// Two real, confirmed-necessary fixes have gone into dashboard-grid.tsx
+// (WidthProvider's missing change-check, then widget elements moved from
+// a prop into children) — both fixed genuine bugs, neither made the
+// server-side hang go away: /dashboard with DashboardGrid still reaches
+// the final `return` (per the [timing] logs) and then never responds,
+// 100% reproducible across repeated tests, while the static grid has been
+// 100% reliable in every test today. Staying on true (safe) — the
+// remaining hang needs local reproduction (next dev + a profiler) rather
+// than more guess-and-redeploy cycles against production.
+const DEBUG_STATIC_GRID = true;
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);

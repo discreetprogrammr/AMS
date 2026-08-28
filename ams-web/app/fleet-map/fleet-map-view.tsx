@@ -75,8 +75,10 @@ const PH_DEFAULT_ZOOM = 5.4;
 // volume of traffic (a small internal/demo tool), unlike Mapbox or Google
 // Maps. Swapping to Mapbox or Google later is a one-line change here if/
 // when that becomes worth it.
-const DARK_TILE_URL = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
-const LIGHT_TILE_URL = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+const CARTO_API_KEY = process.env.NEXT_PUBLIC_CARTO_API_KEY;
+const CARTO_KEY_SUFFIX = CARTO_API_KEY ? `?key=${CARTO_API_KEY}` : "";
+const DARK_TILE_URL = `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png${CARTO_KEY_SUFFIX}`;
+const LIGHT_TILE_URL = `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png${CARTO_KEY_SUFFIX}`;
 const TILE_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 

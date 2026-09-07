@@ -235,6 +235,21 @@ export function Sidebar({ profile }: { profile: Profile | null }) {
             <Link
               key={item.href}
               href={item.href}
+              // Every item in this list sits in the viewport at once (the
+              // sidebar is always fully visible, nothing to scroll into
+              // view) — Next.js's default prefetch fires all ~15+ of these
+              // simultaneously on every single page load. Navigating again
+              // before they resolve (completely normal — clicking a
+              // different nav item, or this component unmounting) aborts
+              // them mid-flight, and a burst of aborted prefetches hitting
+              // Next 14.2's router prefetch-cache is what was producing the
+              // "Cannot read properties of null (reading 'get')" crash
+              // reported from /messages on 2026-09-07 — reproduced here on
+              // /tickets and /clients too, confirming it's this shared
+              // Sidebar, not any one page. prefetch={false} removes the
+              // mechanism entirely; the cost is just no pre-warmed RSC
+              // payload; navigation still works exactly the same.
+              prefetch={false}
               className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                 active
                   ? "bg-blue-600/15 text-blue-400"

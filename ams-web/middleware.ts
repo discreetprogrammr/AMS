@@ -16,7 +16,15 @@ export const config = {
   // (an HTML page, not JSON) before the route handler ever ran, silently
   // breaking both scheduled cron jobs outside of manual Super-Admin
   // browser testing.
+  // sw.js/manifest.webmanifest added 2026-09-07 — both are public files at
+  // the app root (not under _next/static, so the existing exclusion missed
+  // them), and the browser fetches them unauthenticated (service worker
+  // registration, PWA install checks). Without this, an unauthenticated
+  // request for /sw.js got redirected to /login by this same middleware,
+  // and registering a service worker against a redirected response is
+  // disallowed — that's what "Service worker registration failed... this
+  // resource is behind a redirect" in the console was.
   matcher: [
-    "/((?!api/|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!api/|_next/static|_next/image|favicon.ico|sw\\.js|manifest\\.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

@@ -10,11 +10,16 @@ export default function LoginPage({
   return (
     <div className="flex min-h-screen">
       <div
-        className="relative hidden flex-1 flex-col justify-between overflow-hidden p-12 lg:flex"
+        // Hero panel now follows the app's light/dark theme like everything
+        // else: background comes from the --c-base token (via bg-base) and
+        // the grid-line/glow accents reference --c-hairline, so both flip
+        // together with the toggle. Text uses text-ink / text-ink-soft for
+        // the same reason — do not hardcode text-white/slate here again, it
+        // will stop matching the panel once the background flips to light.
+        className="relative hidden flex-1 flex-col justify-between overflow-hidden bg-base p-12 lg:flex"
         style={{
-          backgroundColor: "#050a16",
           backgroundImage:
-            "radial-gradient(ellipse 55% 50% at 8% -5%, rgba(37,99,235,0.28), transparent 60%), linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)",
+            "radial-gradient(ellipse 55% 50% at 8% -5%, rgba(37,99,235,0.28), transparent 60%), linear-gradient(rgb(var(--c-hairline)) 1px, transparent 1px), linear-gradient(90deg, rgb(var(--c-hairline)) 1px, transparent 1px)",
           backgroundSize: "auto, 44px 44px, 44px 44px",
         }}
       >
@@ -29,7 +34,7 @@ export default function LoginPage({
             <p className="text-base font-bold leading-tight text-ink">
               HorizonCare360
             </p>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-soft">
               By Pacific Horizon Tek
             </p>
           </div>
@@ -48,7 +53,7 @@ export default function LoginPage({
           </p>
         </div>
 
-        <p className="text-xs uppercase tracking-widest text-slate-600">
+        <p className="text-xs uppercase tracking-widest text-ink-soft">
           Pacific Horizon Tek Inc. · Bonifacio Global City · Taguig
         </p>
       </div>

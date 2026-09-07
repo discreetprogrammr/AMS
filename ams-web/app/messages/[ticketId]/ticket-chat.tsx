@@ -118,8 +118,17 @@ function DownloadIcon({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
+// Locale + timeZone pinned for the same reason as lib/format.ts's
+// dateTimeLabel — toLocaleTimeString([], ...) defaults to the runtime's
+// locale/timeZone, which differs between SSR (Vercel/Node) and the
+// visitor's browser and causes a React hydration mismatch on this "use
+// client" component's first paint.
 function timeLabel(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "Asia/Manila",
+  });
 }
 
 function callLabel(kind: "audio" | "video" | null, type: Message["message_type"]): string {

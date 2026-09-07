@@ -40,10 +40,24 @@ export function assetLabel(asset: {
 // ticket/work order was raised, resolved, or closed) — plain
 // toLocaleDateString() elsewhere in the app is date-only on purpose for
 // less time-sensitive fields (due dates, expiry dates), but these are.
+//
+// Locale and timeZone are pinned on purpose — toLocaleString([], ...) with
+// no explicit locale/timeZone uses whatever the RUNTIME defaults to, which
+// is Vercel's server (Node, effectively UTC) during SSR and each visitor's
+// own browser during hydration. Those two frequently disagree, so this
+// component renders a different string server-side vs. client-side on
+// first paint, which React flags as a hydration mismatch (console errors
+// #418/#423/#425) — usually silently "recovered" from, but on
+// app/messages/messages-list.tsx (2026-09-07) it cascaded into a real
+// white-screen crash instead. Pinning both makes server and client always
+// compute the exact same string, so there's nothing to mismatch. Manila
+// time specifically since every user of this app is viewing PH-based
+// fleet/ops timestamps regardless of their own device's locale.
 export function dateTimeLabel(iso: string | null | undefined): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleString([], {
+  return new Date(iso).toLocaleString("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZone: "Asia/Manila",
   });
 }

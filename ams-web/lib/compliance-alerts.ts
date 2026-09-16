@@ -1,4 +1,5 @@
 import { createServiceRoleClient } from "@/lib/supabase/service-role";
+import { retryRead } from "@/lib/supabase/retry-read";
 
 // Core logic for "Compliance certificate & warranty expiry alerts" — a
 // daily cron job (app/api/cron/compliance-check/route.ts) calls
@@ -62,16 +63,22 @@ export async function runComplianceCheck(): Promise<ComplianceCheckResult> {
   const today = todayIsoDate();
   const horizon = addDaysIso(today, leadDays);
 
+  // Both reads go through retryRead: this job has repeatedly hit a transient
+  // "JWT issued at future" rejection from Supabase. See lib/supabase/retry-read.ts.
   const [{ data: certs, error: certsError }, { data: assets, error: assetsError }] =
     await Promise.all([
-      supabase
-        .from("compliance_certificates")
-        .select("id, certificate_type, expiry_date, asset_id, assets(asset_tag, status)")
-        .not("expiry_date", "is", null),
-      supabase
-        .from("assets")
-        .select("id, asset_tag, warranty_end_date, status")
-        .not("warranty_end_date", "is", null),
+      retryRead("compliance certificates", () =>
+        supabase
+          .from("compliance_certificates")
+          .select("id, certificate_type, expiry_date, asset_id, assets(asset_tag, status)")
+          .not("expiry_date", "is", null),
+      ),
+      retryRead("asset warranties", () =>
+        supabase
+          .from("assets")
+          .select("id, asset_tag, warranty_end_date, status")
+          .not("warranty_end_date", "is", null),
+      ),
     ]);
 
   if (certsError) {

@@ -150,14 +150,22 @@ a `NEXT_PUBLIC_*` variable or reach client code.
 
 There is no test framework. From `ams-web/`:
 
-1. `npm run build`. This is the real check. TypeScript is `strict`, so the
-   build catches type errors.
-2. `npm run lint`.
-3. For client rendering changes, `node check-errors.mjs` prints the five
-   most recent `client:render` rows from the production `error_logs` table
-   using the service-role key.
+1. `npx tsc --noEmit`. Fastest real check, and `strict` is on so it catches
+   type errors. `npm run build` is the fuller check but takes minutes.
+2. **`npm run lint` does not work.** ESLint has never been configured in
+   this project: there is no `.eslintrc*` and no `eslint.config.*`, so
+   `next lint` drops into an interactive "how would you like to configure
+   ESLint?" prompt and waits forever. Do not run it in an automated context
+   and do not answer the prompt casually, since that writes config and
+   changes the project. Setting ESLint up properly is worthwhile but is its
+   own piece of work.
+3. For cron or client errors, `node check-errors.mjs [sourcePrefix] [limit]`
+   queries the production `error_logs` table with the service-role key.
+   `node check-errors.mjs cron 10` shows recent cron failures;
+   `node check-errors.mjs` alone prints the five
+   most recent `client:render` rows.
 
-Treat "it builds and lints" as the floor, not proof. If a change is risky
+Treat "it type-checks and builds" as the floor, not proof. If a change is risky
 and you cannot verify it, say so plainly rather than implying it was
 tested.
 

@@ -1,7 +1,15 @@
 node_modules
 .next
-.env.local
+# env files - ignore every variant, keep only the committed template
+.env
+.env.*
+!.env*.example
 .vercel
 *.log
 .DS_Store
 tsconfig.tsbuildinfo
+
+# scratch grep output
+edge_check.txt
+image_check.txt
+revalidate_check.txt

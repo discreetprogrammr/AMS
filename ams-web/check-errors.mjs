@@ -32,13 +32,24 @@ if (sourceArg) {
 const { data, error } = await query;
 
 if (error) {
-  console.log("QUERY ERROR", error);
-} else {
-  for (const row of data) {
-    console.log("=====", row.created_at, "|", row.source, "=====");
-    console.log("message:", row.message);
-    console.log("context:", JSON.stringify(row.context));
-    console.log("stack:", row.stack);
-    console.log();
-  }
+  // Exit non-zero so a failed query is distinguishable from a clean run.
+  // Without this the script prints an error and still reports success, which
+  // reads as "no errors found" to anything checking the exit code.
+  console.error("QUERY ERROR", error);
+  process.exit(1);
 }
+
+if (data.length === 0) {
+  console.log(`No rows for source prefix "${sourceArg || "(all)"}".`);
+  process.exit(0);
+}
+
+for (const row of data) {
+  console.log("=====", row.created_at, "|", row.source, "=====");
+  console.log("message:", row.message);
+  console.log("context:", JSON.stringify(row.context));
+  console.log("stack:", row.stack);
+  console.log();
+}
+
+console.log(`${data.length} row(s).`);

@@ -4,11 +4,12 @@ import { getProfile, requireStaff } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { AlertsFeed, type AlertRow } from "./alerts-feed";
 
-export default async function AlertsPage({
-  searchParams,
-}: {
-  searchParams: { created?: string };
-}) {
+export default async function AlertsPage(
+  props: {
+    searchParams: Promise<{ created?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   await requireStaff();
   const profile = await getProfile();
 

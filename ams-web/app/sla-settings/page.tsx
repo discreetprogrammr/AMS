@@ -9,11 +9,12 @@ import { updateGlobalSlaPolicy, upsertOrgSlaPolicy, deleteOrgSlaPolicy } from ".
 // is Super Admin-only per explicit instruction: an SLA target is treated
 // as closer to a contractual commitment than routine data entry, so it
 // gets the same restricted-write tier as Audit Log.
-export default async function SlaSettingsPage({
-  searchParams,
-}: {
-  searchParams: { error?: string; updated?: string };
-}) {
+export default async function SlaSettingsPage(
+  props: {
+    searchParams: Promise<{ error?: string; updated?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const profile = await requireStaff();
   const canEdit = isSuperAdminRole(profile.role);
 

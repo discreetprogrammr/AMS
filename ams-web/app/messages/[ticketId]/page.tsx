@@ -6,11 +6,12 @@ import { AppShell } from "@/components/app-shell";
 import { ticketRef } from "@/lib/format";
 import { TicketChat } from "./ticket-chat";
 
-export default async function TicketMessagesPage({
-  params,
-}: {
-  params: { ticketId: string };
-}) {
+export default async function TicketMessagesPage(
+  props: {
+    params: Promise<{ ticketId: string }>;
+  }
+) {
+  const params = await props.params;
   const supabase = await createClient();
   const profile = await getProfile();
 

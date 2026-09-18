@@ -13,11 +13,12 @@ import { updateDisplayName, updatePassword } from "./actions";
 // staff-managed elsewhere — schema_step37.sql's column-level GRANT means an
 // UPDATE touching those two columns is rejected outright regardless of what
 // a form or a raw client call sends.
-export default async function ProfilePage({
-  searchParams,
-}: {
-  searchParams: { error?: string; updated?: string };
-}) {
+export default async function ProfilePage(
+  props: {
+    searchParams: Promise<{ error?: string; updated?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const profile = await getProfile();
   const supabase = await createClient();
   const {

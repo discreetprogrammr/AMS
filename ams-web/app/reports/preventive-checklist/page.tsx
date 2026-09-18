@@ -4,11 +4,12 @@ import { AppShell } from "@/components/app-shell";
 import { ticketRef } from "@/lib/format";
 import { PreventiveChecklistForm } from "./preventive-form";
 
-export default async function PreventiveChecklistPage({
-  searchParams,
-}: {
-  searchParams: { error?: string; ticket_id?: string; asset_id?: string };
-}) {
+export default async function PreventiveChecklistPage(
+  props: {
+    searchParams: Promise<{ error?: string; ticket_id?: string; asset_id?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   await requireStaff("/reports");
   const profile = await getProfile();
 

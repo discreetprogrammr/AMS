@@ -7,10 +7,8 @@ import { createClient } from "@/lib/supabase/server";
 // gate — a client hitting this for a document outside their own org just
 // gets a 404 from the first query, same as every other RLS-scoped lookup
 // in this app. Mirrors app/api/reports/service-records/[id]/pdf/route.ts.
-export async function GET(
-  request: Request,
-  { params }: { params: { id: string } },
-) {
+export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const supabase = await createClient();
 
   const { data: doc } = await supabase

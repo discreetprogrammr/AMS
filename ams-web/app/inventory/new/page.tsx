@@ -4,11 +4,12 @@ import { getProfile, requireStaff } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { createInventoryCycle } from "../actions";
 
-export default async function NewInventoryCyclePage({
-  searchParams,
-}: {
-  searchParams: { error?: string };
-}) {
+export default async function NewInventoryCyclePage(
+  props: {
+    searchParams: Promise<{ error?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   await requireStaff();
   const profile = await getProfile();
 

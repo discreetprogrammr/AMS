@@ -5,11 +5,12 @@ import { AppShell } from "@/components/app-shell";
 import { SearchBar } from "@/components/search-bar";
 import { AssetsTable, type AssetRow } from "./assets-table";
 
-export default async function AssetsPage({
-  searchParams,
-}: {
-  searchParams: { q?: string; deleted?: string };
-}) {
+export default async function AssetsPage(
+  props: {
+    searchParams: Promise<{ q?: string; deleted?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const supabase = await createClient();
   const profile = await getProfile();
   const isStaff = isStaffRole(profile?.role);

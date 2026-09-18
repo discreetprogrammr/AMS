@@ -8,10 +8,8 @@ import { reportKindOf, REPORT_KIND_REF_PREFIX } from "@/lib/report-types";
 // page instead of a dead 404 if no PDF has been stored yet — covers
 // reports created before this feature shipped, or ones where generation
 // failed at submit time (the report itself always saves regardless).
-export async function GET(
-  request: Request,
-  { params }: { params: { id: string } },
-) {
+export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const supabase = await createClient();
 
   const { data: record } = await supabase

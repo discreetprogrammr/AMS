@@ -9,11 +9,12 @@ const inputClass =
   "mt-1 w-full rounded-lg border border-hairline bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
 const labelClass = "block text-sm font-medium text-ink-soft";
 
-export default async function NewWorkOrderPage({
-  searchParams,
-}: {
-  searchParams: { error?: string; ticket_id?: string };
-}) {
+export default async function NewWorkOrderPage(
+  props: {
+    searchParams: Promise<{ error?: string; ticket_id?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   await requireStaff("/work-orders");
   const profile = await getProfile();
 

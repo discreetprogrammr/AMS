@@ -8,11 +8,12 @@ const inputClass =
   "mt-1 w-full rounded-lg border border-hairline bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
 const labelClass = "block text-sm font-medium text-ink-soft";
 
-export default async function NewInspectionPage({
-  searchParams,
-}: {
-  searchParams: { error?: string };
-}) {
+export default async function NewInspectionPage(
+  props: {
+    searchParams: Promise<{ error?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   await requireStaff("/inspections");
   const profile = await getProfile();
 

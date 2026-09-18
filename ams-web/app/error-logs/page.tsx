@@ -8,11 +8,12 @@ import { triggerTestError } from "./actions";
 // app/error-logs/actions.ts's doc comment for why this is narrower than
 // /alerts (raw stack traces/context, not an everyday ops surface — every
 // error here also raises a normal staff-visible alert on /alerts).
-export default async function ErrorLogsPage({
-  searchParams,
-}: {
-  searchParams: { test?: string };
-}) {
+export default async function ErrorLogsPage(
+  props: {
+    searchParams: Promise<{ test?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   await requireSuperAdmin();
   const profile = await getProfile();
 

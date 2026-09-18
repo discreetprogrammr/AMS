@@ -5,11 +5,12 @@ import { getProfile, requireStaff } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { verifyItem, unverifyItem, completeCycle } from "../actions";
 
-export default async function InventoryCycleDetailPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default async function InventoryCycleDetailPage(
+  props: {
+    params: Promise<{ id: string }>;
+  }
+) {
+  const params = await props.params;
   await requireStaff();
   const profile = await getProfile();
 

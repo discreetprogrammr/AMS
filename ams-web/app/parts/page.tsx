@@ -4,11 +4,12 @@ import { getProfile, requireStaff } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { PartsTable, type PartRow } from "./parts-table";
 
-export default async function PartsPage({
-  searchParams,
-}: {
-  searchParams: { created?: string; saved?: string };
-}) {
+export default async function PartsPage(
+  props: {
+    searchParams: Promise<{ created?: string; saved?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   await requireStaff();
   const profile = await getProfile();
 

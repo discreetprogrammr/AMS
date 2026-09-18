@@ -42,11 +42,12 @@ const FINDINGS_TITLE: Record<ReportKind, string> = {
 // No AppShell here on purpose: this is a standalone printable document,
 // not an app page, and deliberately ignores the dark/light theme toggle
 // (always white background) since a dark UI theme doesn't print/PDF well.
-export default async function ServiceReportPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default async function ServiceReportPage(
+  props: {
+    params: Promise<{ id: string }>;
+  }
+) {
+  const params = await props.params;
   const supabase = await createClient();
 
   const { data: record } = await supabase

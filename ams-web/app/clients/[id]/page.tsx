@@ -11,13 +11,14 @@ const inputClass =
   "mt-1 w-full rounded-lg border border-hairline bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
 const labelClass = "block text-sm font-medium text-ink-soft";
 
-export default async function ClientDetailPage({
-  params,
-  searchParams,
-}: {
-  params: { id: string };
-  searchParams: { error?: string; saved?: string };
-}) {
+export default async function ClientDetailPage(
+  props: {
+    params: Promise<{ id: string }>;
+    searchParams: Promise<{ error?: string; saved?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   await requireStaff("/clients");
   const profile = await getProfile();
 

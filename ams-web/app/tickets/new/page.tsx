@@ -11,11 +11,12 @@ import { createGlobalTicket } from "../../assets/tickets-actions";
 // just the signed-in org for a client, and the insert itself is covered
 // by "clients can raise tickets on own assets" — so even a tampered
 // asset_id in the submitted form would be rejected at the database level.
-export default async function NewTicketPage({
-  searchParams,
-}: {
-  searchParams: { error?: string };
-}) {
+export default async function NewTicketPage(
+  props: {
+    searchParams: Promise<{ error?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const profile = await getProfile();
 
   const supabase = await createClient();

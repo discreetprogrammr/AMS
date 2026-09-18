@@ -4,11 +4,12 @@ import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { CalendarView, type CalendarEventRow } from "./calendar-view";
 
-export default async function CalendarPage({
-  searchParams,
-}: {
-  searchParams: { created?: string };
-}) {
+export default async function CalendarPage(
+  props: {
+    searchParams: Promise<{ created?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const supabase = await createClient();
   const profile = await getProfile();
   const isStaff = isStaffRole(profile?.role);

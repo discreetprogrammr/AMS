@@ -48,11 +48,12 @@ function daysAgo(days: number): string {
   return d.toISOString();
 }
 
-export default async function DashboardPage({
-  searchParams,
-}: {
-  searchParams?: { access_denied?: string };
-}) {
+export default async function DashboardPage(
+  props: {
+    searchParams?: Promise<{ access_denied?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const supabase = await createClient();
   const profile = await timed("dashboard.getProfile", getProfile());
   const isStaff = isStaffRole(profile?.role);

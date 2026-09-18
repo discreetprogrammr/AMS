@@ -4,11 +4,12 @@ import { AppShell } from "@/components/app-shell";
 import { ticketRef } from "@/lib/format";
 import { CorrectiveChecklistForm } from "./corrective-form";
 
-export default async function CorrectiveChecklistPage({
-  searchParams,
-}: {
-  searchParams: { error?: string; ticket_id?: string; asset_id?: string };
-}) {
+export default async function CorrectiveChecklistPage(
+  props: {
+    searchParams: Promise<{ error?: string; ticket_id?: string; asset_id?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   await requireStaff("/reports");
   const profile = await getProfile();
 

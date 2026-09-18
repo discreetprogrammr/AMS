@@ -28,13 +28,14 @@ const EQUIPMENT_LABEL: Record<string, string> = {
   other: "Other",
 };
 
-export default async function EditAssetPage({
-  params,
-  searchParams,
-}: {
-  params: { id: string };
-  searchParams: { error?: string; ticket?: string; workorder?: string };
-}) {
+export default async function EditAssetPage(
+  props: {
+    params: Promise<{ id: string }>;
+    searchParams: Promise<{ error?: string; ticket?: string; workorder?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const supabase = await createClient();
   const profile = await getProfile();
   const isStaff = isStaffRole(profile?.role);

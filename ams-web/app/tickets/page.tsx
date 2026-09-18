@@ -11,14 +11,15 @@ import { TicketsTable, type TicketRow } from "./tickets-table";
 // "+ Request New Service" is open to clients too (/tickets/new, RLS-scoped
 // to their own assets) — only creating a work order from a ticket stays
 // staff-only, gated behind `isStaff` in the table.
-export default async function TicketsPage({
-  searchParams,
-}: {
-  // `ticket` — deep-links straight to a ticket's detail modal (e.g. from the
-  // Fleet Map site popup's "latest service ticket" link) instead of just
-  // landing on the unfiltered queue and making the user find it themselves.
-  searchParams: { created?: string; ticket?: string };
-}) {
+export default async function TicketsPage(
+  props: {
+    // `ticket` — deep-links straight to a ticket's detail modal (e.g. from the
+    // Fleet Map site popup's "latest service ticket" link) instead of just
+    // landing on the unfiltered queue and making the user find it themselves.
+    searchParams: Promise<{ created?: string; ticket?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const profile = await getProfile();
   const isStaff = isStaffRole(profile?.role);
 

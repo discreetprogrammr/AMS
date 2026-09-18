@@ -5,11 +5,12 @@ import { AppShell } from "@/components/app-shell";
 import { SearchBar } from "@/components/search-bar";
 import { ClientsTable, type ClientRow } from "./clients-table";
 
-export default async function ClientsPage({
-  searchParams,
-}: {
-  searchParams: { q?: string; deleted?: string; error?: string };
-}) {
+export default async function ClientsPage(
+  props: {
+    searchParams: Promise<{ q?: string; deleted?: string; error?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   await requireStaff();
   const profile = await getProfile();
 

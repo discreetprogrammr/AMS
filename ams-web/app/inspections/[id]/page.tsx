@@ -27,11 +27,12 @@ const CATEGORY_ORDER = [
   "System & Software",
 ];
 
-export default async function InspectionDetailPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default async function InspectionDetailPage(
+  props: {
+    params: Promise<{ id: string }>;
+  }
+) {
+  const params = await props.params;
   await requireStaff();
   const profile = await getProfile();
 

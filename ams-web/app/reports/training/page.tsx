@@ -3,11 +3,12 @@ import { getProfile, requireStaff } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { TrainingForm } from "./training-form";
 
-export default async function TrainingReportPage({
-  searchParams,
-}: {
-  searchParams: { error?: string };
-}) {
+export default async function TrainingReportPage(
+  props: {
+    searchParams: Promise<{ error?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   await requireStaff("/reports");
   const profile = await getProfile();
 

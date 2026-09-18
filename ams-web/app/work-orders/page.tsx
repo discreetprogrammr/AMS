@@ -4,11 +4,12 @@ import { getProfile, requireStaff } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { WorkOrdersTable, type WorkOrderRow } from "./work-orders-table";
 
-export default async function WorkOrdersPage({
-  searchParams,
-}: {
-  searchParams: { created?: string; error?: string };
-}) {
+export default async function WorkOrdersPage(
+  props: {
+    searchParams: Promise<{ created?: string; error?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   await requireStaff();
   const profile = await getProfile();
 

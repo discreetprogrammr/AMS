@@ -5,11 +5,12 @@ import { AppShell } from "@/components/app-shell";
 import { StatusBadge } from "@/components/status-badge";
 import { reportKindOf, REPORT_KIND_ORDER, REPORT_KIND_LABELS, type ReportKind } from "@/lib/report-types";
 
-export default async function ReportsPage({
-  searchParams,
-}: {
-  searchParams: { report?: string; report_id?: string; error?: string };
-}) {
+export default async function ReportsPage(
+  props: {
+    searchParams: Promise<{ report?: string; report_id?: string; error?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const supabase = await createClient();
   const profile = await getProfile();
   const isStaff = isStaffRole(profile?.role);

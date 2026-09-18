@@ -19,13 +19,14 @@ function stockStatus(quantityOnHand: number, reorderLevel: number): "in_stock" |
   return "in_stock";
 }
 
-export default async function PartDetailPage({
-  params,
-  searchParams,
-}: {
-  params: { id: string };
-  searchParams: { error?: string; saved?: string };
-}) {
+export default async function PartDetailPage(
+  props: {
+    params: Promise<{ id: string }>;
+    searchParams: Promise<{ error?: string; saved?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   await requireStaff("/parts");
   const profile = await getProfile();
 

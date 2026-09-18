@@ -4,11 +4,12 @@ import { AppShell } from "@/components/app-shell";
 import { AssetForm } from "../asset-form";
 import { createAsset } from "../actions";
 
-export default async function NewAssetPage({
-  searchParams,
-}: {
-  searchParams: { error?: string };
-}) {
+export default async function NewAssetPage(
+  props: {
+    searchParams: Promise<{ error?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   await requireStaff();
   const profile = await getProfile();
 

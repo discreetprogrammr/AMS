@@ -153,7 +153,7 @@ export function AssetDetailModal({
           )}
           {notFoundOrDenied && (
             <p className="text-sm text-slate-500">
-              This asset isn't available — it may not exist, or you may not have access to it.
+              This asset isn&apos;t available — it may not exist, or you may not have access to it.
             </p>
           )}
           {!asset && !notFoundOrDenied && <p className="text-sm text-slate-500">Loading…</p>}

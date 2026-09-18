@@ -739,7 +739,7 @@ function AttachmentBubble({
   if (failed) {
     return (
       <p className="mb-1.5 text-xs text-red-400">
-        Couldn't load attachment{name ? ` "${name}"` : ""}.
+        Couldn&apos;t load attachment{name ? ` "${name}"` : ""}.
       </p>
     );
   }

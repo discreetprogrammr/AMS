@@ -152,13 +152,19 @@ There is no test framework. From `ams-web/`:
 
 1. `npx tsc --noEmit`. Fastest real check, and `strict` is on so it catches
    type errors. `npm run build` is the fuller check but takes minutes.
-2. **`npm run lint` does not work.** ESLint has never been configured in
-   this project: there is no `.eslintrc*` and no `eslint.config.*`, so
-   `next lint` drops into an interactive "how would you like to configure
-   ESLint?" prompt and waits forever. Do not run it in an automated context
-   and do not answer the prompt casually, since that writes config and
-   changes the project. Setting ESLint up properly is worthwhile but is its
-   own piece of work.
+2. `npm run lint`. Configured 17 September 2026 and currently clean, so
+   any error it reports is something you introduced. Config lives in
+   `ams-web/.eslintrc.json`, extending `next/core-web-vitals` and
+   `next/typescript`, pinned to ESLint 8 because `next lint` on Next 14
+   expects the eslintrc format rather than flat config. Variables and
+   arguments prefixed with `_` are allowed, for the deliberate
+   discard-this-key idiom.
+
+   Note on disable comments: before ESLint was configured, this codebase
+   accumulated `eslint-disable-next-line` comments that had never been
+   verified, and several sat one line away from the code they meant to
+   cover. If you add one, run `npm run lint` and confirm it actually
+   silences what you intended.
 3. For cron or client errors, `node check-errors.mjs [sourcePrefix] [limit]`
    queries the production `error_logs` table with the service-role key.
    `node check-errors.mjs cron 10` shows recent cron failures;

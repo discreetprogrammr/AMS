@@ -21,8 +21,6 @@ import {
   EquipmentAlertsCard,
   ServiceDueCard,
   ComplianceWarrantyCard,
-  type ActivityItem,
-  type ComplianceItem,
 } from "./widget-cards";
 
 // TEMPORARY — see the diagnostic split near the bottom of DashboardPage.
@@ -37,10 +35,6 @@ import {
 // remaining hang needs local reproduction (next dev + a profiler) rather
 // than more guess-and-redeploy cycles against production.
 const DEBUG_STATIC_GRID = true;
-
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function daysFromNow(days: number): string {
   const d = new Date();
@@ -59,24 +53,6 @@ export default async function DashboardPage({
 }: {
   searchParams?: { access_denied?: string };
 }) {
-  // TEMPORARY — pins down which package versions actually shipped in this
-  // deployment (the SDK upgrade meant to fix the Supabase auth-js lock
-  // deadlock had no observed effect on the 300s /dashboard hang, so this
-  // confirms whether it was even installed before chasing further theories).
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const supabaseJsPkg = require("@supabase/supabase-js/package.json");
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const ssrPkg = require("@supabase/ssr/package.json");
-    // eslint-disable-next-line no-console
-    console.log(
-      `[timing] versions supabase-js=${supabaseJsPkg.version} ssr=${ssrPkg.version}`,
-    );
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.log("[timing] version check failed", err);
-  }
-
   const supabase = await createClient();
   const profile = await timed("dashboard.getProfile", getProfile());
   const isStaff = isStaffRole(profile?.role);

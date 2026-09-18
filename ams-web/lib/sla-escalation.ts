@@ -159,8 +159,8 @@ export async function runSlaEscalationCheck(): Promise<SlaCheckResult> {
   return { checked: tickets?.length ?? 0, escalated, skipped };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function tryEscalate(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   opts: {
     ticket: OpenTicket;

@@ -99,7 +99,7 @@ export function PreventiveChecklistForm({
               ))}
             </select>
             <p className="mt-1 text-xs text-slate-500">
-              Ties this report to that ticket so it shows up in the ticket's detail view once generated.
+              Ties this report to that ticket so it shows up in the ticket&apos;s detail view once generated.
             </p>
           </div>
         )

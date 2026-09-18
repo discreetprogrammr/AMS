@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { getProfile, requireStaff } from "@/lib/supabase/profile";
+import { requireStaff } from "@/lib/supabase/profile";
 import { isSuperAdminRole } from "@/lib/supabase/roles";
 import { AppShell } from "@/components/app-shell";
 import { updateGlobalSlaPolicy, upsertOrgSlaPolicy, deleteOrgSlaPolicy } from "./actions";
@@ -59,7 +59,7 @@ export default async function SlaSettingsPage({
           <p className="mt-1 text-xs text-slate-500">
             Applies to every client without their own override below, and to the staff-wide dashboard/analytics
             view (which spans every client at once, so it always shows the global number rather than blending
-            different clients' targets).
+            different clients&apos; targets).
           </p>
 
           {canEdit ? (

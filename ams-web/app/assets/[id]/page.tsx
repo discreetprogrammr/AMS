@@ -157,7 +157,7 @@ export default async function EditAssetPage({
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-ink">Scan tag for this asset</p>
               <p className="mt-0.5 text-xs text-slate-500">
-                Print this onto a physical tag — scanning it (with the app's Scan Asset
+                Print this onto a physical tag — scanning it (with the app&apos;s Scan Asset
                 page, or any phone camera) jumps straight here instead of a manual search.
               </p>
               <div className="mt-3 flex flex-wrap gap-3">

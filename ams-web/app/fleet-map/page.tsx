@@ -31,8 +31,8 @@ export default async function FleetMapPage() {
   ]);
 
   const allSites = sites ?? [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sitesWithCoords = allSites.filter(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (s: any) => s.latitude != null && s.longitude != null,
   );
 
@@ -40,8 +40,8 @@ export default async function FleetMapPage() {
   const fleetSites: FleetSite[] = sitesWithCoords.map((s: any) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const mine = (assets ?? []).filter((a: any) => a.site_id === s.id);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const unserviceable = mine.filter(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (a: any) => a.status === "unserviceable",
     ).length;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

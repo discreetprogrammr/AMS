@@ -138,7 +138,7 @@ export function AssetScanner() {
           )}
         </div>
         <p className="border-t border-hairline px-4 py-3 text-center text-xs text-slate-500">
-          Point the camera at an asset's QR tag, or an existing serial-number barcode.
+          Point the camera at an asset&apos;s QR tag, or an existing serial-number barcode.
         </p>
       </div>
 

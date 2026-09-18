@@ -8,7 +8,7 @@
 // (the "did you actually do these things" checklist), matching what the
 // reference itself does (its own `checks` state never appears in that
 // form's save payload either).
-import { useState } from "react";
+import { useState, type JSX } from "react";
 
 type CheckKey = "gps" | "qr" | "confirm" | "photos";
 

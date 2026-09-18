@@ -140,7 +140,7 @@ export function DashboardGrid({
   children: ReactNode;
 }) {
   const contentById = useMemo(() => {
-    const childArray = Children.toArray(children) as ReactElement[];
+    const childArray = Children.toArray(children) as ReactElement<{ size?: WidgetSize }>[];
     return new Map(widgets.map((w, i) => [w.id, childArray[i]]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [widgets, children]);

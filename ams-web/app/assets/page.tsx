@@ -137,9 +137,8 @@ export default async function AssetsPage({
   const exportParams = new URLSearchParams();
   if (internalView) {
     if (q) exportParams.set("q", q);
-    for (const [k, v] of Object.entries(filters)) {
-      if (v && !(k === "view" && v === "all")) exportParams.set(k, v);
-    }
+    // view is always sent: the route treats a missing view as "everything".
+    for (const [k, v] of Object.entries(filters)) if (v) exportParams.set(k, v);
   }
   const exportQuery = exportParams.size ? `?${exportParams.toString()}` : "";
 

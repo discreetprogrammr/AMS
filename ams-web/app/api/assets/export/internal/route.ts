@@ -3,10 +3,14 @@ import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import {
   ASSIGNMENT_STATUSES,
   CONDITIONS,
+  EVERY_VIEW,
   INTERNAL_EXPORT_HEADER,
   OWNERSHIPS,
   SEGMENTS,
+  applyInternalFilters,
   labelFor,
+  manilaDate,
+  parseInternalFilters,
 } from "@/lib/internal-equipment";
 
 function csvEscape(value: unknown): string {
@@ -23,8 +27,10 @@ const label = (options: Parameters<typeof labelFor>[0], value: string | null) =>
 
 // Spec 7.4: the PHtek equipment register as the spreadsheet's Equipment
 // List columns plus Segment. Internal organizations only; the client
-// export (../route.ts) excludes them.
-export async function GET() {
+// export (../route.ts) excludes them. Applies the same filters as the
+// /assets list (view, segment, custodian, department, category, warranty,
+// and q) so "Export" gives what is on screen.
+export async function GET(request: Request) {
   const profile = await getProfile();
   if (!isStaffRole(profile?.role)) {
     return new Response("Forbidden", { status: 403 });
@@ -40,13 +46,29 @@ export async function GET() {
   }
   const orgIds = (orgs ?? []).map((o) => o.id);
 
-  const { data: assets, error } = await supabase
+  const { searchParams } = new URL(request.url);
+  const filters = parseInternalFilters(Object.fromEntries(searchParams));
+  // A bare URL keeps the export's original meaning (every internal row,
+  // retired included). The list page always sends view explicitly.
+  if (!searchParams.has("view")) filters.view = EVERY_VIEW;
+  // Same search as the list; commas split PostgREST's .or(), so drop them.
+  const q = (searchParams.get("q") ?? "").trim().replace(/,/g, "");
+
+  let query = supabase
     .from("assets")
     .select(
       "asset_tag, asset_category, description, brand, model, serial_number, quantity, ownership, date_acquired, acquisition_cost, supplier, custodian, department, date_issued, assignment_status, condition, warranty_end_date, return_disposal_date, remarks, segment, sites(address)",
     )
     .in("organization_id", orgIds)
     .order("asset_tag", { ascending: true });
+  query = applyInternalFilters(query, filters, manilaDate());
+  if (q) {
+    query = query.or(
+      `asset_tag.ilike.%${q}%,brand.ilike.%${q}%,model.ilike.%${q}%,serial_number.ilike.%${q}%,description.ilike.%${q}%,custodian.ilike.%${q}%`,
+    );
+  }
+
+  const { data: assets, error } = await query;
 
   if (error) {
     return new Response(`Failed to export: ${error.message}`, { status: 500 });

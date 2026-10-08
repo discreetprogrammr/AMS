@@ -132,6 +132,9 @@ export const UNASSIGNED = "__unassigned";
 
 export const WARRANTY_WINDOW_DAYS = 60;
 
+/** Not a pill: lets the export route keep its old "everything" default. */
+export const EVERY_VIEW = "every";
+
 export type InternalFilters = {
   segment: string;
   view: string; // a VIEWS value; "all" when unset
@@ -238,6 +241,8 @@ export function applyInternalFilters<Q extends Filterable>(query: Q, f: Internal
       break;
     case "retired":
       q = q.or(RETIRED_OR);
+      break;
+    case EVERY_VIEW: // no view restriction at all (bare export URL)
       break;
     default:
       q = excludeRetired(q);

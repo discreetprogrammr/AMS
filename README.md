@@ -1883,3 +1883,31 @@ Picked back up with live debugging via a connected browser session (Claude in Ch
 **Current state:** `DEBUG_STATIC_GRID` in `app/dashboard/page.tsx` controls this — currently `true` (static grid, safe, matches the emergency mitigation above). `DashboardGrid` itself carries both real fixes from this round (no `WidthProvider`, elements passed as children) and is otherwise unchanged; flipping the flag to `false` re-enables it for whenever the remaining hang gets properly root-caused with local tooling. `lib/supabase/timed.ts` and its call sites are still in place — genuinely useful if this needs revisiting, but worth stripping out eventually since they log on every request, not just `/dashboard`.
 
 Verified with `npx tsc --noEmit` at each step — same three pre-existing `Cannot find module` errors (`web-push`, `papaparse`, `react-grid-layout`) throughout, no new ones introduced.
+
+## Follow-up — Internal equipment register (PR 1 of 6: schema only)
+
+Real ask: use HorizonCare360 as Pacific Horizon Tek's own register for company equipment issued to staff (laptops, phones, monitors, Team Fridays Digital's camera and production kit), in the existing `assets` table rather than a second app or table. The full design is `docs/HorizonCare360_Internal_Equipment_Spec_v0.1.md`; this is only the database half of PR 1 (spec sections 4.1–4.3). **No app code changes in this step**, and nothing is visible in the UI yet.
+
+## Database change, run this first
+
+**`schema_step46.sql`** (new, `[idempotent]`) — **run this in Supabase before any of the later PRs in this series.** Safe to run twice; the second run changes nothing.
+
+- `organizations.is_internal boolean not null default false` — every existing organization is a client, so every existing row correctly reads `false` with no backfill.
+- 15 new `assets` columns, all nullable except `quantity` (`integer not null default 1`): `segment`, `asset_category`, `description`, `quantity`, `ownership`, `date_acquired`, `acquisition_cost` (`numeric(12,2)`, PHP), `supplier`, `department`, `date_issued`, `assignment_status`, `condition`, `return_disposal_date`, `remarks`, `parent_asset_id` (self-reference, `on delete set null`, for desktop components). Existing client assets are untouched.
+- Four named check constraints, added only if missing (`assets_segment_check`, `assets_ownership_check`, `assets_assignment_status_check`, `assets_condition_check`), with exactly the value lists in the spec. `null` passes a check, which is what keeps these optional for client assets.
+- Enforces "`segment` is non-null if and only if the organization is internal" with a trigger (CTO's choice over an application-only rule: a `CHECK` cannot read another table). `assets_enforce_segment` runs on insert and on updates of `organization_id` or `segment`; `organizations_enforce_internal_segments` runs when `is_internal` changes, so flipping an org that already has assets raises instead of silently breaking the rule. Both raise a plain-text exception naming the asset tag or organization. Consequence for later PRs: the data-load script and asset form must set `segment` on every internal asset and leave it null on every client asset, or the insert fails.
+- Seeds one organization, "Pacific Horizon Tek, Inc." (`is_internal = true`), and one site under it, guarded by `where not exists`. `sites` has no name column, so "Head Office" is stored in `sites.address` — the field every screen already uses as a site's label.
+
+**Not in this file, on purpose:**
+- The spec 4.3 status mapping (condition → `assets.status`) is documented in the SQL file's comments but not enforced; the data-load script and asset form will apply it. `asset_status` already has `attention` and `down` (schema_step15).
+- `assets.asset_tag` has **no unique constraint** today. The later idempotent data load ("skip rows whose `asset_tag` already exists") will therefore have to check in the script itself, unless a unique index is added first. Raised, not decided.
+
+**Order matters across the series:** PR 2 (excluding internal assets from analytics, dashboard counts, Fleet Map, Clients, exports and the cron jobs) must ship **before** the data load. After this step alone the new organization and its Head Office site already exist, so until PR 2 lands the internal organization *will* appear in the Clients list and organization pickers, and its site is an address-only row with no coordinates. No equipment rows exist yet, so no figure changes.
+
+## Setup steps
+
+1. Run `schema_step46.sql` in the Supabase SQL editor.
+2. Run it a second time — it should complete with no errors and no changes.
+3. Verify: `select id, name, is_internal from organizations where is_internal;` returns one row, "Pacific Horizon Tek, Inc."; `select address from sites where organization_id = (select id from organizations where is_internal);` returns one row, "Head Office".
+4. Verify: `select count(*) from organizations where name = 'Pacific Horizon Tek, Inc.';` is `1` (not 2) after the second run, and `select count(*) from assets where quantity <> 1;` is `0`.
+5. No redeploy needed; nothing in the app reads the new columns yet.

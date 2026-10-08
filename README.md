@@ -1989,3 +1989,29 @@ Follows PR 3 above. **No database change in this step**: it writes the existing 
 2. `/user-access` as Super Admin: expand an admin user, click **Internal equipment only**. "Saved." appears, 11 modules are unticked and the row shows "11 hidden".
 3. Sign in as that user: the sidebar shows only Dashboard, Assets, Scan Asset, Asset Verification, Alerts. Opening `/clients` directly redirects to the Dashboard.
 4. Back in User Access, tick one module and Save; confirm it sticks.
+
+## Follow-up — Internal equipment register: unique index on internal asset tags
+
+Follows PR 3 above and closes its first known limit. Applies to internal assets only; client asset tags are not constrained.
+
+**Database change, run this first**
+
+Run `schema_step47.sql` in the Supabase SQL editor. It is idempotent:
+
+```sql
+create unique index if not exists assets_internal_asset_tag_key
+  on assets (asset_tag) where asset_tag like 'PHT-EQ-%';
+```
+
+Why: PR 3 checks for a duplicate `PHT-EQ-NNNN` in the app only, so two simultaneous saves could both pass the check and take the same number. The partial index makes Postgres refuse the second. If any duplicate `PHT-EQ-` tags already exist, the statement fails and names them; fix those rows first. The code works before the index exists (it just has no race protection), so deploy order does not matter.
+
+**What's here**
+- **`internalSaveError()`** in `app/assets/actions.ts`: when an internal asset insert or update returns Postgres `23505` on `assets_internal_asset_tag_key`, the user sees "Asset No. PHT-EQ-NNNN was just taken by another save. Clear the field for the next free number, or pick another." instead of the raw Postgres message. Other errors are unchanged.
+
+**Not verified against Supabase.** `npx tsc --noEmit` and `npm run lint` pass. The 23505 branch has not been triggered against a live database.
+
+## Setup steps
+
+1. Run `schema_step47.sql` in the Supabase SQL editor.
+2. Confirm: `select indexname from pg_indexes where indexname = 'assets_internal_asset_tag_key';` returns one row.
+3. Optional race check: open two tabs on **+ Add Internal Equipment** with the same typed Asset No., save both; the second shows the friendly message (or the existing "already in use" message if it loses before the write).

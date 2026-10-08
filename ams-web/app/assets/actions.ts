@@ -149,6 +149,16 @@ async function assetTagTaken(supabase: Supabase, tag: string, exceptAssetId?: st
   return (data ?? []).length > 0;
 }
 
+// Postgres 23505 on schema_step47's partial unique index: another save took
+// this PHT-EQ number between our duplicate check and the write. Any other
+// error keeps its raw message.
+function internalSaveError(error: { code?: string; message: string }, tag: string): string {
+  if (error.code === "23505" && error.message.includes("assets_internal_asset_tag_key")) {
+    return `Asset No. ${tag} was just taken by another save. Clear the field for the next free number, or pick another.`;
+  }
+  return error.message;
+}
+
 function optionalEnum(
   formData: FormData,
   field: string,
@@ -239,7 +249,7 @@ async function createInternalAsset(supabase: Supabase, formData: FormData) {
 
   const site_id = await resolveSiteId(supabase, parsed.values.organization_id, formData.get("site_address"));
   const { error } = await supabase.from("assets").insert({ ...parsed.values, asset_tag: tag, site_id });
-  if (error) return back(error.message);
+  if (error) return back(internalSaveError(error, tag));
 
   revalidatePath("/assets");
   redirect(`/assets?org=${parsed.values.organization_id}`);
@@ -260,7 +270,7 @@ async function updateInternalAsset(supabase: Supabase, assetId: string, formData
     .from("assets")
     .update({ ...parsed.values, asset_tag: tag, site_id })
     .eq("id", assetId);
-  if (error) return back(error.message);
+  if (error) return back(internalSaveError(error, tag));
 
   revalidatePath("/assets");
   redirect(`/assets?org=${parsed.values.organization_id}`);

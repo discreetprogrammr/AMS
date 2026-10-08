@@ -19,7 +19,7 @@
 // service-role client needed here.
 import { createClient } from "@/lib/supabase/server";
 import { hoursBetween } from "@/lib/sla";
-import { excludeInternal, getInternalOrgIds } from "@/lib/internal-org";
+import { excludeInternal, getInternalOrgIds, touchesInternalOrg } from "@/lib/internal-org";
 
 const TREND_MONTHS = 6;
 
@@ -243,19 +243,22 @@ export async function getCsatRollup(): Promise<CsatRollup> {
   const buckets = monthBuckets(TREND_MONTHS);
   const internalOrgIds = await getInternalOrgIds(supabase);
 
-  const { data } = await excludeInternal(
-    supabase
-      .from("service_records")
-      .select(
-        "date_performed, performed_by, csat_overall, csat_service, csat_machine, csat_support, assets!inner(organization_id, organizations(name))",
-      )
-      .not("csat_overall", "is", null),
-    internalOrgIds,
-    "assets.organization_id",
-  );
+  const { data } = await supabase
+    .from("service_records")
+    .select(
+      "date_performed, performed_by, csat_overall, csat_service, csat_machine, csat_support, assets(organization_id, organizations(name)), sites(organization_id)",
+    )
+    .not("csat_overall", "is", null);
 
+  // Filtered here, not with an inner join: asset_id is nullable on
+  // service_records (schema_step41), and a site-only record that carries a
+  // rating must still count toward the overall averages.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rows = (data ?? []) as any[];
+  const rows = ((data ?? []) as any[]).filter((r) => {
+    const asset = Array.isArray(r.assets) ? r.assets[0] : r.assets;
+    const site = Array.isArray(r.sites) ? r.sites[0] : r.sites;
+    return !touchesInternalOrg(internalOrgIds, asset?.organization_id, site?.organization_id);
+  });
 
   const months: CsatMonthly[] = buckets.map((bucket) => {
     const inMonth = rows.filter((r) => {

@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { excludeInternal, getInternalOrgIds } from "@/lib/internal-org";
 
 function csvEscape(value: unknown): string {
   const str = String(value ?? "");
@@ -11,12 +12,17 @@ function csvEscape(value: unknown): string {
 export async function GET() {
   const supabase = await createClient();
 
-  const { data: assets, error } = await supabase
-    .from("assets")
-    .select(
-      "asset_tag, equipment_type, brand, model, serial_number, status, sold_by, install_date, warranty_end_date, next_service_due, custodian, pnri_license_number, organizations(name), sites(address)",
-    )
-    .order("asset_tag", { ascending: true });
+  // Client equipment only. Internal equipment (organizations.is_internal)
+  // gets its own export later (spec 7.4) rather than leaking into this one.
+  const { data: assets, error } = await excludeInternal(
+    supabase
+      .from("assets")
+      .select(
+        "asset_tag, equipment_type, brand, model, serial_number, status, sold_by, install_date, warranty_end_date, next_service_due, custodian, pnri_license_number, organizations(name), sites(address)",
+      )
+      .order("asset_tag", { ascending: true }),
+    await getInternalOrgIds(supabase),
+  );
 
   if (error) {
     return new Response(`Failed to export: ${error.message}`, {

@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { excludeInternal, getInternalOrgIds } from "@/lib/internal-org";
 
 // Dedicated unserviceable-equipment report — the AMS equivalent of COA's
 // Inspection and Inventory Report of Unserviceable Property (IIRUP).
@@ -13,13 +14,17 @@ function csvEscape(value: unknown): string {
 export async function GET() {
   const supabase = await createClient();
 
-  const { data: assets, error } = await supabase
-    .from("assets")
-    .select(
-      "asset_tag, equipment_type, brand, model, serial_number, custodian, sold_by, install_date, organizations(name), sites(address)",
-    )
-    .eq("status", "unserviceable")
-    .order("asset_tag", { ascending: true });
+  // Client equipment only (organizations.is_internal is excluded).
+  const { data: assets, error } = await excludeInternal(
+    supabase
+      .from("assets")
+      .select(
+        "asset_tag, equipment_type, brand, model, serial_number, custodian, sold_by, install_date, organizations(name), sites(address)",
+      )
+      .eq("status", "unserviceable")
+      .order("asset_tag", { ascending: true }),
+    await getInternalOrgIds(supabase),
+  );
 
   if (error) {
     return new Response(`Failed to export: ${error.message}`, {

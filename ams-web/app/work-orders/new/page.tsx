@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { excludeInternal, getInternalOrgIds } from "@/lib/internal-org";
 import { getProfile, requireStaff } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { ticketRef } from "@/lib/format";
@@ -18,6 +19,8 @@ export default async function NewWorkOrderPage({
   const profile = await getProfile();
 
   const supabase = await createClient();
+  // Internal equipment (organizations.is_internal) is never offered here — see lib/internal-org.ts.
+  const internalOrgIds = await getInternalOrgIds(supabase);
 
   // Spawned from a ticket's "Create Work Order" link (see app/tickets and
   // app/assets/[id]) — pre-fill asset/description/priority from it, and
@@ -40,10 +43,13 @@ export default async function NewWorkOrderPage({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ticket = ticketData as any;
 
-  const { data: assets } = await supabase
-    .from("assets")
-    .select("id, asset_tag, serial_number, sites(address), organizations(name)")
-    .order("asset_tag");
+  const { data: assets } = await excludeInternal(
+    supabase
+      .from("assets")
+      .select("id, asset_tag, serial_number, sites(address), organizations(name)")
+      .order("asset_tag"),
+    internalOrgIds,
+  );
 
   // Landed here from the plain "+ Create Work Order" button on /work-orders
   // (not from a specific ticket's link) — still offer a way to link one.
@@ -51,14 +57,18 @@ export default async function NewWorkOrderPage({
   // work order are worth showing here.
   const { data: linkableTickets } = ticketId
     ? { data: null }
-    : await supabase
-        .from("service_tickets")
-        .select(
-          "id, description, priority, created_at, assets(serial_number, sites(address))",
-        )
-        .is("work_order_id", null)
-        .neq("status", "closed")
-        .order("created_at", { ascending: false });
+    : await excludeInternal(
+        supabase
+          .from("service_tickets")
+          .select(
+            "id, description, priority, created_at, assets!inner(serial_number, sites(address))",
+          )
+          .is("work_order_id", null)
+          .neq("status", "closed")
+          .order("created_at", { ascending: false }),
+        internalOrgIds,
+        "assets.organization_id",
+      );
 
   return (
     <AppShell profile={profile} title="Create Work Order">

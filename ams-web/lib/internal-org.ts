@@ -67,6 +67,20 @@ export function excludeInternal<Q>(
   return (query as unknown as Filterable<Q>).not(column, "in", `(${internalOrgIds.join(",")})`);
 }
 
+/**
+ * True if any of the given organization ids is internal. For rows that can
+ * reach an organization by more than one path and so can't use an inner
+ * join: service_records.asset_id is nullable since schema_step41 (site
+ * surveys and training reports attach to a site instead), so such rows are
+ * checked in JS against both their asset's and their site's organization.
+ */
+export function touchesInternalOrg(
+  internalOrgIds: string[],
+  ...orgIds: (string | null | undefined)[]
+): boolean {
+  return orgIds.some((id) => !!id && internalOrgIds.includes(id));
+}
+
 export type InternalScope = {
   orgIds: Set<string>;
   siteIds: Set<string>;

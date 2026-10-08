@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { excludeInternal, getInternalOrgIds } from "@/lib/internal-org";
 import { getProfile, requireStaff } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { ticketRef } from "@/lib/format";
@@ -13,11 +14,16 @@ export default async function CorrectiveChecklistPage({
   const profile = await getProfile();
 
   const supabase = await createClient();
+  // Internal equipment (organizations.is_internal) is never offered here — see lib/internal-org.ts.
+  const internalOrgIds = await getInternalOrgIds(supabase);
 
-  const { data: assets } = await supabase
-    .from("assets")
-    .select("id, asset_tag, serial_number, sites(address), organizations(name)")
-    .order("asset_tag");
+  const { data: assets } = await excludeInternal(
+    supabase
+      .from("assets")
+      .select("id, asset_tag, serial_number, sites(address), organizations(name)")
+      .order("asset_tag"),
+    internalOrgIds,
+  );
 
   // Same "arrive from a ticket, or pick one from a dropdown" pattern as
   // /work-orders/new and the preventive checklist — lets a report be filed
@@ -36,11 +42,15 @@ export default async function CorrectiveChecklistPage({
 
   const { data: linkableTickets } = ticketId
     ? { data: null }
-    : await supabase
-        .from("service_tickets")
-        .select("id, description, created_at, assets(serial_number, sites(address))")
-        .neq("status", "closed")
-        .order("created_at", { ascending: false });
+    : await excludeInternal(
+        supabase
+          .from("service_tickets")
+          .select("id, description, created_at, assets!inner(serial_number, sites(address))")
+          .neq("status", "closed")
+          .order("created_at", { ascending: false }),
+        internalOrgIds,
+        "assets.organization_id",
+      );
 
   return (
     <AppShell

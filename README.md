@@ -1969,3 +1969,23 @@ Follows PR 2 above. **No database change in this step**: `schema_step46.sql` (al
 4. Try a duplicate Asset No. and confirm the rejection message. Edit the item and confirm the org is locked.
 5. `/assets/new` (normal) must not list the internal org. Upload a CSV with an internal-org row and confirm it is rejected.
 6. Download **Export internal equipment** and open it in Excel. Delete the test item afterwards.
+
+## Follow-up — Internal equipment register (PR 4 of 6: "Internal equipment only" preset)
+
+Follows PR 3 above. **No database change in this step**: it writes the existing `profiles.hidden_modules` (schema_step44.sql) through the existing service-role path. Spec section 5.
+
+**What's here**
+- **`INTERNAL_EQUIPMENT_HIDDEN_HREFS`** in `lib/nav-items.ts`, next to `NAV_MODULES`, keyed by href: `/fleet-map`, `/clients`, `/work-orders`, `/tickets`, `/inspections`, `/parts`, `/messages`, `/calendar`, `/reports`, `/analytics`, `/sla-settings`. Left visible: Dashboard, User Access (always accessible), Assets, Scan Asset, Asset Verification (`/inventory`), Alerts.
+- **`applyInternalEquipmentPreset(userId)`** in `app/user-access/actions.ts`: `requireSuperAdmin()`, then overwrites that user's `hidden_modules` with exactly the preset. Refuses any target that is not `admin` or `client_viewer`.
+- **"Internal equipment only" button** in each user's expanded Edit Access panel, beside Save. It saves immediately and syncs the checkboxes, so the Super Admin can still tick or untick modules and Save afterwards. Super Admin accounts are never listed, so they never get the button.
+
+**Known limit**: the preset replaces the user's existing hidden modules rather than merging with them.
+
+**Not verified in a browser or against Supabase.** `npx tsc --noEmit` and `npm run lint` pass.
+
+## Setup steps
+
+1. Push and let Vercel build a preview.
+2. `/user-access` as Super Admin: expand an admin user, click **Internal equipment only**. "Saved." appears, 11 modules are unticked and the row shows "11 hidden".
+3. Sign in as that user: the sidebar shows only Dashboard, Assets, Scan Asset, Asset Verification, Alerts. Opening `/clients` directly redirects to the Dashboard.
+4. Back in User Access, tick one module and Save; confirm it sticks.

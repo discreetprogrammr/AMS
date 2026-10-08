@@ -3,12 +3,14 @@ import { createClient } from "@/lib/supabase/server";
 import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { SearchBar } from "@/components/search-bar";
+import { isOneOf, SEGMENTS } from "@/lib/internal-equipment";
 import { AssetsTable, type AssetRow } from "./assets-table";
+import { AssetsFilters } from "./assets-filters";
 
 export default async function AssetsPage({
   searchParams,
 }: {
-  searchParams: { q?: string; deleted?: string };
+  searchParams: { q?: string; deleted?: string; org?: string; segment?: string };
 }) {
   const supabase = await createClient();
   const profile = await getProfile();
@@ -20,16 +22,37 @@ export default async function AssetsPage({
   // strip any from the input first rather than trying to escape them.
   const q = (searchParams?.q ?? "").trim().replace(/,/g, "");
 
+  // Filters live in the URL (?org=<uuid>&segment=<value>), staff only: a
+  // client_viewer is already scoped to one organization by RLS. Segment
+  // only means something for the internal organization (schema_step46).
+  const { data: orgList } = isStaff
+    ? await supabase
+        .from("organizations")
+        .select("id, name, is_internal")
+        .order("name")
+    : { data: [] };
+  const organizations = orgList ?? [];
+  const selectedOrg = organizations.find((o) => o.id === searchParams?.org);
+  const internalView = !!selectedOrg?.is_internal;
+  const segment =
+    internalView && isOneOf(SEGMENTS, searchParams?.segment ?? null)
+      ? (searchParams.segment as string)
+      : "";
+  const hasInternalOrg = organizations.some((o) => o.is_internal);
+
   let query = supabase
     .from("assets")
     .select(
-      "id, asset_tag, serial_number, equipment_type, brand, model, status, sites(address), organizations(name)",
+      "id, asset_tag, serial_number, equipment_type, brand, model, status, segment, asset_category, description, custodian, department, assignment_status, condition, warranty_end_date, sites(address), organizations(name)",
     )
     .order("created_at", { ascending: false });
 
+  if (selectedOrg) query = query.eq("organization_id", selectedOrg.id);
+  if (segment) query = query.eq("segment", segment);
+
   if (q) {
     query = query.or(
-      `asset_tag.ilike.%${q}%,brand.ilike.%${q}%,model.ilike.%${q}%`,
+      `asset_tag.ilike.%${q}%,brand.ilike.%${q}%,model.ilike.%${q}%,serial_number.ilike.%${q}%,description.ilike.%${q}%,custodian.ilike.%${q}%`,
     );
   }
 
@@ -46,6 +69,14 @@ export default async function AssetsPage({
     status: a.status,
     site_address: a.sites?.address ?? null,
     organization_name: a.organizations?.name ?? null,
+    segment: a.segment,
+    asset_category: a.asset_category,
+    description: a.description,
+    custodian: a.custodian,
+    department: a.department,
+    assignment_status: a.assignment_status,
+    condition: a.condition,
+    warranty_end_date: a.warranty_end_date,
   }));
 
   return (
@@ -59,6 +90,7 @@ export default async function AssetsPage({
             action="/assets"
             placeholder="Search assets…"
             defaultValue={q}
+            preserve={{ org: selectedOrg?.id, segment }}
           />
           <a
             href="/api/assets/export"
@@ -80,6 +112,22 @@ export default async function AssetsPage({
               className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
             >
               Import CSV
+            </Link>
+          )}
+          {isStaff && internalView && (
+            <a
+              href="/api/assets/export/internal"
+              className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
+            >
+              Export internal equipment
+            </a>
+          )}
+          {isStaff && hasInternalOrg && (
+            <Link
+              href="/assets/new?internal=1"
+              className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
+            >
+              + Add Internal Equipment
             </Link>
           )}
           {isStaff && (
@@ -104,12 +152,24 @@ export default async function AssetsPage({
         </p>
       )}
 
+      {isStaff && (
+        <AssetsFilters
+          organizations={organizations}
+          orgId={selectedOrg?.id ?? ""}
+          segment={segment}
+          q={q}
+        />
+      )}
+
       <AssetsTable
         assets={rows}
         isStaff={isStaff}
+        internalView={internalView}
         emptyMessage={
           q
             ? `No assets match "${q}".`
+            : selectedOrg
+              ? "No assets match these filters."
             : isStaff
               ? 'No assets yet. Click "Add Asset" to create the first one.'
               : "No assets on file yet."

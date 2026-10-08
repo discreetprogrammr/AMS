@@ -5,10 +5,13 @@ export function SearchBar({
   action,
   placeholder = "Search assets…",
   defaultValue = "",
+  preserve,
 }: {
   action: string;
   placeholder?: string;
   defaultValue?: string;
+  // Other query params to carry through a new search (e.g. /assets filters).
+  preserve?: Record<string, string | undefined>;
 }) {
   return (
     <form action={action} method="GET" className="relative">
@@ -24,6 +27,10 @@ export function SearchBar({
         <circle cx="11" cy="11" r="7" />
         <path d="m21 21-4.3-4.3" />
       </svg>
+      {Object.entries(preserve ?? {}).map(
+        ([name, value]) =>
+          value && <input key={name} type="hidden" name={name} value={value} />,
+      )}
       <input
         type="text"
         name="q"

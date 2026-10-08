@@ -3,6 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { StatusBadge } from "@/components/status-badge";
+import {
+  ASSIGNMENT_STATUSES,
+  CONDITIONS,
+  SEGMENTS,
+  labelFor,
+} from "@/lib/internal-equipment";
 import { AssetRowActions } from "./asset-row-actions";
 
 const EQUIPMENT_LABEL: Record<string, string> = {
@@ -23,6 +29,15 @@ export type AssetRow = {
   status: string;
   site_address: string | null;
   organization_name: string | null;
+  // Internal equipment only (schema_step46.sql); null on client assets.
+  segment: string | null;
+  asset_category: string | null;
+  description: string | null;
+  custodian: string | null;
+  department: string | null;
+  assignment_status: string | null;
+  condition: string | null;
+  warranty_end_date: string | null;
 };
 
 // Same pill-filter pattern as Tickets/Work Orders (tickets-table.tsx) —
@@ -41,10 +56,15 @@ const FILTERS: { key: FilterKey; label: string; dotClass?: string }[] = [
 export function AssetsTable({
   assets,
   isStaff,
+  internalView = false,
   emptyMessage,
 }: {
   assets: AssetRow[];
   isStaff: boolean;
+  // True when /assets is filtered to the internal organization: shows the
+  // spec 7.2 columns and drops the NII-only ones.
+  internalView?: boolean;
+
   emptyMessage: string;
 }) {
   const router = useRouter();
@@ -78,6 +98,22 @@ export function AssetsTable({
       <div className="overflow-x-auto rounded-xl border border-hairline bg-surface">
         <table className="w-full text-left text-sm">
           <thead className="bg-surface-2 text-xs uppercase tracking-wide text-slate-500">
+            {internalView ? (
+              <tr>
+                <th className="px-4 py-3">Asset Tag</th>
+                <th className="px-4 py-3">Category</th>
+                <th className="px-4 py-3">Description</th>
+                <th className="px-4 py-3">Brand / Model</th>
+                <th className="px-4 py-3">Serial</th>
+                <th className="px-4 py-3">Custodian</th>
+                <th className="px-4 py-3">Department</th>
+                <th className="px-4 py-3">Segment</th>
+                <th className="px-4 py-3">Assignment</th>
+                <th className="px-4 py-3">Condition</th>
+                <th className="px-4 py-3">Warranty End</th>
+                {isStaff && <th className="px-4 py-3 text-right">Actions</th>}
+              </tr>
+            ) : (
             <tr>
               <th className="px-4 py-3">Serial Number</th>
               <th className="px-4 py-3">Organization</th>
@@ -87,9 +123,37 @@ export function AssetsTable({
               <th className="px-4 py-3">Site</th>
               {isStaff && <th className="px-4 py-3 text-right">Actions</th>}
             </tr>
+            )}
           </thead>
           <tbody>
-            {rows.map((asset) => (
+            {rows.map((asset) => internalView ? (
+              <tr
+                key={asset.id}
+                onClick={() => router.push(`/assets/${asset.id}`)}
+                className="cursor-pointer border-t border-hairline hover:bg-surface-2"
+              >
+                <td className="px-4 py-3 font-medium text-ink">{asset.asset_tag}</td>
+                <td className="px-4 py-3 text-ink-soft">{asset.asset_category ?? "—"}</td>
+                <td className="px-4 py-3 text-ink-soft">{asset.description ?? "—"}</td>
+                <td className="px-4 py-3 text-ink-soft">
+                  {[asset.brand, asset.model].filter(Boolean).join(" / ") || "—"}
+                </td>
+                <td className="px-4 py-3 text-ink-soft">{asset.serial_number ?? "—"}</td>
+                <td className="px-4 py-3 text-ink-soft">{asset.custodian ?? "—"}</td>
+                <td className="px-4 py-3 text-ink-soft">{asset.department ?? "—"}</td>
+                <td className="px-4 py-3 text-ink-soft">{labelFor(SEGMENTS, asset.segment)}</td>
+                <td className="px-4 py-3 text-ink-soft">
+                  {labelFor(ASSIGNMENT_STATUSES, asset.assignment_status)}
+                </td>
+                <td className="px-4 py-3 text-ink-soft">{labelFor(CONDITIONS, asset.condition)}</td>
+                <td className="px-4 py-3 text-ink-soft">{asset.warranty_end_date ?? "—"}</td>
+                {isStaff && (
+                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                    <AssetRowActions assetId={asset.id} assetTag={asset.asset_tag} />
+                  </td>
+                )}
+              </tr>
+            ) : (
               <tr
                 key={asset.id}
                 onClick={() => router.push(`/assets/${asset.id}`)}
@@ -118,7 +182,7 @@ export function AssetsTable({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={isStaff ? 7 : 6} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={internalView ? (isStaff ? 12 : 11) : isStaff ? 7 : 6} className="px-4 py-8 text-center text-slate-500">
                   {emptyMessage}
                 </td>
               </tr>

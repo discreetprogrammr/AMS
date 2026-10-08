@@ -1,15 +1,18 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { StatusBadge } from "@/components/status-badge";
 import {
-  ASSIGNMENT_STATUSES,
-  CONDITIONS,
   SEGMENTS,
+  VIEWS,
+  internalAssetsHref,
   labelFor,
+  type InternalFilters,
 } from "@/lib/internal-equipment";
 import { AssetRowActions } from "./asset-row-actions";
+import { InternalStatusBadges } from "./internal-badges";
 
 const EQUIPMENT_LABEL: Record<string, string> = {
   xray_screening: "X-ray Screening",
@@ -57,6 +60,9 @@ export function AssetsTable({
   assets,
   isStaff,
   internalView = false,
+  orgId = "",
+  q = "",
+  filters,
   emptyMessage,
 }: {
   assets: AssetRow[];
@@ -64,19 +70,40 @@ export function AssetsTable({
   // True when /assets is filtered to the internal organization: shows the
   // spec 7.2 columns and drops the NII-only ones.
   internalView?: boolean;
-
+  // Internal view only: the status pills are links, because the filtering
+  // happens server-side (page.tsx) and the URL is the state.
+  orgId?: string;
+  q?: string;
+  filters?: InternalFilters;
   emptyMessage: string;
 }) {
   const router = useRouter();
   const [filter, setFilter] = useState<FilterKey>("all");
 
   const rows = useMemo(() => {
-    if (filter === "all") return assets;
+    if (internalView || filter === "all") return assets;
     return assets.filter((a) => a.status === filter);
-  }, [assets, filter]);
+  }, [assets, filter, internalView]);
 
   return (
     <div>
+      {internalView && filters ? (
+        <div className="mb-5 flex flex-wrap items-center gap-2">
+          {VIEWS.map((v) => (
+            <Link
+              key={v.value}
+              href={internalAssetsHref({ q, org: orgId }, { ...filters, view: v.value })}
+              className={`inline-flex h-9 items-center gap-2 rounded-full border px-3.5 text-xs font-medium tracking-wide transition-colors ${
+                filters.view === v.value
+                  ? "border-blue-500/40 bg-blue-500/10 text-blue-400"
+                  : "border-hairline text-ink-soft hover:text-ink"
+              }`}
+            >
+              {v.label}
+            </Link>
+          ))}
+        </div>
+      ) : (
       <div className="mb-5 flex flex-wrap items-center gap-2">
         {FILTERS.map((f) => (
           <button
@@ -94,6 +121,7 @@ export function AssetsTable({
           </button>
         ))}
       </div>
+      )}
 
       <div className="overflow-x-auto rounded-xl border border-hairline bg-surface">
         <table className="w-full text-left text-sm">
@@ -108,8 +136,7 @@ export function AssetsTable({
                 <th className="px-4 py-3">Custodian</th>
                 <th className="px-4 py-3">Department</th>
                 <th className="px-4 py-3">Segment</th>
-                <th className="px-4 py-3">Assignment</th>
-                <th className="px-4 py-3">Condition</th>
+                <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Warranty End</th>
                 {isStaff && <th className="px-4 py-3 text-right">Actions</th>}
               </tr>
@@ -142,10 +169,12 @@ export function AssetsTable({
                 <td className="px-4 py-3 text-ink-soft">{asset.custodian ?? "—"}</td>
                 <td className="px-4 py-3 text-ink-soft">{asset.department ?? "—"}</td>
                 <td className="px-4 py-3 text-ink-soft">{labelFor(SEGMENTS, asset.segment)}</td>
-                <td className="px-4 py-3 text-ink-soft">
-                  {labelFor(ASSIGNMENT_STATUSES, asset.assignment_status)}
+                <td className="px-4 py-3">
+                  <InternalStatusBadges
+                    assignmentStatus={asset.assignment_status}
+                    condition={asset.condition}
+                  />
                 </td>
-                <td className="px-4 py-3 text-ink-soft">{labelFor(CONDITIONS, asset.condition)}</td>
                 <td className="px-4 py-3 text-ink-soft">{asset.warranty_end_date ?? "—"}</td>
                 {isStaff && (
                   <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
@@ -182,7 +211,7 @@ export function AssetsTable({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={internalView ? (isStaff ? 12 : 11) : isStaff ? 7 : 6} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={internalView ? (isStaff ? 11 : 10) : isStaff ? 7 : 6} className="px-4 py-8 text-center text-slate-500">
                   {emptyMessage}
                 </td>
               </tr>

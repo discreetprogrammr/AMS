@@ -3,14 +3,23 @@ import { createClient } from "@/lib/supabase/server";
 import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { SearchBar } from "@/components/search-bar";
-import { isOneOf, SEGMENTS } from "@/lib/internal-equipment";
+import {
+  applyInternalFilters,
+  manilaDate,
+  parseInternalFilters,
+} from "@/lib/internal-equipment";
 import { AssetsTable, type AssetRow } from "./assets-table";
-import { AssetsFilters } from "./assets-filters";
+import { AssetsFilters, type InternalOptions } from "./assets-filters";
+import { InternalSummaryTiles, type InternalSummary } from "./internal-summary";
 
 export default async function AssetsPage({
   searchParams,
 }: {
-  searchParams: { q?: string; deleted?: string; org?: string; segment?: string };
+  searchParams: Record<string, string | string[] | undefined> & {
+    q?: string;
+    deleted?: string;
+    org?: string;
+  };
 }) {
   const supabase = await createClient();
   const profile = await getProfile();
@@ -34,10 +43,10 @@ export default async function AssetsPage({
   const organizations = orgList ?? [];
   const selectedOrg = organizations.find((o) => o.id === searchParams?.org);
   const internalView = !!selectedOrg?.is_internal;
-  const segment =
-    internalView && isOneOf(SEGMENTS, searchParams?.segment ?? null)
-      ? (searchParams.segment as string)
-      : "";
+  // Segment / view / custodian / department / category / warranty only
+  // mean something for the internal organization (parseInternalFilters).
+  const filters = parseInternalFilters(internalView ? searchParams : {});
+  const segment = filters.segment;
   const hasInternalOrg = organizations.some((o) => o.is_internal);
 
   let query = supabase
@@ -48,7 +57,7 @@ export default async function AssetsPage({
     .order("created_at", { ascending: false });
 
   if (selectedOrg) query = query.eq("organization_id", selectedOrg.id);
-  if (segment) query = query.eq("segment", segment);
+  if (internalView) query = applyInternalFilters(query, filters, manilaDate());
 
   if (q) {
     query = query.or(
@@ -57,6 +66,51 @@ export default async function AssetsPage({
   }
 
   const { data: assets, error } = await query;
+
+  // Internal view extras: summary tiles (org + Segment only, not q or the
+  // other filters) and the distinct values behind the dropdowns.
+  let summary: InternalSummary | null = null;
+  let options: InternalOptions | null = null;
+  if (internalView && selectedOrg) {
+    const today = manilaDate();
+    const count = async (extra: Partial<typeof filters>) => {
+      const base = supabase
+        .from("assets")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", selectedOrg.id);
+      // Typed as a plain promise: PostgREST's builder generics are too deep
+      // for tsc once they pass through the shared helper.
+      const result = (await applyInternalFilters(
+        base,
+        { ...filters, view: "all", custodian: "", department: "", category: "", warranty: "", ...extra },
+        today,
+      )) as { count: number | null };
+      return result.count ?? 0;
+    };
+    const [total, assigned, inStock, needsRepair, warrantyExpiring, { data: facets }] =
+      await Promise.all([
+        count({}),
+        count({ view: "assigned" }),
+        count({ view: "in_stock" }),
+        count({ view: "repair" }),
+        count({ warranty: "expiring" }),
+        supabase
+          .from("assets")
+          .select("custodian, department, asset_category")
+          .eq("organization_id", selectedOrg.id),
+      ]);
+    summary = { total, assigned, inStock, needsRepair, warrantyExpiring };
+    const distinct = (pick: (r: { custodian: string | null; department: string | null; asset_category: string | null }) => string | null) =>
+      Array.from(
+        new Set((facets ?? []).map((r) => pick(r)?.trim() ?? "").filter(Boolean)),
+      ).sort((a, b) => a.localeCompare(b));
+    options = {
+      custodians: distinct((r) => r.custodian),
+      hasUnassigned: (facets ?? []).some((r) => !r.custodian?.trim()),
+      departments: distinct((r) => r.department),
+      categories: distinct((r) => r.asset_category),
+    };
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rows: AssetRow[] = (assets ?? []).map((a: any) => ({
@@ -79,6 +133,16 @@ export default async function AssetsPage({
     warranty_end_date: a.warranty_end_date,
   }));
 
+  // The internal export applies the same active filters (and q).
+  const exportParams = new URLSearchParams();
+  if (internalView) {
+    if (q) exportParams.set("q", q);
+    for (const [k, v] of Object.entries(filters)) {
+      if (v && !(k === "view" && v === "all")) exportParams.set(k, v);
+    }
+  }
+  const exportQuery = exportParams.size ? `?${exportParams.toString()}` : "";
+
   return (
     <AppShell
       profile={profile}
@@ -90,7 +154,15 @@ export default async function AssetsPage({
             action="/assets"
             placeholder="Search assets…"
             defaultValue={q}
-            preserve={{ org: selectedOrg?.id, segment }}
+            preserve={{
+              org: selectedOrg?.id,
+              segment,
+              view: filters.view === "all" ? "" : filters.view,
+              custodian: filters.custodian,
+              department: filters.department,
+              category: filters.category,
+              warranty: filters.warranty,
+            }}
           />
           <a
             href="/api/assets/export"
@@ -116,7 +188,7 @@ export default async function AssetsPage({
           )}
           {isStaff && internalView && (
             <a
-              href="/api/assets/export/internal"
+              href={`/api/assets/export/internal${exportQuery}`}
               className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
             >
               Export internal equipment
@@ -156,15 +228,20 @@ export default async function AssetsPage({
         <AssetsFilters
           organizations={organizations}
           orgId={selectedOrg?.id ?? ""}
-          segment={segment}
+          filters={filters}
+          options={options}
           q={q}
         />
       )}
+      {summary && <InternalSummaryTiles summary={summary} />}
 
       <AssetsTable
         assets={rows}
         isStaff={isStaff}
         internalView={internalView}
+        orgId={selectedOrg?.id ?? ""}
+        q={q}
+        filters={filters}
         emptyMessage={
           q
             ? `No assets match "${q}".`

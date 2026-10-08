@@ -172,16 +172,20 @@ export function manilaDate(offsetDays = 0, now: Date = new Date()): string {
 }
 
 // The subset of the Supabase query builder these helpers use. Every method
-// returns the same builder, so a structural type keeps them generic.
-type Filterable<Q> = {
-  eq(column: string, value: string): Q;
-  or(filters: string): Q;
-  gt(column: string, value: string): Q;
-  gte(column: string, value: string): Q;
-  lte(column: string, value: string): Q;
-  lt(column: string, value: string): Q;
-  is(column: string, value: null): Q;
+// returns the same builder; modelling that recursively makes tsc blow its
+// instantiation depth on PostgREST's generics, so the methods return `any`
+// and each helper is typed Q in, Q out.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type Filterable = {
+  eq(column: string, value: string): any;
+  or(filters: string): any;
+  gt(column: string, value: string): any;
+  gte(column: string, value: string): any;
+  lte(column: string, value: string): any;
+  lt(column: string, value: string): any;
+  is(column: string, value: null): any;
 };
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 // PostgREST filter strings. Retired / Lost covers assignment_status
 // retired_disposed or lost, and condition lost (matching deriveInternalStatus
@@ -191,16 +195,16 @@ const NOT_ASSIGNMENT_RETIRED = "assignment_status.is.null,assignment_status.not.
 const NOT_CONDITION_LOST = "condition.is.null,condition.neq.lost";
 
 /** Excludes retired / lost rows: the scope of All, Total and Needs Repair. */
-export function excludeRetired<Q extends Filterable<Q>>(query: Q): Q {
+export function excludeRetired<Q extends Filterable>(query: Q): Q {
   return query.or(NOT_ASSIGNMENT_RETIRED).or(NOT_CONDITION_LOST);
 }
 
 /** Segment only: what the summary tiles respect. */
-export function applySegment<Q extends Filterable<Q>>(query: Q, f: Pick<InternalFilters, "segment">): Q {
+export function applySegment<Q extends Filterable>(query: Q, f: Pick<InternalFilters, "segment">): Q {
   return f.segment ? query.eq("segment", f.segment) : query;
 }
 
-export function applyWarrantyFilter<Q extends Filterable<Q>>(query: Q, warranty: string, today = manilaDate()): Q {
+export function applyWarrantyFilter<Q extends Filterable>(query: Q, warranty: string, today = manilaDate()): Q {
   const limit = manilaDate(WARRANTY_WINDOW_DAYS, new Date(today + "T00:00:00Z"));
   switch (warranty) {
     case "active": // more than 60 days away
@@ -217,7 +221,7 @@ export function applyWarrantyFilter<Q extends Filterable<Q>>(query: Q, warranty:
 }
 
 /** Everything except the free-text search, which the caller owns. */
-export function applyInternalFilters<Q extends Filterable<Q>>(query: Q, f: InternalFilters, today = manilaDate()): Q {
+export function applyInternalFilters<Q extends Filterable>(query: Q, f: InternalFilters, today = manilaDate()): Q {
   let q = applySegment(query, f);
   switch (f.view) {
     case "assigned":
@@ -243,4 +247,21 @@ export function applyInternalFilters<Q extends Filterable<Q>>(query: Q, f: Inter
   if (f.department) q = q.eq("department", f.department);
   if (f.category) q = q.eq("asset_category", f.category);
   return applyWarrantyFilter(q, f.warranty, today);
+}
+
+/** /assets URL for the internal view: only non-default values are written. */
+export function internalAssetsHref(
+  base: { q?: string; org: string },
+  f: Partial<InternalFilters>,
+): string {
+  const params = new URLSearchParams();
+  if (base.q) params.set("q", base.q);
+  params.set("org", base.org);
+  if (f.segment) params.set("segment", f.segment);
+  if (f.view && f.view !== "all") params.set("view", f.view);
+  if (f.custodian) params.set("custodian", f.custodian);
+  if (f.department) params.set("department", f.department);
+  if (f.category) params.set("category", f.category);
+  if (f.warranty) params.set("warranty", f.warranty);
+  return `/assets?${params.toString()}`;
 }

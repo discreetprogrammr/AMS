@@ -1,46 +1,67 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { SEGMENTS } from "@/lib/internal-equipment";
+import {
+  SEGMENTS,
+  UNASSIGNED,
+  WARRANTY_FILTERS,
+  internalAssetsHref,
+  type InternalFilters,
+} from "@/lib/internal-equipment";
 
 type Org = { id: string; name: string; is_internal: boolean };
+
+export type InternalOptions = {
+  custodians: string[];
+  hasUnassigned: boolean;
+  departments: string[];
+  categories: string[];
+};
 
 const selectClass =
   "h-10 rounded-lg border border-hairline bg-surface-2 px-3 text-sm text-ink focus:border-blue-500 focus:outline-none";
 
-// Organization / Segment filters. State lives in the URL (?org=&segment=),
-// so a filtered view can be bookmarked; ?q= is carried through. Changing
-// the organization drops the segment, which only applies to internal ones.
+const labelClass = "flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500";
+
+// Organization / Segment / internal-equipment filters. State lives in the
+// URL, so a filtered view can be bookmarked; ?q= and every other active
+// filter are carried through a change. Changing the organization drops the
+// internal-only filters, which only apply to the internal organization.
 export function AssetsFilters({
   organizations,
   orgId,
-  segment,
+  filters,
+  options,
   q,
 }: {
   organizations: Org[];
   orgId: string;
-  segment: string;
+  filters: InternalFilters;
+  options: InternalOptions | null;
   q: string;
 }) {
   const router = useRouter();
   const selected = organizations.find((o) => o.id === orgId);
 
-  function go(next: { org?: string; segment?: string }) {
+  function changeOrg(org: string) {
     const params = new URLSearchParams();
     if (q) params.set("q", q);
-    if (next.org) params.set("org", next.org);
-    if (next.org && next.segment) params.set("segment", next.segment);
+    if (org) params.set("org", org);
     const qs = params.toString();
     router.push(qs ? `/assets?${qs}` : "/assets");
   }
 
+  function change(next: Partial<InternalFilters>) {
+    router.push(internalAssetsHref({ q, org: orgId }, { ...filters, ...next }));
+  }
+
   return (
     <div className="mb-4 flex flex-wrap items-center gap-3">
-      <label className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500">
+      <label className={labelClass}>
         Organization
         <select
           value={orgId}
-          onChange={(e) => go({ org: e.target.value })}
+          onChange={(e) => changeOrg(e.target.value)}
           className={selectClass}
         >
           <option value="">All organizations</option>
@@ -52,11 +73,11 @@ export function AssetsFilters({
         </select>
       </label>
       {selected?.is_internal && (
-        <label className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500">
+        <label className={labelClass}>
           Segment
           <select
-            value={segment}
-            onChange={(e) => go({ org: orgId, segment: e.target.value })}
+            value={filters.segment}
+            onChange={(e) => change({ segment: e.target.value })}
             className={selectClass}
           >
             <option value="">All segments</option>
@@ -67,6 +88,71 @@ export function AssetsFilters({
             ))}
           </select>
         </label>
+      )}
+      {selected?.is_internal && options && (
+        <>
+          <label className={labelClass}>
+            Custodian
+            <select
+              value={filters.custodian}
+              onChange={(e) => change({ custodian: e.target.value })}
+              className={selectClass}
+            >
+              <option value="">All custodians</option>
+              {options.hasUnassigned && <option value={UNASSIGNED}>Unassigned</option>}
+              {options.custodians.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className={labelClass}>
+            Department
+            <select
+              value={filters.department}
+              onChange={(e) => change({ department: e.target.value })}
+              className={selectClass}
+            >
+              <option value="">All departments</option>
+              {options.departments.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className={labelClass}>
+            Category
+            <select
+              value={filters.category}
+              onChange={(e) => change({ category: e.target.value })}
+              className={selectClass}
+            >
+              <option value="">All categories</option>
+              {options.categories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className={labelClass}>
+            Warranty
+            <select
+              value={filters.warranty}
+              onChange={(e) => change({ warranty: e.target.value })}
+              className={selectClass}
+            >
+              <option value="">Any warranty</option>
+              {WARRANTY_FILTERS.map((w) => (
+                <option key={w.value} value={w.value}>
+                  {w.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </>
       )}
     </div>
   );

@@ -1940,3 +1940,32 @@ Verified with `npx tsc --noEmit` and `npm run lint`. `tsc` shows three errors th
 4. As Super Admin, call `/api/cron/pm-due`, `/api/cron/sla-check`, `/api/cron/weekly-digest` and `/api/cron/compliance-check` once each and confirm none errors; then `node check-errors.mjs cron 10` should show no new rows.
 5. Promote to production.
 6. Before PR 5 loads any internal assets, repeat step 2 against production once, after temporarily adding one test internal asset (with a segment) and one test warranty date to prove the exclusion actually bites; delete it afterwards.
+
+## Follow-up — Internal equipment register (PR 3 of 6: Assets page and asset form)
+
+Follows PR 2 above. **No database change in this step**: `schema_step46.sql` (already applied) provides every column used, so there is nothing to run first. This step is the first one that lets staff *see and create* internal equipment. Spec sections 4.2, 4.3, 7 and 8.
+
+**What's here**
+- **`lib/internal-equipment.ts`** (new): the value lists mirroring the step 46 CHECK constraints, `deriveInternalStatus()` for the spec 4.3 mapping, the PHT-EQ tag helpers and the export header.
+- **`/assets` filters** (staff only): Organization and Segment selects, state in the URL (`?org=<uuid>&segment=<value>`), default "all organizations". Segment appears only when the chosen org is internal and is ignored otherwise. The search box carries the filters through. `?q=` now also matches `serial_number`, `description` and `custodian`.
+- **Internal table view**: filtered to the internal org, the table shows Asset Tag, Category, Description, Brand / Model, Serial, Custodian, Department, Segment, Assignment, Condition and Warranty End (spec 7.2), and drops Equipment Type, PNRI and Next Service Due. The unfiltered view is the same table as before, now including internal rows for staff.
+- **Asset form, internal mode**: `/assets/new?internal=1` ("+ Add Internal Equipment", shown when an internal org exists). The organization is the single locked choice. The normal `/assets/new` lists **client organizations only**, closing the PR 2 gap. The edit page of an internal asset shows the internal form with the org locked; a client asset's edit form lists client orgs only.
+- **Server-side rules** (`app/assets/actions.ts`), decided from the organization's `is_internal`, never from hidden form fields: `equipment_type = 'other'`; `pnri_license_number` and `next_service_due` set null; `sold_by` and `install_date` not touched; `segment` required; `status` derived, first match wins: assignment `retired_disposed`/`lost` → `unserviceable`, condition `lost` → `unserviceable`, `for_repair` → `down`, `damaged` → `attention`, otherwise `operational`. The manual Status field is hidden for internal assets.
+- **Asset numbers**: internal assets use `PHT-EQ-NNNN` (not the `OTH` prefix). The form prefills the next number (highest existing + 1); the server recomputes at save time. A blank field gets the next number; an untouched but stale prefill is renumbered; a number the user typed that is already used is rejected with a message. The same duplicate check applies on edit. Client prefixes are unchanged.
+- **CSV importer**: a row naming the internal org is rejected with a message pointing to "+ Add Internal Equipment" (spec section 8).
+- **Export internal equipment** (`/api/assets/export/internal`, staff only, button shown when filtered to the internal org): the spreadsheet's Equipment List column names in order, plus Segment. **Unit** has no database column and exports blank; **Current Location** is the site address. UTF-8 BOM for Excel.
+
+**Known limits**
+- `assets.asset_tag` still has no unique constraint, so the duplicate check is application-level and two simultaneous saves could in principle take the same number. Raised, not decided: a unique index would close it.
+- The asset detail page's ticket, certificate and Start CM Report sections still show for internal assets; trimming them is not in this PR.
+
+**Not verified in a browser or against Supabase.** `npx tsc --noEmit` and `npm run lint` pass. The new filters, the `or()` search and the insert/update payloads have not been exercised against the live database.
+
+## Setup steps
+
+1. Push and let Vercel build a preview.
+2. `/assets` as staff: pick "Pacific Horizon Tek, Inc." in Organization; Segment appears and the internal columns show. Pick another org; Segment disappears and the standard columns return.
+3. Add an item via **+ Add Internal Equipment**: Asset No. is prefilled with the next `PHT-EQ-` number; saving without a segment is blocked; condition "For Repair" gives status Down.
+4. Try a duplicate Asset No. and confirm the rejection message. Edit the item and confirm the org is locked.
+5. `/assets/new` (normal) must not list the internal org. Upload a CSV with an internal-org row and confirm it is rejected.
+6. Download **Export internal equipment** and open it in Excel. Delete the test item afterwards.

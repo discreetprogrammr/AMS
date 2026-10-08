@@ -104,3 +104,143 @@ export const INTERNAL_EXPORT_HEADER = [
   "Remarks",
   "Segment",
 ] as const;
+
+// ---------------------------------------------------------------------------
+// Internal list filters (/assets for the internal organization, and the
+// internal CSV export). One parser and one query helper, so the page, the
+// summary tiles and the export can never disagree about what a filter means.
+// ---------------------------------------------------------------------------
+
+export const VIEWS = [
+  { value: "all", label: "All" },
+  { value: "assigned", label: "Assigned" },
+  { value: "in_stock", label: "In Stock" },
+  { value: "repair", label: "Needs Repair" },
+  { value: "returned", label: "Returned" },
+  { value: "retired", label: "Retired / Lost" },
+] as const;
+
+export const WARRANTY_FILTERS = [
+  { value: "active", label: "Active" },
+  { value: "expiring", label: "Expiring in 60 days" },
+  { value: "expired", label: "Expired" },
+  { value: "unknown", label: "Unknown" },
+] as const;
+
+/** custodian filter value meaning "custodian is empty". */
+export const UNASSIGNED = "__unassigned";
+
+export const WARRANTY_WINDOW_DAYS = 60;
+
+export type InternalFilters = {
+  segment: string;
+  view: string; // a VIEWS value; "all" when unset
+  custodian: string;
+  department: string;
+  category: string;
+  warranty: string; // a WARRANTY_FILTERS value, or ""
+};
+
+type Params = Record<string, string | string[] | undefined>;
+
+function one(params: Params, key: string): string {
+  const v = params[key];
+  return (Array.isArray(v) ? v[0] : v)?.trim() ?? "";
+}
+
+export function parseInternalFilters(params: Params): InternalFilters {
+  const segment = one(params, "segment");
+  const view = one(params, "view");
+  const warranty = one(params, "warranty");
+  return {
+    segment: isOneOf(SEGMENTS, segment || null) ? segment : "",
+    view: isOneOf(VIEWS, view || null) ? view : "all",
+    custodian: one(params, "custodian"),
+    department: one(params, "department"),
+    category: one(params, "category"),
+    warranty: isOneOf(WARRANTY_FILTERS, warranty || null) ? warranty : "",
+  };
+}
+
+/** Today in Asia/Manila as YYYY-MM-DD, plus an optional day offset. */
+export function manilaDate(offsetDays = 0, now: Date = new Date()): string {
+  const base = new Date(
+    new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(now) + "T00:00:00Z",
+  );
+  base.setUTCDate(base.getUTCDate() + offsetDays);
+  return base.toISOString().slice(0, 10);
+}
+
+// The subset of the Supabase query builder these helpers use. Every method
+// returns the same builder, so a structural type keeps them generic.
+type Filterable<Q> = {
+  eq(column: string, value: string): Q;
+  or(filters: string): Q;
+  gt(column: string, value: string): Q;
+  gte(column: string, value: string): Q;
+  lte(column: string, value: string): Q;
+  lt(column: string, value: string): Q;
+  is(column: string, value: null): Q;
+};
+
+// PostgREST filter strings. Retired / Lost covers assignment_status
+// retired_disposed or lost, and condition lost (matching deriveInternalStatus
+// above). Both columns are nullable, so "not retired" must keep the nulls.
+const RETIRED_OR = "assignment_status.in.(retired_disposed,lost),condition.eq.lost";
+const NOT_ASSIGNMENT_RETIRED = "assignment_status.is.null,assignment_status.not.in.(retired_disposed,lost)";
+const NOT_CONDITION_LOST = "condition.is.null,condition.neq.lost";
+
+/** Excludes retired / lost rows: the scope of All, Total and Needs Repair. */
+export function excludeRetired<Q extends Filterable<Q>>(query: Q): Q {
+  return query.or(NOT_ASSIGNMENT_RETIRED).or(NOT_CONDITION_LOST);
+}
+
+/** Segment only: what the summary tiles respect. */
+export function applySegment<Q extends Filterable<Q>>(query: Q, f: Pick<InternalFilters, "segment">): Q {
+  return f.segment ? query.eq("segment", f.segment) : query;
+}
+
+export function applyWarrantyFilter<Q extends Filterable<Q>>(query: Q, warranty: string, today = manilaDate()): Q {
+  const limit = manilaDate(WARRANTY_WINDOW_DAYS, new Date(today + "T00:00:00Z"));
+  switch (warranty) {
+    case "active": // more than 60 days away
+      return query.gt("warranty_end_date", limit);
+    case "expiring": // today through today + 60
+      return query.gte("warranty_end_date", today).lte("warranty_end_date", limit);
+    case "expired":
+      return query.lt("warranty_end_date", today);
+    case "unknown":
+      return query.is("warranty_end_date", null);
+    default:
+      return query;
+  }
+}
+
+/** Everything except the free-text search, which the caller owns. */
+export function applyInternalFilters<Q extends Filterable<Q>>(query: Q, f: InternalFilters, today = manilaDate()): Q {
+  let q = applySegment(query, f);
+  switch (f.view) {
+    case "assigned":
+      q = excludeRetired(q).eq("assignment_status", "assigned");
+      break;
+    case "in_stock":
+      q = excludeRetired(q).eq("assignment_status", "in_stock");
+      break;
+    case "returned":
+      q = excludeRetired(q).eq("assignment_status", "returned");
+      break;
+    case "repair":
+      q = excludeRetired(q).or("condition.in.(for_repair,damaged)");
+      break;
+    case "retired":
+      q = q.or(RETIRED_OR);
+      break;
+    default:
+      q = excludeRetired(q);
+  }
+  if (f.custodian === UNASSIGNED) q = q.or("custodian.is.null,custodian.eq.");
+  else if (f.custodian) q = q.eq("custodian", f.custodian);
+  if (f.department) q = q.eq("department", f.department);
+  if (f.category) q = q.eq("asset_category", f.category);
+  return applyWarrantyFilter(q, f.warranty, today);
+}

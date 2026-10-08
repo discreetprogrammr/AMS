@@ -27,7 +27,7 @@ export default async function ClientDetailPage({
     await Promise.all([
       supabase
         .from("organizations")
-        .select("id, name, sector, primary_contact, email")
+        .select("id, name, sector, primary_contact, email, is_internal")
         .eq("id", params.id)
         .single(),
       supabase
@@ -42,7 +42,8 @@ export default async function ClientDetailPage({
         .order("asset_tag"),
     ]);
 
-  if (!organization) notFound();
+  // The internal organization (PHtek itself) is not a client.
+  if (!organization || organization.is_internal) notFound();
 
   const boundUpdate = updateOrganization.bind(null, params.id);
   const boundCreateSite = createSite.bind(null, params.id);

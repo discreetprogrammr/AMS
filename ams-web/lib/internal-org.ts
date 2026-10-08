@@ -55,13 +55,16 @@ export async function getInternalOrgIds(supabase: SupabaseClient): Promise<strin
  * through the asset: select `assets!inner(organization_id)` and pass
  * `assets.organization_id` as the column.
  */
-export function excludeInternal<Q extends Filterable<Q>>(
+export function excludeInternal<Q>(
   query: Q,
   internalOrgIds: string[],
   column = "organization_id",
 ): Q {
   if (internalOrgIds.length === 0) return query;
-  return query.not(column, "in", `(${internalOrgIds.join(",")})`);
+  // Deliberately not `Q extends Filterable<Q>`: Supabase's builder types are
+  // recursive enough that constraining on them trips TS2589 at every call
+  // site. Every PostgrestFilterBuilder has .not() returning itself.
+  return (query as unknown as Filterable<Q>).not(column, "in", `(${internalOrgIds.join(",")})`);
 }
 
 export type InternalScope = {

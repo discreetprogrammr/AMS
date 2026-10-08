@@ -8,6 +8,7 @@ import { SearchBar } from "@/components/search-bar";
 import { ticketRef, assetLabel } from "@/lib/format";
 import { hoursBetween, getSlaPolicyMap, resolveSlaTargets } from "@/lib/sla";
 import { timed } from "@/lib/supabase/timed";
+import { excludeInternal, getInternalOrgIds, getInternalScope, isInternalAuditRow } from "@/lib/internal-org";
 import { DashboardGrid, type DashboardWidget } from "./dashboard-grid";
 import type { LayoutItem } from "./actions";
 import {
@@ -35,6 +36,9 @@ import {
 // remaining hang needs local reproduction (next dev + a profiler) rather
 // than more guess-and-redeploy cycles against production.
 const DEBUG_STATIC_GRID = true;
+
+const RECENT_ACTIVITY_SHOWN = 8;
+const RECENT_ACTIVITY_FETCH = 40;
 
 function daysFromNow(days: number): string {
   const d = new Date();
@@ -78,6 +82,15 @@ export default async function DashboardPage({
   const slaPolicyMap = await timed("dashboard.getSlaPolicyMap", getSlaPolicyMap(supabase));
   const slaTargets = resolveSlaTargets(slaPolicyMap, isStaff ? null : (profile?.organization_id ?? null));
 
+  // Internal equipment (organizations.is_internal) never counts toward the
+  // dashboard — see lib/internal-org.ts. Asset queries filter on their own
+  // organization_id; ticket and certificate queries reach it through the
+  // asset (assets!inner(...) in their select).
+  const internalOrgIds = await timed("dashboard.internalOrgIds", getInternalOrgIds(supabase));
+  const internalScope = await timed("dashboard.internalScope", getInternalScope(supabase));
+  const onAssets = <Q,>(q: Q) => excludeInternal(q, internalOrgIds);
+  const onTicketAssets = <Q,>(q: Q) => excludeInternal(q, internalOrgIds, "assets.organization_id");
+
   const [
     { count: totalAssets },
     { count: operationalCount },
@@ -98,32 +111,34 @@ export default async function DashboardPage({
     { data: latestAlerts },
     { data: attentionAssets },
   ] = await Promise.all([
-    timed("q.totalAssets", supabase.from("assets").select("*", { count: "exact", head: true })),
+    timed("q.totalAssets", onAssets(supabase.from("assets").select("*", { count: "exact", head: true }))),
     timed(
       "q.operationalCount",
-      supabase.from("assets").select("*", { count: "exact", head: true }).eq("status", "operational"),
+      onAssets(supabase.from("assets").select("*", { count: "exact", head: true }).eq("status", "operational")),
     ),
     timed(
       "q.attentionCount",
-      supabase.from("assets").select("*", { count: "exact", head: true }).eq("status", "attention"),
+      onAssets(supabase.from("assets").select("*", { count: "exact", head: true }).eq("status", "attention")),
     ),
     timed(
       "q.downCount",
-      supabase.from("assets").select("*", { count: "exact", head: true }).eq("status", "down"),
+      onAssets(supabase.from("assets").select("*", { count: "exact", head: true }).eq("status", "down")),
     ),
     timed(
       "q.unserviceableCount",
-      supabase.from("assets").select("*", { count: "exact", head: true }).eq("status", "unserviceable"),
+      onAssets(supabase.from("assets").select("*", { count: "exact", head: true }).eq("status", "unserviceable")),
     ),
     timed(
       "q.expiringCerts",
-      supabase
-        .from("compliance_certificates")
-        .select("id, certificate_type, expiry_date, assets(asset_tag, serial_number, sites(address))", {
-          count: "exact",
-        })
-        .lte("expiry_date", daysFromNow(30))
-        .order("expiry_date", { ascending: true }),
+      onTicketAssets(
+        supabase
+          .from("compliance_certificates")
+          .select("id, certificate_type, expiry_date, assets!inner(asset_tag, serial_number, sites(address))", {
+            count: "exact",
+          })
+          .lte("expiry_date", daysFromNow(30))
+          .order("expiry_date", { ascending: true }),
+      ),
     ),
     // Warranty half of the same "Compliance & Warranty" panel below —
     // assets.warranty_end_date already existed but had never been
@@ -132,60 +147,82 @@ export default async function DashboardPage({
     // already does.
     timed(
       "q.expiringWarranties",
-      supabase
-        .from("assets")
-        .select("id, asset_tag, serial_number, warranty_end_date, sites(address)", {
-          count: "exact",
-        })
-        .not("warranty_end_date", "is", null)
-        .lte("warranty_end_date", daysFromNow(30))
-        .order("warranty_end_date", { ascending: true }),
+      onAssets(
+        supabase
+          .from("assets")
+          .select("id, asset_tag, serial_number, warranty_end_date, sites(address)", {
+            count: "exact",
+          })
+          .not("warranty_end_date", "is", null)
+          .lte("warranty_end_date", daysFromNow(30))
+          .order("warranty_end_date", { ascending: true }),
+      ),
     ),
     timed(
       "q.dueAssets",
-      supabase
-        .from("assets")
-        .select("id, asset_tag, serial_number, next_service_due, sites(address)")
-        .not("next_service_due", "is", null)
-        .lte("next_service_due", daysFromNow(30))
-        .order("next_service_due", { ascending: true }),
+      onAssets(
+        supabase
+          .from("assets")
+          .select("id, asset_tag, serial_number, next_service_due, sites(address)")
+          .not("next_service_due", "is", null)
+          .lte("next_service_due", daysFromNow(30))
+          .order("next_service_due", { ascending: true }),
+      ),
     ),
     timed(
       "q.openTicketsCount",
-      supabase.from("service_tickets").select("*", { count: "exact", head: true }).eq("status", "open"),
+      onTicketAssets(
+        supabase
+          .from("service_tickets")
+          .select("*, assets!inner(organization_id)", { count: "exact", head: true })
+          .eq("status", "open"),
+      ),
     ),
     timed(
       "q.inProgressTicketsCount",
-      supabase
-        .from("service_tickets")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "in_progress"),
+      onTicketAssets(
+        supabase
+          .from("service_tickets")
+          .select("*, assets!inner(organization_id)", { count: "exact", head: true })
+          .eq("status", "in_progress"),
+      ),
     ),
     timed(
       "q.partsPendingTicketsCount",
-      supabase
-        .from("service_tickets")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "parts_pending"),
+      onTicketAssets(
+        supabase
+          .from("service_tickets")
+          .select("*, assets!inner(organization_id)", { count: "exact", head: true })
+          .eq("status", "parts_pending"),
+      ),
     ),
     timed(
       "q.resolvedTicketsCount",
-      supabase.from("service_tickets").select("*", { count: "exact", head: true }).eq("status", "closed"),
+      onTicketAssets(
+        supabase
+          .from("service_tickets")
+          .select("*, assets!inner(organization_id)", { count: "exact", head: true })
+          .eq("status", "closed"),
+      ),
     ),
     timed(
       "q.slaTickets",
-      supabase
-        .from("service_tickets")
-        .select("id, created_at, first_response_at, resolved_at")
-        .gte("created_at", daysAgo(30)),
+      onTicketAssets(
+        supabase
+          .from("service_tickets")
+          .select("id, created_at, first_response_at, resolved_at, assets!inner(organization_id)")
+          .gte("created_at", daysAgo(30)),
+      ),
     ),
     timed(
       "q.slaHistoryTickets",
-      supabase
-        .from("service_tickets")
-        .select("id, created_at, resolved_at")
-        .not("resolved_at", "is", null)
-        .gte("resolved_at", daysAgo(35)),
+      onTicketAssets(
+        supabase
+          .from("service_tickets")
+          .select("id, created_at, resolved_at, assets!inner(organization_id)")
+          .not("resolved_at", "is", null)
+          .gte("resolved_at", daysAgo(35)),
+      ),
     ),
     // RLS restricts this to staff only — a client_viewer's query just comes
     // back empty, no error, so it's safe to always run this. new_data is a
@@ -200,7 +237,10 @@ export default async function DashboardPage({
           "id, table_name, record_id, action, changed_at, old_data, new_data, profiles(full_name)",
         )
         .order("changed_at", { ascending: false })
-        .limit(8),
+        // Over-fetch: rows about internal equipment are dropped in JS below
+        // (audit_log can't be filtered in SQL, see lib/internal-org.ts), and
+        // the feed should still show 8.
+        .limit(RECENT_ACTIVITY_FETCH),
     ),
     // Same RLS note as audit_log above — alerts is staff-only (Step 10), so
     // a client_viewer's query just comes back with count 0, no error.
@@ -226,11 +266,13 @@ export default async function DashboardPage({
     // below, so the fleet-wide result for staff is simply unused.
     timed(
       "q.attentionAssets",
-      supabase
-        .from("assets")
-        .select("id, asset_tag, serial_number, status, sites(address)")
-        .in("status", ["down", "attention"])
-        .order("status"),
+      onAssets(
+        supabase
+          .from("assets")
+          .select("id, asset_tag, serial_number, status, sites(address)")
+          .in("status", ["down", "attention"])
+          .order("status"),
+      ),
     ),
   ]);
 
@@ -323,7 +365,9 @@ export default async function DashboardPage({
   // means an asset_id but not the asset's tag/org, so do one small
   // follow-up lookup for whatever assets this page of activity touches.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const auditRows = (recentActivity ?? []) as any[];
+  const auditRows = ((recentActivity ?? []) as any[])
+    .filter((row) => !isInternalAuditRow(row, internalScope))
+    .slice(0, RECENT_ACTIVITY_SHOWN);
   const ticketAssetIds = Array.from(
     new Set(
       auditRows

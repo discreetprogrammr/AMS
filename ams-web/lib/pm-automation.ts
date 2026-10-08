@@ -1,6 +1,7 @@
 import { createServiceRoleClient } from "@/lib/supabase/service-role";
 import { notifyStaff } from "@/lib/notify";
 import { assetLabel } from "@/lib/format";
+import { excludeInternal, getInternalOrgIds } from "@/lib/internal-org";
 
 // Core logic for "Automated PM ticket generation" — instead of relying on
 // someone remembering to check next_service_due, a daily cron job
@@ -53,12 +54,18 @@ export async function runPmAutoCheck(): Promise<PmAutoCheckResult> {
   const today = todayIsoDate();
   const horizon = addDaysIso(today, leadDays);
 
-  const { data: assets, error: assetsError } = await supabase
-    .from("assets")
-    .select("id, asset_tag, serial_number, next_service_due, status, sites(address)")
-    .not("next_service_due", "is", null)
-    .lte("next_service_due", horizon)
-    .neq("status", "unserviceable");
+  // Internal equipment (organizations.is_internal) has no PM schedule and
+  // must never get an automated ticket, calendar event or staff alert.
+  const internalOrgIds = await getInternalOrgIds(supabase);
+  const { data: assets, error: assetsError } = await excludeInternal(
+    supabase
+      .from("assets")
+      .select("id, asset_tag, serial_number, next_service_due, status, sites(address)")
+      .not("next_service_due", "is", null)
+      .lte("next_service_due", horizon)
+      .neq("status", "unserviceable"),
+    internalOrgIds,
+  );
 
   if (assetsError) {
     throw new Error(`Failed to load due assets: ${assetsError.message}`);

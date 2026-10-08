@@ -106,7 +106,7 @@ export async function GET(request: Request) {
     "﻿" +
     [[...INTERNAL_EXPORT_HEADER], ...rows].map((row) => row.map(csvEscape).join(",")).join("\r\n");
 
-  const filename = `internal-equipment-${new Date().toISOString().slice(0, 10)}.csv`;
+  const filename = `phtek-internal-equipment-${new Date().toISOString().slice(0, 10)}.csv`;
 
   return new Response(csv, {
     headers: {

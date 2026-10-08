@@ -164,12 +164,12 @@ export default async function AssetsPage({
             }}
           />
           <a
-            href="/api/assets/export"
+            href={internalView ? `/api/assets/export/internal${exportQuery}` : "/api/assets/export"}
             className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
           >
             Export CSV
           </a>
-          {isStaff && (
+          {isStaff && !internalView && (
             <a
               href="/api/assets/export/unserviceable"
               className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
@@ -177,21 +177,13 @@ export default async function AssetsPage({
               Unserviceable Report
             </a>
           )}
-          {isStaff && (
+          {isStaff && !internalView && (
             <Link
               href="/assets/import"
               className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
             >
               Import CSV
             </Link>
-          )}
-          {isStaff && internalView && (
-            <a
-              href={`/api/assets/export/internal${exportQuery}`}
-              className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
-            >
-              Export internal equipment
-            </a>
           )}
           {isStaff && hasInternalOrg && (
             <Link
@@ -201,7 +193,7 @@ export default async function AssetsPage({
               + Add Internal Equipment
             </Link>
           )}
-          {isStaff && (
+          {isStaff && !internalView && (
             <Link
               href="/assets/new"
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-ink hover:bg-blue-500"

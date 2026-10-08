@@ -5,6 +5,16 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/supabase/profile";
 import { resolveSiteCoordinates } from "@/lib/site-location";
+import {
+  ASSIGNMENT_STATUSES,
+  CONDITIONS,
+  INTERNAL_TAG_PATTERN,
+  OWNERSHIPS,
+  SEGMENTS,
+  deriveInternalStatus,
+  isOneOf,
+  nextInternalTagFrom,
+} from "@/lib/internal-equipment";
 
 function emptyToNull(value: FormDataEntryValue | null): string | null {
   if (value === null) return null;
@@ -114,10 +124,155 @@ function parseAssetForm(formData: FormData) {
   };
 }
 
+type Supabase = Awaited<ReturnType<typeof createClient>>;
+
+async function isInternalOrganization(supabase: Supabase, organizationId: string) {
+  const { data } = await supabase
+    .from("organizations")
+    .select("is_internal")
+    .eq("id", organizationId)
+    .maybeSingle();
+  return data?.is_internal === true;
+}
+
+// Next PHT-EQ number from the highest one in use (not a row count), so a
+// deleted asset's number is never reissued. Computed at save time.
+export async function nextInternalAssetTag(supabase: Supabase): Promise<string> {
+  const { data } = await supabase.from("assets").select("asset_tag").ilike("asset_tag", "PHT-EQ-%");
+  return nextInternalTagFrom((data ?? []).map((r: { asset_tag: string | null }) => r.asset_tag));
+}
+
+async function assetTagTaken(supabase: Supabase, tag: string, exceptAssetId?: string) {
+  let q = supabase.from("assets").select("id").ilike("asset_tag", tag);
+  if (exceptAssetId) q = q.neq("id", exceptAssetId);
+  const { data } = await q.limit(1);
+  return (data ?? []).length > 0;
+}
+
+function optionalEnum(
+  formData: FormData,
+  field: string,
+  label: string,
+  options: readonly { value: string; label: string }[],
+): { value: string | null; error?: string } {
+  const value = emptyToNull(formData.get(field));
+  if (value !== null && !isOneOf(options, value)) return { value: null, error: `${label} is not a valid choice.` };
+  return { value };
+}
+
+// Internal (PHtek staff) equipment, spec 4.2 / 4.3 / 7.3. The server, not
+// the form, decides what an internal row looks like: equipment_type is
+// forced to 'other', the NII-only fields are nulled, and status is derived
+// from condition / assignment_status. sold_by and install_date are left
+// out so inserts take the column default and updates leave them alone.
+function parseInternalAssetForm(formData: FormData) {
+  const fail = (error: string) => ({ error } as const);
+
+  const segment = emptyToNull(formData.get("segment"));
+  if (!isOneOf(SEGMENTS, segment)) return fail("Segment is required for internal equipment.");
+
+  const ownership = optionalEnum(formData, "ownership", "Ownership", OWNERSHIPS);
+  const assignment = optionalEnum(formData, "assignment_status", "Assignment Status", ASSIGNMENT_STATUSES);
+  const condition = optionalEnum(formData, "condition", "Condition", CONDITIONS);
+  const bad = ownership.error ?? assignment.error ?? condition.error;
+  if (bad) return fail(bad);
+
+  const quantityRaw = emptyToNull(formData.get("quantity"));
+  const quantity = quantityRaw === null ? 1 : Number(quantityRaw);
+  if (!Number.isInteger(quantity) || quantity < 1) return fail("Qty must be a whole number of at least 1.");
+
+  const costRaw = emptyToNull(formData.get("acquisition_cost"));
+  const cost = costRaw === null ? null : Number(costRaw);
+  if (cost !== null && (!Number.isFinite(cost) || cost < 0)) return fail("Acquisition Cost must be a number, 0 or more.");
+
+  return {
+    values: {
+      organization_id: String(formData.get("organization_id")),
+      equipment_type: "other",
+      segment,
+      asset_category: emptyToNull(formData.get("asset_category")),
+      description: emptyToNull(formData.get("description")),
+      brand: emptyToNull(formData.get("brand")),
+      model: emptyToNull(formData.get("model")),
+      serial_number: emptyToNull(formData.get("serial_number")),
+      quantity,
+      ownership: ownership.value,
+      supplier: emptyToNull(formData.get("supplier")),
+      date_acquired: emptyToNull(formData.get("date_acquired")),
+      acquisition_cost: cost,
+      custodian: emptyToNull(formData.get("custodian")),
+      department: emptyToNull(formData.get("department")),
+      date_issued: emptyToNull(formData.get("date_issued")),
+      assignment_status: assignment.value,
+      condition: condition.value,
+      warranty_end_date: emptyToNull(formData.get("warranty_end_date")),
+      return_disposal_date: emptyToNull(formData.get("return_disposal_date")),
+      remarks: emptyToNull(formData.get("remarks")),
+      pnri_license_number: null,
+      next_service_due: null,
+      status: deriveInternalStatus(condition.value, assignment.value),
+    },
+  };
+}
+
+async function createInternalAsset(supabase: Supabase, formData: FormData) {
+  const back = (error: string) =>
+    redirect(`/assets/new?internal=1&error=${encodeURIComponent(error)}`);
+
+  const parsed = parseInternalAssetForm(formData);
+  if ("error" in parsed) return back(parsed.error);
+
+  // The tag is decided here, at save time. A blank field gets the next
+  // number. The form's prefill (suggested_tag) can be stale if someone
+  // else saved first; an untouched stale prefill is re-numbered, a tag
+  // the user typed that is already in use is rejected.
+  let tag = (emptyToNull(formData.get("asset_tag")) ?? "").toUpperCase();
+  const suggested = emptyToNull(formData.get("suggested_tag"));
+  if (!tag) {
+    tag = await nextInternalAssetTag(supabase);
+  } else if (!INTERNAL_TAG_PATTERN.test(tag)) {
+    return back(`Asset No. must look like PHT-EQ-0001 (got "${tag}").`);
+  } else if (await assetTagTaken(supabase, tag)) {
+    if (tag === suggested) tag = await nextInternalAssetTag(supabase);
+    else return back(`Asset No. ${tag} is already in use. Pick another, or clear the field for the next free number.`);
+  }
+
+  const site_id = await resolveSiteId(supabase, parsed.values.organization_id, formData.get("site_address"));
+  const { error } = await supabase.from("assets").insert({ ...parsed.values, asset_tag: tag, site_id });
+  if (error) return back(error.message);
+
+  revalidatePath("/assets");
+  redirect(`/assets?org=${parsed.values.organization_id}`);
+}
+
+async function updateInternalAsset(supabase: Supabase, assetId: string, formData: FormData) {
+  const back = (error: string) => redirect(`/assets/${assetId}?error=${encodeURIComponent(error)}`);
+
+  const parsed = parseInternalAssetForm(formData);
+  if ("error" in parsed) return back(parsed.error);
+
+  const tag = (emptyToNull(formData.get("asset_tag")) ?? "").toUpperCase();
+  if (!INTERNAL_TAG_PATTERN.test(tag)) return back(`Asset No. must look like PHT-EQ-0001 (got "${tag}").`);
+  if (await assetTagTaken(supabase, tag, assetId)) return back(`Asset No. ${tag} is already in use.`);
+
+  const site_id = await resolveSiteId(supabase, parsed.values.organization_id, formData.get("site_address"));
+  const { error } = await supabase
+    .from("assets")
+    .update({ ...parsed.values, asset_tag: tag, site_id })
+    .eq("id", assetId);
+  if (error) return back(error.message);
+
+  revalidatePath("/assets");
+  redirect(`/assets?org=${parsed.values.organization_id}`);
+}
+
 export async function createAsset(formData: FormData) {
   await requireStaff();
 
   const supabase = await createClient();
+  if (await isInternalOrganization(supabase, String(formData.get("organization_id")))) {
+    return createInternalAsset(supabase, formData);
+  }
   const values = parseAssetForm(formData);
 
   // The "New Asset" form doesn't submit asset_tag at all anymore (see
@@ -147,6 +302,9 @@ export async function updateAsset(assetId: string, formData: FormData) {
   await requireStaff(`/assets/${assetId}`);
 
   const supabase = await createClient();
+  if (await isInternalOrganization(supabase, String(formData.get("organization_id")))) {
+    return updateInternalAsset(supabase, assetId, formData);
+  }
   const values = parseAssetForm(formData);
   const site_id = await resolveSiteId(
     supabase,

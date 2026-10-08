@@ -56,7 +56,7 @@ export default async function EditAssetPage({
       .select("*, sites(address), organizations(name)")
       .eq("id", params.id)
       .single(),
-    supabase.from("organizations").select("id, name").order("name"),
+    supabase.from("organizations").select("id, name, is_internal").order("name"),
     supabase
       .from("service_tickets")
       .select("id, description, status, priority, created_at, resolved_at, work_order_id")
@@ -85,6 +85,15 @@ export default async function EditAssetPage({
   ]);
 
   if (!asset) notFound();
+
+  // An internal asset gets the internal form with its organization locked;
+  // a client asset only ever sees client organizations in the picker.
+  const isInternalAsset = (organizations ?? []).some(
+    (o) => o.id === asset.organization_id && o.is_internal,
+  );
+  const formOrganizations = (organizations ?? []).filter((o) =>
+    isInternalAsset ? o.id === asset.organization_id : !o.is_internal,
+  );
 
   const boundUpdate = updateAsset.bind(null, params.id);
   const boundCreateTicket = createTicket.bind(null, params.id);
@@ -187,7 +196,8 @@ export default async function EditAssetPage({
 
         {isStaff ? (
           <AssetForm
-            organizations={organizations ?? []}
+            organizations={formOrganizations}
+            mode={isInternalAsset ? "internal" : "client"}
             action={boundUpdate}
             defaultValues={{
               ...asset,

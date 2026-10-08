@@ -1911,3 +1911,32 @@ Real ask: use HorizonCare360 as Pacific Horizon Tek's own register for company e
 3. Verify: `select id, name, is_internal from organizations where is_internal;` returns one row, "Pacific Horizon Tek, Inc."; `select address from sites where organization_id = (select id from organizations where is_internal);` returns one row, "Head Office".
 4. Verify: `select count(*) from organizations where name = 'Pacific Horizon Tek, Inc.';` is `1` (not 2) after the second run, and `select count(*) from assets where quantity <> 1;` is `0`.
 5. No redeploy needed; nothing in the app reads the new columns yet.
+
+## Follow-up — Internal equipment register (PR 2 of 6: keep it out of client features)
+
+Follows the schema step above (`schema_step46.sql`, already applied in production). The internal organization, "Pacific Horizon Tek, Inc." (`organizations.is_internal = true`), currently has zero assets, so **nothing visible changes today**. This step makes sure that when its equipment is loaded (PR 5) it never reaches a client-facing number, list, export or scheduled job. **No database change in this step**, no RLS change, and nothing to run first.
+
+**`lib/internal-org.ts`** (new) is the one place that knows about this. `getInternalOrgIds(supabase)` fetches the internal org ids once per Supabase client (so once per page render or cron run), and `excludeInternal(query, ids, column)` adds `column not in (ids)` to an already-built query without touching its select. It **fails closed**: a failed lookup throws rather than returning an empty list that would silently let internal rows back in. A database view was ruled out (no SQL in this step). Tables with no `organization_id` of their own (tickets, certificates) are reached through the asset, with `assets!inner(...)` in the select and `"assets.organization_id"` as the column; `asset_id` is `not null` on both, so the inner join drops nothing else.
+
+**Two deliberate exceptions to the inner join:**
+- `service_records.asset_id` is nullable since `schema_step41.sql` (site surveys and training attach to a site), so an inner join would silently drop those records. They are filtered in JS against both the asset's and the site's organization (`touchesInternalOrg`). This applies to the CSAT rollup, the Reports page and the service-records export.
+- `audit_log` cannot be filtered in SQL: `not in` on a JSON key drops every row where the key is absent. The dashboard's **Recent Activity** fetches 40 rows, drops those about the internal org, its sites, its assets or child records pointing at them (`isInternalAuditRow`), and shows 8. The **Audit Log page is untouched** and still shows everything, by design.
+
+**Excluded:** Analytics (assets, tickets, CSAT; uptime is only ever computed for the filtered asset list); Dashboard (asset and status counts, warranties, service due, equipment alerts, certificates, all ticket counts and SLA queries, Recent Activity); Fleet Map (sites and assets, plus the geocoding backfill, because "Head Office" is a label and would otherwise be sent to the geocoder); Clients list and client detail (the internal org returns not-found); assets, unserviceable, tickets and service-records CSV exports; the Reports page figures and lists; every asset, site, ticket and org picker in tickets/new, work-orders/new, calendar/new, inspections/new, all six report forms and SLA settings; and the `pm-due`, `sla-check`, `weekly-digest` and `compliance-check` jobs. `compliance-check` excludes internal assets *for now*; whether HR should get their own warranty alerts is still open (spec 12.3).
+
+**Deliberately included:** Asset Verification (`/inventory`), Alerts and Scan Asset keep working on internal equipment, because the spec gives them to the HR role for the annual count and for lost/damaged reports. **Not applicable:** `low-stock-check` reads only `parts`, which have no organization. Audit Log and Error Logs are Super Admin views. By-id lookups (the report PDF generator, ticket and asset detail by id) are left alone.
+
+**Known gaps, left for PR 3 as agreed:** the Assets page and asset form are untouched, so until PR 3 the internal organization is still selectable in the **New Asset** organization picker and can be matched by name by the **CSV asset import**. Creating an asset under it fails at the `assets_enforce_segment` trigger (no segment), so nothing can be saved by mistake, but it is visible. List pages for tickets, work orders, calendar, inspections and messages are not filtered; no internal record can reach them while the pickers above exclude internal assets.
+
+**Not verified against the live database.** `tsc` and `lint` pass (see below) but the `assets!inner(...)` plus `.not("assets.organization_id", "in", "(...)")` PostgREST filters have not been executed against Supabase. With zero internal assets they exclude nothing, so a mistake there would show up as an error on the Dashboard, Reports or a cron run rather than as wrong numbers. Check the Setup steps on a preview deployment before promoting.
+
+Verified with `npx tsc --noEmit` and `npm run lint`. `tsc` shows three errors that predate this step and are unrelated (`dashboard-grid.tsx` twice, `site-visit-verification.tsx` once): this working copy's `node_modules` holds Next 15.5 / React 19 while `package.json` on this branch is Next 14 / React 18. Lint is clean.
+
+## Setup steps
+
+1. Push to GitHub and let Vercel build a **preview** deployment first.
+2. On the preview, open **Dashboard**, **Analytics**, **Reports**, **Fleet Map** and **Clients** as Super Admin. Each should load with the same numbers as production and no query error; "Pacific Horizon Tek, Inc." must not appear in Clients, the Fleet Map or any dropdown (New Ticket, New Work Order, SLA Policy, the report forms).
+3. Download the Assets CSV and the Tickets CSV; confirm they open and contain no "Pacific Horizon Tek, Inc." rows.
+4. As Super Admin, call `/api/cron/pm-due`, `/api/cron/sla-check`, `/api/cron/weekly-digest` and `/api/cron/compliance-check` once each and confirm none errors; then `node check-errors.mjs cron 10` should show no new rows.
+5. Promote to production.
+6. Before PR 5 loads any internal assets, repeat step 2 against production once, after temporarily adding one test internal asset (with a segment) and one test warranty date to prove the exclusion actually bites; delete it afterwards.

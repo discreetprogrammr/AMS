@@ -2028,7 +2028,7 @@ Follows PR 3 above. **No database change in this step.**
 - **Internal export route** (`app/api/assets/export/internal/route.ts`): parses the query with `parseInternalFilters` and filters with `applyInternalFilters`, the same helpers as the list, so the CSV matches the screen. It is restricted to internal organizations through `getInternalOrgIds()` (fails closed: a lookup error returns 500). A bare URL with no `view` still exports every internal row, retired included. The file is `phtek-internal-equipment-YYYY-MM-DD.csv`, dated in Asia/Manila (it was UTC, so exports before 08:00 Manila carried yesterday's date). Columns follow `INTERNAL_EXPORT_HEADER`. Staff-only check unchanged.
 - **Client export** (`app/api/assets/export/route.ts`): already excluded internal orgs through `excludeInternal()`. No change.
 
-**Verification**: `npx tsc --noEmit` and `npm run lint` are clean. A request without a session gets 403 from the internal export. The client export without a session returns 200 with a header row only, because RLS returns no rows; that is how it already behaved. **The manual export checks below have not been run**: they need a signed-in staff session against production data.
+**Verification**: `npx tsc --noEmit` and `npm run lint` are clean. A request without a session gets 403 from the internal export. The client export without a session returns 200 with a header row only, because RLS returns no rows; that is how it already behaved. **Manually verified on 2026-10-10** with a signed-in staff session: unfiltered internal view (internal rows only), Custodian filter, Segment = Team Fridays Digital, and a client organization selected (client assets only, no `PHT-EQ-` tags). The four checks under Setup steps below all passed.
 
 ## Setup steps
 

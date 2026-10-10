@@ -2143,3 +2143,24 @@ Both have RLS with a single staff-manage policy. Items keep their own copy of th
 3. Mark one item Found, one Missing, one Different holder (type a name) with a note. The tiles update and the item leaves the To count view. **Clear** puts one back.
 4. **Print report** shows the missing and different-holder items. **Export CSV** has one row per item.
 5. **Complete stocktake**: buttons disappear and counts can no longer change. Then **Delete stocktake** to remove the test.
+
+## Follow-up — Internal equipment register: bulk edit
+
+Follows the equipment stocktake above. **No database change in this step.**
+
+**What's here**
+- **Tick-and-edit on the internal Assets list** (staff): a checkbox on every row plus a select-all in the header. While anything is ticked, a bar appears above the table to set **Custodian**, **Department**, **Status** (assignment) and **Condition** for all ticked items at once. A field left blank, or "Leave unchanged", is not touched; **Clear custodian / Clear department** empty a field on purpose. A confirm dialog gives the count before it applies, and a green message reports how many items were updated.
+- **`bulkUpdateInternalAssets`** (`app/assets/bulk-actions.ts`), checked on the server: staff only; at most 200 items; every id must belong to an internal organization (`getInternalOrgIds`), and if any does not, nothing is changed; status and condition values must be valid. Each item's operating status is re-derived from its resulting condition and assignment status (`deriveInternalStatus`), as a single edit does, and `updated_at` is set. Items that end up with the same changes are updated in one statement.
+- Custodian changes made this way are logged by the custodian-history trigger (`schema_step48.sql`) like any other.
+- Only ticked rows that are still on screen are applied, so a changed filter cannot leave hidden ticks behind.
+
+**Not verified signed in.** `npx tsc --noEmit` and `npm run lint` pass.
+
+## Setup steps
+
+1. `/assets` for Pacific Horizon Tek, as Super Admin and as HR & Admin. Tick two or three **test** items: the bar appears with the count.
+2. Set only Department and apply: only the department changes; custodian, status and condition stay.
+3. Set Condition to For Repair: those items show the For Repair badge and their operating status becomes Down.
+4. Set a Custodian: each item's Custodian History card gets a new current row.
+5. Use **Clear custodian** and apply: the custodian empties and the history row is closed.
+6. Use the header checkbox with a pill such as "In Stock" chosen: it selects only the rows shown.

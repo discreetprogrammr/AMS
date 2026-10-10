@@ -21,6 +21,7 @@ export default async function AssetsPage({
     deleted?: string;
     org?: string;
     error?: string;
+    bulk?: string;
   };
 }) {
   const supabase = await createClient();
@@ -244,6 +245,11 @@ export default async function AssetsPage({
       {searchParams?.deleted === "1" && (
         <p className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400">
           Asset deleted.
+        </p>
+      )}
+      {searchParams?.bulk && (
+        <p className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400">
+          {searchParams.bulk}
         </p>
       )}
       {searchParams?.error && (

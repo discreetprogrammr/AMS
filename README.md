@@ -2237,3 +2237,17 @@ Follows photos and documents above. **No new database change.** If `schema_step5
 3. **Add Photo / Document** on an internal asset: there is no Title field. Upload a PNG named like `page.com%2F (1).png`, a normal PNG, and a PDF just under 4 MB: each appears, titled with its file name. Open one: it downloads with its real name.
 4. Upload a file over 4 MB: a clear message, nothing uploaded.
 5. If an upload ever fails, the dialog says why; `node check-errors.mjs asset-documents` shows the technical detail.
+
+## Follow-up — Internal equipment register: HR & Admin sidebar tabs
+
+The HR & Admin preset's sidebar was only Dashboard and Assets. This section grows one tab at a time; each tab is its own commit. **No database change in this part** unless a tab says so below.
+
+**How the tabs work**: `HR_ADMIN_NAV` in `lib/hr-admin-preset.ts` lists the extra tabs (href and label); `components/sidebar.tsx` owns the icons. Only a preset user sees them (the other roles' sidebars are unchanged), and each href must also be open to the preset in the middleware (`ALLOWED_PREFIXES`, same file). Every page still checks its own access.
+
+**Tab 1: Stocktake** (`/assets/stocktake`, built earlier): now a sidebar tab for HR & Admin, no longer only a button on the Assets list. The button stays. No new page and no database change; the tab highlights on the stocktake pages and Assets does not.
+
+## Setup steps
+
+1. Sign in as HR & Admin: the sidebar shows Dashboard, Assets, Stocktake.
+2. Click **Stocktake**: the stocktake list opens and only Stocktake is highlighted. Open a stocktake: still highlighted. Click **Assets**: Assets is highlighted.
+3. Sign in as Super Admin or any other admin: no Stocktake tab in the sidebar (the Assets toolbar button is still there).

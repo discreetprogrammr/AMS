@@ -18,6 +18,13 @@ export const HR_ADMIN_PRESET_MARKER = "preset:hr_admin";
 // Where preset users land: replaces /dashboard for them.
 export const EQUIPMENT_DASHBOARD_HREF = "/equipment-dashboard";
 
+// The sidebar of a preset user: Dashboard and Assets, then these. Each href
+// must also open for them (ALLOWED_PREFIXES below), and each page checks its
+// own access. components/sidebar.tsx owns the icons.
+export const HR_ADMIN_NAV: { href: string; label: string }[] = [
+  { href: "/assets/stocktake", label: "Stocktake" },
+];
+
 export function isHrAdminPreset(hiddenModules: string[] | null | undefined): boolean {
   return (hiddenModules ?? []).includes(HR_ADMIN_PRESET_MARKER);
 }

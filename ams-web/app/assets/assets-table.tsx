@@ -141,7 +141,7 @@ export function AssetsTable({
                 <th className="px-4 py-3">Segment</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Warranty End</th>
-                {isStaff && <th className="px-4 py-3 text-right">Actions</th>}
+                {isStaff && <th className="sticky right-0 bg-surface-2 px-4 py-3 text-right">Actions</th>}
               </tr>
             ) : (
             <tr>
@@ -180,7 +180,7 @@ export function AssetsTable({
                 </td>
                 <td className="px-4 py-3 text-ink-soft">{asset.warranty_end_date ?? "—"}</td>
                 {isStaff && (
-                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                  <td className="sticky right-0 bg-surface px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                     <AssetRowActions assetId={asset.id} assetTag={asset.asset_tag} guarded={guardedDelete} />
                   </td>
                 )}

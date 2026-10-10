@@ -11,6 +11,7 @@ import { isHrAdminPreset } from "@/lib/hr-admin-preset";
 import { AppShell } from "@/components/app-shell";
 import { StatusBadge } from "@/components/status-badge";
 import { AssetForm } from "../asset-form";
+import { DeleteAssetButton } from "../delete-asset-button";
 import { updateAsset } from "../actions";
 import {
   createTicket,
@@ -214,6 +215,12 @@ export default async function EditAssetPage({
           />
         ) : (
           <AssetDetailReadOnly asset={asset} />
+        )}
+
+        {isStaff && isInternalAsset && (
+          <div className="mt-4 flex justify-end">
+            <DeleteAssetButton assetId={asset.id} assetTag={asset.asset_tag} guarded={presetUser} />
+          </div>
         )}
 
         {!presetUser && (

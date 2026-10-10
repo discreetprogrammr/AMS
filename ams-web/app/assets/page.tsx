@@ -198,6 +198,14 @@ export default async function AssetsPage({
               Print QR labels
             </Link>
           )}
+          {isStaff && internalView && (
+            <Link
+              href="/assets/stocktake"
+              className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
+            >
+              Stocktake
+            </Link>
+          )}
           {isStaff && !internalView && (
             <a
               href="/api/assets/export/unserviceable"

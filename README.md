@@ -2114,3 +2114,32 @@ Why a trigger rather than app code: the batch loads and any manual SQL change th
 3. Clear the custodian and save: the old row is closed and no new current row appears.
 4. **Print handover form →** opens a white page with the asset's details and signature lines.
 5. `/assets` → **Print QR labels**, and **Print label →** on an asset: see the label checks in the PR description.
+
+## Follow-up — Internal equipment register: equipment stocktake
+
+Follows the custodian history step above. A physical count of the company equipment register: a yearly (or any time) "is each item here, and who has it?" check. Separate from the client Asset Verification (`inventory_cycles`), which is per site, stays untouched and stays hidden from the HR & Admin preset.
+
+## Database change, run this first
+
+Run `schema_step49.sql` in the Supabase SQL editor (the whole file). It is idempotent. It creates two tables:
+- `equipment_stocktakes`: name, scope (one segment or all), status (`open` / `completed`), who started it and when.
+- `equipment_stocktake_items`: one row per item, copied when the stocktake starts (tag, description, expected holder and department), then the result (`found`, `missing`, `different_holder`; null = not counted yet), the holder actually seen, a condition note, and who counted it and when.
+
+Both have RLS with a single staff-manage policy. Items keep their own copy of the tag and description, and `asset_id` is `on delete set null`, so a stocktake still reads correctly after an item is edited or deleted, and these rows never block deleting an asset. There are no audit triggers on purpose: `log_audit` would put these rows on the Audit Log page, which is meant for client-facing records. The app works before the SQL is run: `/assets/stocktake` says it is not set up.
+
+**What's here**
+- **`/assets/stocktake`** (linked as **Stocktake** on the internal Assets list): start a stocktake (name, and all segments or one), see all stocktakes with progress.
+- **Starting** takes a snapshot of every active internal item in scope, using the same rule as "All" on `/assets` (retired and lost items are left out).
+- **`/assets/stocktake/<id>`**: count item by item with **Found**, **Different holder** (type who holds it) or **Missing**, plus an optional condition note; **Clear** undoes an item. Views: To count (default), Found, Missing, Different holder, All, and a search box. **Complete stocktake** locks the counts (it warns if items are uncounted). **Delete stocktake** removes it and its counts.
+- **Report only, no automatic changes**: counting never edits the register. `/assets/stocktake/<id>/report` is a printable discrepancy report (missing, held by someone else, condition notes, not counted, signature lines), and **Export CSV** downloads every item with its result.
+- Available to Super Admin and Admin, including the HR & Admin preset.
+
+**Not verified signed in.** `npx tsc --noEmit` and `npm run lint` pass. The SQL has not been run against Supabase.
+
+## Setup steps
+
+1. Run `schema_step49.sql`.
+2. `/assets` (Pacific Horizon Tek selected) → **Stocktake** → start one named "TEST stocktake" with all segments. It opens with every active item listed as to count.
+3. Mark one item Found, one Missing, one Different holder (type a name) with a note. The tiles update and the item leaves the To count view. **Clear** puts one back.
+4. **Print report** shows the missing and different-holder items. **Export CSV** has one row per item.
+5. **Complete stocktake**: buttons disappear and counts can no longer change. Then **Delete stocktake** to remove the test.

@@ -23,6 +23,7 @@ import { deleteDocument } from "./documents-actions";
 import { UploadDocumentButton } from "./upload-document-button";
 import { InternalDocumentsCard } from "./internal-documents-card";
 import { loadInternalActivity } from "@/lib/activity";
+import { canViewActivity } from "@/lib/hr-admin-preset";
 
 const EQUIPMENT_LABEL: Record<string, string> = {
   xray_screening: "X-ray Screening",
@@ -117,7 +118,9 @@ export default async function EditAssetPage({
   // came back empty. For internal equipment it is read through the Activity
   // loader, which is limited to internal equipment.
   const internalHistory =
-    isStaff && isInternalAsset ? await loadInternalActivity({ assetId: params.id, limit: 50 }) : null;
+    isStaff && isInternalAsset && canViewActivity(profile?.role, profile?.hidden_modules)
+      ? await loadInternalActivity({ assetId: params.id, limit: 50 })
+      : null;
   const formOrganizations = (organizations ?? []).filter((o) =>
     isInternalAsset ? o.id === asset.organization_id : !o.is_internal,
   );

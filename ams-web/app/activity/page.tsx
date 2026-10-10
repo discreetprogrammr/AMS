@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getProfile, requireStaff } from "@/lib/supabase/profile";
+import { canViewActivity } from "@/lib/hr-admin-preset";
 import { AppShell } from "@/components/app-shell";
 import { dateTimeLabel } from "@/lib/format";
 import { loadInternalActivity, type ActivityKind } from "@/lib/activity";
@@ -38,6 +40,9 @@ export default async function ActivityPage({
 }) {
   await requireStaff();
   const profile = await getProfile();
+  // Not every HR & Admin user: Super Admin switches it on per person (User
+  // Access). The middleware blocks the URL too; this is the second check.
+  if (!canViewActivity(profile?.role, profile?.hidden_modules)) redirect("/dashboard");
 
   const kind = KINDS.some((k) => k.value === searchParams?.type) ? (searchParams.type as "all" | ActivityKind) : "all";
   const days = DAYS.some((d) => d.value === searchParams?.days) ? (searchParams.days as string) : "30";

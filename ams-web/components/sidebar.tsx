@@ -165,7 +165,9 @@ export function Sidebar({ profile }: { profile: Profile | null }) {
   const nav = allItems
     .filter((item) => {
       if (hrAdminPreset) {
-        return item.href === "/dashboard" || item.href === "/assets" || HR_ADMIN_NAV.some((t) => t.href === item.href);
+        if (item.href === "/dashboard" || item.href === "/assets") return true;
+        // An HR & Admin tab, if it needs a permission only when this user has it.
+        return HR_ADMIN_NAV.some((t) => t.href === item.href && (!t.requires || hiddenModules.includes(t.requires)));
       }
       if (HR_ADMIN_NAV.some((t) => t.href === item.href)) return false;
       if (item.superAdminOnly && !isSuperAdmin) return false;

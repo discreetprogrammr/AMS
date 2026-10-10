@@ -2334,3 +2334,22 @@ Tab 4 of the HR & Admin sidebar. **No database change.**
 4. Filters: Changed shows only changes; Last 7 days narrows; search a tag or a person.
 5. Open the test item: its **History** card now lists the same entries (it used to say "No history recorded yet" for HR).
 6. Edit a **client** asset: it never appears on Activity.
+
+## Follow-up — Internal equipment register: Activity tab only for named people
+
+Narrows the Activity tab above. **No database change.** The change history is the audit trail of the register, so it is given to named HR & Admin users instead of every one of them.
+
+**What's here**
+- **A per-user permission**, `perm:activity`, stored in `profiles.hidden_modules` next to the preset marker (`HR_ADMIN_ACTIVITY_MARKER` in `lib/hr-admin-preset.ts`). **Off by default**: a new HR & Admin user does not see Activity until a Super Admin ticks it.
+- **User Access**: an HR & Admin user's panel has a **Can see the Activity tab** checkbox that saves immediately (`setHrAdminActivityAccess`, Super Admin only, refuses anyone without the HR & Admin preset). Re-applying the preset or ticking other boxes keeps it; **Remove HR & Admin preset** clears it.
+- **Enforced in four places**: the sidebar hides the tab without the permission; the middleware redirects `/activity` to the equipment dashboard (`hrAdminMayVisit` now takes the user's `hidden_modules`); the page itself redirects anyone who fails `canViewActivity()`; and the History card on an internal asset page only loads the change history for people who pass the same check (without it the card says "No history recorded yet"). `canViewActivity()` is true for a Super Admin, and for a preset user with the permission, and nothing else: a regular admin, or a forged marker on a non-preset account, is refused.
+- To give it to one person: **User Access → Staff → that person → Edit Access → tick "Can see the Activity tab"**. Nothing has been switched on by this change.
+
+**Not verified signed in.** `npx tsc --noEmit` and `npm run lint` pass; the permission logic was checked in isolation (page access with and without the permission, Super Admin, plain admin, forged marker).
+
+## Setup steps
+
+1. As Super Admin, **User Access** → two HR & Admin users. Neither shows Activity yet. Sign in as each: the sidebar has no Activity tab, `/activity` goes to the dashboard, and an internal asset's History card says "No history recorded yet".
+2. Tick **Can see the Activity tab** on one of them. Sign in as that person (or reload): the tab appears and works; the other user still has nothing.
+3. Untick it: the tab disappears for that person.
+4. Re-apply the preset to the person who has it: the permission stays. **Remove HR & Admin preset**, then apply again: it is off.

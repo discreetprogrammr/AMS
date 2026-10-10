@@ -3,7 +3,8 @@
 // but its RLS shows it to Super Admin only, and it holds every record in the
 // system. This reads it with the service-role client, strictly narrowed to
 // internal equipment, and turns each row into a sentence. Callers must have
-// checked that the signed-in user is staff first.
+// checked canViewActivity() (lib/hr-admin-preset.ts) first: Super Admin, or
+// an HR & Admin user the Super Admin has given the Activity permission.
 import { createServiceRoleClient } from "@/lib/supabase/service-role";
 import { getInternalOrgIds, getInternalScope } from "@/lib/internal-org";
 import {

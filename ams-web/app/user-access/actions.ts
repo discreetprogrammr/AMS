@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireSuperAdmin } from "@/lib/supabase/profile";
 import { createServiceRoleClient } from "@/lib/supabase/service-role";
 import { INTERNAL_EQUIPMENT_HIDDEN_HREFS } from "@/lib/nav-items";
-import { HR_ADMIN_PRESET_MARKER, hrAdminHiddenModules } from "@/lib/hr-admin-preset";
+import { HR_ADMIN_ACTIVITY_MARKER, HR_ADMIN_PRESET_MARKER, hrAdminHiddenModules } from "@/lib/hr-admin-preset";
 
 // User Access (schema_step44.sql) — Super Admin picking which sidebar
 // modules a specific staff or client account sees. hidden_modules is
@@ -25,8 +25,10 @@ export async function updateHiddenModules(userId: string, hiddenModules: string[
   // preset" for that).
   const { data: current } = await supabase.from("profiles").select("hidden_modules").eq("id", userId).single();
   const keepMarker = (current?.hidden_modules ?? []).includes(HR_ADMIN_PRESET_MARKER);
-  const next = hiddenModules.filter((h) => h !== HR_ADMIN_PRESET_MARKER);
+  const keepActivity = keepMarker && (current?.hidden_modules ?? []).includes(HR_ADMIN_ACTIVITY_MARKER);
+  const next = hiddenModules.filter((h) => h !== HR_ADMIN_PRESET_MARKER && h !== HR_ADMIN_ACTIVITY_MARKER);
   if (keepMarker) next.push(HR_ADMIN_PRESET_MARKER);
+  if (keepActivity) next.push(HR_ADMIN_ACTIVITY_MARKER);
 
   const { error } = await supabase
     .from("profiles")
@@ -96,7 +98,10 @@ export async function applyHrAdminPreset(userId: string) {
     throw new Error("The HR & Admin preset can only be applied to admin accounts.");
   }
 
+  // Re-applying the preset must not take back a permission already granted.
+  const { data: existing } = await supabase.from("profiles").select("hidden_modules").eq("id", userId).single();
   const hidden = hrAdminHiddenModules();
+  if ((existing?.hidden_modules ?? []).includes(HR_ADMIN_ACTIVITY_MARKER)) hidden.push(HR_ADMIN_ACTIVITY_MARKER);
   const { error } = await supabase.from("profiles").update({ hidden_modules: hidden }).eq("id", userId);
 
   if (error) {
@@ -121,4 +126,34 @@ export async function removeHrAdminPreset(userId: string) {
 
   revalidatePath("/user-access");
   return [] as string[];
+}
+
+// Switch the Activity tab (the register's change history) on or off for one
+// HR & Admin user. Super Admin only; the user must already have the preset.
+export async function setHrAdminActivityAccess(userId: string, enabled: boolean) {
+  await requireSuperAdmin();
+
+  const supabase = createServiceRoleClient();
+  const { data: target, error: lookupError } = await supabase
+    .from("profiles")
+    .select("hidden_modules")
+    .eq("id", userId)
+    .single();
+  if (lookupError) {
+    throw new Error(lookupError.message);
+  }
+  const current: string[] = target.hidden_modules ?? [];
+  if (!current.includes(HR_ADMIN_PRESET_MARKER)) {
+    throw new Error("The Activity permission can only be set on HR & Admin accounts.");
+  }
+
+  const without = current.filter((h) => h !== HR_ADMIN_ACTIVITY_MARKER);
+  const next = enabled ? [...without, HR_ADMIN_ACTIVITY_MARKER] : without;
+  const { error } = await supabase.from("profiles").update({ hidden_modules: next }).eq("id", userId);
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  revalidatePath("/user-access");
+  return enabled;
 }

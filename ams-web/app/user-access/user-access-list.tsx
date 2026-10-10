@@ -5,10 +5,11 @@ import {
   applyHrAdminPreset,
   applyInternalEquipmentPreset,
   removeHrAdminPreset,
+  setHrAdminActivityAccess,
   updateHiddenModules,
 } from "./actions";
 import { modulesForRole } from "@/lib/nav-items";
-import { isHrAdminPreset } from "@/lib/hr-admin-preset";
+import { HR_ADMIN_ACTIVITY_MARKER, isHrAdminPreset } from "@/lib/hr-admin-preset";
 
 export type UserAccessRow = {
   id: string;
@@ -121,6 +122,18 @@ function UserRow({
   // shown, so a stray tick cannot half-undo it.
   const [hrPreset, setHrPreset] = useState(() => isHrAdminPreset(row.hidden_modules));
 
+  // HR & Admin: the Activity tab is given to named people, off by default.
+  const [activityAccess, setActivityAccess] = useState(() => row.hidden_modules.includes(HR_ADMIN_ACTIVITY_MARKER));
+
+  function handleActivityAccess(enabled: boolean) {
+    setSaved(false);
+    startTransition(async () => {
+      await setHrAdminActivityAccess(row.id, enabled);
+      setActivityAccess(enabled);
+      setSaved(true);
+    });
+  }
+
   function handleHrPreset() {
     startTransition(async () => {
       await applyHrAdminPreset(row.id);
@@ -133,6 +146,7 @@ function UserRow({
     startTransition(async () => {
       await removeHrAdminPreset(row.id);
       setHrPreset(false);
+      setActivityAccess(false);
       setHidden(new Set());
       setSaved(true);
     });
@@ -175,6 +189,21 @@ function UserRow({
             HR &amp; Admin (internal equipment): this person sees Dashboard (their own internal-equipment
             dashboard) and Assets only, and can add, edit and delete internal equipment only.
           </p>
+          <label className="mt-4 flex items-start gap-2 text-sm text-ink-soft">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={activityAccess}
+              disabled={isPending}
+              onChange={(e) => handleActivityAccess(e.target.checked)}
+            />
+            <span>
+              Can see the <strong className="text-ink">Activity</strong> tab
+              <span className="block text-xs text-slate-500">
+                Who added, changed or deleted equipment, and when. Off unless you tick it. Saves immediately.
+              </span>
+            </span>
+          </label>
           <div className="mt-4 flex items-center gap-3">
             <button
               type="button"

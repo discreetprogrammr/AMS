@@ -98,7 +98,7 @@ export async function updateSession(request: NextRequest) {
       // dashboard, which is itself on the allow list, so it cannot loop.
       // /dashboard is not allowed for them, so login (which always ends at
       // /dashboard) and the root page both bounce there.
-      if (restricted && isHrAdminPreset(profile?.hidden_modules) && !hrAdminMayVisit(pathname)) {
+      if (restricted && isHrAdminPreset(profile?.hidden_modules) && !hrAdminMayVisit(pathname, profile?.hidden_modules)) {
         const url = request.nextUrl.clone();
         url.pathname = EQUIPMENT_DASHBOARD_HREF;
         url.search = pathname === "/dashboard" || pathname === "/" ? "" : "?access_denied=1";

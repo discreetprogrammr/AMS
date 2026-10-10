@@ -9,11 +9,25 @@ import {
   VIEWS,
   internalAssetsHref,
   labelFor,
+  manilaDate,
   type InternalFilters,
 } from "@/lib/internal-equipment";
 import { AssetRowActions } from "./asset-row-actions";
 import { InternalStatusBadges } from "./internal-badges";
 import { BulkEditBar } from "./bulk-edit-bar";
+import { daysUntil } from "@/lib/warranty";
+
+// Short segment names for the table; the full name is the tooltip.
+const SEGMENT_SHORT: Record<string, string> = { pacific_horizon_tek: "PHT", team_fridays_digital: "TFD" };
+
+// Warranty date colour: lapsed in red, ending within 60 days in amber.
+function warrantyTone(date: string | null): string {
+  if (!date) return "text-slate-500";
+  const days = daysUntil(date, manilaDate());
+  if (days < 0) return "text-red-400";
+  if (days <= 60) return "text-amber-400";
+  return "text-ink-soft";
+}
 
 const EQUIPMENT_LABEL: Record<string, string> = {
   xray_screening: "X-ray Screening",
@@ -151,12 +165,12 @@ export function AssetsTable({
       )}
 
       <div className="overflow-x-auto rounded-xl border border-hairline bg-surface">
-        <table className="w-full text-left text-sm">
+        <table className={`w-full text-left text-sm ${internalView ? "min-w-[60rem]" : ""}`}>
           <thead className="bg-surface-2 text-xs uppercase tracking-wide text-slate-500">
             {internalView ? (
               <tr>
                 {bulkEnabled && (
-                  <th className="w-10 px-4 py-3">
+                  <th className="sticky left-0 z-[1] w-10 bg-surface-2 px-4 py-3">
                     <input
                       type="checkbox"
                       checked={allTicked}
@@ -165,17 +179,16 @@ export function AssetsTable({
                     />
                   </th>
                 )}
-                <th className="px-4 py-3">Asset Tag</th>
-                <th className="px-4 py-3">Category</th>
-                <th className="px-4 py-3">Description</th>
-                <th className="px-4 py-3">Brand / Model</th>
-                <th className="px-4 py-3">Serial</th>
+                <th className={`sticky z-[1] whitespace-nowrap bg-surface-2 px-4 py-3 ${bulkEnabled ? "left-10" : "left-0"}`}>
+                  Asset Tag
+                </th>
+                <th className="px-4 py-3">Item</th>
+                <th className="whitespace-nowrap px-4 py-3">Category</th>
                 <th className="px-4 py-3">Custodian</th>
-                <th className="px-4 py-3">Department</th>
                 <th className="px-4 py-3">Segment</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Warranty End</th>
-                {isStaff && <th className="sticky right-0 bg-surface-2 px-4 py-3 text-right">Actions</th>}
+                <th className="whitespace-nowrap px-4 py-3">Warranty End</th>
+                {isStaff && <th className="sticky right-0 z-[1] bg-surface-2 px-4 py-3 text-right">Actions</th>}
               </tr>
             ) : (
             <tr>
@@ -194,10 +207,13 @@ export function AssetsTable({
               <tr
                 key={asset.id}
                 onClick={() => router.push(`/assets/${asset.id}`)}
-                className="cursor-pointer border-t border-hairline hover:bg-surface-2"
+                className="group cursor-pointer border-t border-hairline align-top hover:bg-surface-2"
               >
                 {bulkEnabled && (
-                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                  <td
+                    className="sticky left-0 z-[1] bg-surface px-4 py-3 group-hover:bg-surface-2"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <input
                       type="checkbox"
                       checked={selected.has(asset.id)}
@@ -206,25 +222,52 @@ export function AssetsTable({
                     />
                   </td>
                 )}
-                <td className="px-4 py-3 font-medium text-ink">{asset.asset_tag}</td>
-                <td className="px-4 py-3 text-ink-soft">{asset.asset_category ?? "—"}</td>
-                <td className="px-4 py-3 text-ink-soft">{asset.description ?? "—"}</td>
-                <td className="px-4 py-3 text-ink-soft">
-                  {[asset.brand, asset.model].filter(Boolean).join(" / ") || "—"}
+                <td
+                  className={`sticky z-[1] whitespace-nowrap bg-surface px-4 py-3 font-mono text-[13px] font-semibold text-ink group-hover:bg-surface-2 ${
+                    bulkEnabled ? "left-10" : "left-0"
+                  }`}
+                >
+                  {asset.asset_tag}
                 </td>
-                <td className="px-4 py-3 text-ink-soft">{asset.serial_number ?? "—"}</td>
-                <td className="px-4 py-3 text-ink-soft">{asset.custodian ?? "—"}</td>
-                <td className="px-4 py-3 text-ink-soft">{asset.department ?? "—"}</td>
-                <td className="px-4 py-3 text-ink-soft">{labelFor(SEGMENTS, asset.segment)}</td>
                 <td className="px-4 py-3">
+                  <div className="min-w-[14rem] max-w-[24rem]">
+                    <p className="line-clamp-2 font-medium text-ink">
+                      {asset.description || [asset.brand, asset.model].filter(Boolean).join(" ") || "—"}
+                    </p>
+                    <p className="mt-0.5 truncate text-xs text-slate-500">
+                      {[asset.description ? [asset.brand, asset.model].filter(Boolean).join(" ") : "", asset.serial_number ? `SN ${asset.serial_number}` : ""]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  </div>
+                </td>
+                <td className="whitespace-nowrap px-4 py-3 text-ink-soft">{asset.asset_category ?? "—"}</td>
+                <td className="px-4 py-3">
+                  <p className="whitespace-nowrap text-ink">{asset.custodian ?? <span className="text-slate-500">—</span>}</p>
+                  {asset.department ? <p className="whitespace-nowrap text-xs text-slate-500">{asset.department}</p> : null}
+                </td>
+                <td className="px-4 py-3">
+                  <span
+                    title={labelFor(SEGMENTS, asset.segment)}
+                    className="inline-flex whitespace-nowrap rounded-md bg-slate-500/15 px-2 py-0.5 text-[11px] font-semibold tracking-wide text-ink-soft"
+                  >
+                    {SEGMENT_SHORT[asset.segment ?? ""] ?? "—"}
+                  </span>
+                </td>
+                <td className="min-w-[11rem] px-4 py-3">
                   <InternalStatusBadges
                     assignmentStatus={asset.assignment_status}
                     condition={asset.condition}
                   />
                 </td>
-                <td className="px-4 py-3 text-ink-soft">{asset.warranty_end_date ?? "—"}</td>
+                <td className={`whitespace-nowrap px-4 py-3 ${warrantyTone(asset.warranty_end_date)}`}>
+                  {asset.warranty_end_date ?? "—"}
+                </td>
                 {isStaff && (
-                  <td className="sticky right-0 bg-surface px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                  <td
+                    className="sticky right-0 z-[1] bg-surface px-4 py-3 text-right group-hover:bg-surface-2"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <AssetRowActions assetId={asset.id} assetTag={asset.asset_tag} guarded={guardedDelete} />
                   </td>
                 )}
@@ -258,7 +301,7 @@ export function AssetsTable({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={internalView ? (isStaff ? 12 : 10) : isStaff ? 7 : 6} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={internalView ? (isStaff ? 9 : 7) : isStaff ? 7 : 6} className="px-4 py-8 text-center text-slate-500">
                   {emptyMessage}
                 </td>
               </tr>

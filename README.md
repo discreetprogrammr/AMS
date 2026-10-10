@@ -2353,3 +2353,16 @@ Narrows the Activity tab above. **No database change.** The change history is th
 2. Tick **Can see the Activity tab** on one of them. Sign in as that person (or reload): the tab appears and works; the other user still has nothing.
 3. Untick it: the tab disappears for that person.
 4. Re-apply the preset to the person who has it: the permission stays. **Remove HR & Admin preset**, then apply again: it is off.
+
+## Follow-up — Internal equipment register: tidier equipment table
+
+The internal Assets table had 11 columns, so the Asset Tag wrapped at its hyphens (`PHT-EQ-` / `0001`) and the page scrolled sideways. **No database change.**
+
+- **Asset Tag stays on one line**, in a monospace weight, and is **pinned to the left** (after the checkbox) so it stays visible when the table scrolls sideways. The Actions column stays pinned to the right.
+- **Fewer, fuller columns** (9 instead of 11): **Item** shows the description in bold with brand, model and serial number as a small line underneath (long text is cut to two lines); **Custodian** shows the person with their department underneath. Category, Segment, Status and Warranty keep their own columns.
+- **Segment** is a short tag, `PHT` or `TFD`, with the full name as the tooltip.
+- **Warranty End** is red once lapsed and amber within 60 days.
+- Rows align to the top, so a two-line item does not push the other cells down. Hover still highlights the whole row, including the pinned cells.
+- Sorting, filters, bulk edit and exports are unchanged. The client table is untouched.
+
+**Not checked in a browser.** `npx tsc --noEmit` and `npm run lint` pass.

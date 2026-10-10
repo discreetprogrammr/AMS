@@ -11,10 +11,13 @@ Implements Step 1 of the build order in `AMS_Spec_v0.3.docx`: Supabase project s
 1. **Create (or open) your Supabase project** at supabase.com — free tier is fine for the build/demo phase (Section 8 of the spec).
 2. Go to the **SQL Editor** in the Supabase dashboard.
 3. Paste the full contents of `schema.sql` and run it. This creates every table, enum, trigger, and RLS policy in one pass.
-4. **Create your first internal-staff user**: sign up a user through Supabase Auth (dashboard → Authentication → Add user, or your app's sign-up flow), then insert a matching row into `profiles` with `role = 'internal_staff'` so you can log in and manage data:
+4. **Create a staff user** (this step originally said `role = 'internal_staff'`; `schema_step22.sql` renamed that role to `admin` and added `super_admin`, so the current roles are `admin`, `super_admin` and `client_viewer`). There is no invite flow in the app and no trigger that creates a profile, so it is two manual steps:
+   1. Supabase dashboard → **Authentication** → **Users** → **Add user** → **Create new user**: enter the email and a password, and tick **Auto Confirm User**. Copy the new user's **UID** from the Users list.
+   2. SQL Editor, insert the matching `profiles` row (use `'super_admin'` for a Super Admin; `'admin'` for everyone else on staff):
    ```sql
    insert into profiles (id, full_name, role)
-   values ('<the auth user's UUID>', 'Lourence Loque', 'internal_staff');
+   values ('<AUTH_USER_ID>', '<FULL NAME>', 'admin')
+   on conflict (id) do update set full_name = excluded.full_name, role = excluded.role;
    ```
 5. **Create a test organization and asset** to confirm everything works end to end:
    ```sql
@@ -2050,3 +2053,39 @@ Follows PR 4 and the internal-equipment merge (5234730). **No database change in
 ## Setup steps
 
 1. Read the new section in `CLAUDE.md` and check it against your understanding of the register.
+
+## Follow-up — Internal equipment register (HR & Admin preset and internal dashboard)
+
+Follows PR 4 ("Internal equipment only" preset) and the PR 6 CLAUDE.md rules. **No database change in this step**: the preset is stored in the existing `profiles.hidden_modules` (schema_step44.sql), so there is nothing to run first.
+
+**What's here**
+- **"HR & Admin (internal equipment)" preset** on User Access, for `admin` accounts only. The person sees exactly two sidebar items: **Dashboard** (their own internal-equipment dashboard) and **Assets**. The existing "Internal equipment only" preset is unchanged. A preset user's row shows an "HR & Admin" badge, no checkboxes, and a **Remove HR & Admin preset** button.
+- **How a preset user is identified**: a marker string `preset:hr_admin` stored in `hidden_modules` beside the hidden hrefs (`lib/hr-admin-preset.ts`). Not an exact match of the hidden list, which would stop matching as soon as a module is added or one box is ticked. `updateHiddenModules` keeps the marker and never accepts it from the client.
+- **Middleware is default-deny for them** (`lib/supabase/middleware.ts`): only `/assets` (except `/assets/import` and `/assets/scan`), `/equipment-dashboard`, `/profile` and `/login` open. Everything else, including `/dashboard`, `/` and any module added later, redirects to `/equipment-dashboard`; a blocked route adds `?access_denied=1`. Login still ends at `/dashboard`, which now bounces them on. `/equipment-dashboard` never redirects them, so there is no loop. Users without the preset behave as before; the only extra profile read is for `/dashboard`, `/` and `/user-access`.
+- **API routes** (`lib/hr-admin-guard.ts`, `forbidHrAdminPreset()`): 403 for preset users on the client asset export, unserviceable report, both import templates, the three report exports, the service-record PDF, the inventory export, document download and TURN credentials. Left open: the internal export (which they need) and `log-client-error`. The cron routes are untouched. The middleware matcher still excludes `/api/*`.
+- **Equipment dashboard** (`/equipment-dashboard`, staff): internal organizations only (`getInternalOrgIds`). Tiles: total, Pacific Horizon Tek, Team Fridays Digital, Needs attention; breakdowns by category, department, status and condition; a segment-by-category table; housekeeping (no custodian, no acquisition cost, no date acquired); the 10 most recently added or changed assets. Counts exclude retired / lost, like **All** on `/assets`. Every tile and row links to `/assets` with the matching filters. No warranty alerts, no cost totals. The client `/dashboard` is untouched.
+- **New `/assets` filters** so every dashboard link has a target: `condition`, `assignment` (shown as Status), `missing` (`acquisition_cost` or `date_acquired`), and "Not set" for category and department. They apply to the export too.
+- **Assets locked to the internal organization for preset users**: the organization list is internal only, one is always selected, the Organization filter is hidden, `/assets/new` always opens the internal form, and a client asset's detail page is "not found" (its certificates, documents, tickets and QR / checklist links are not shown on internal assets either). `createAsset`, `updateAsset` and `deleteAsset` reject a non-internal organization for them, checked on the server. The Topbar push button is hidden for them.
+- **Delete, preset users only**: `deleteAsset` refuses when the asset has child assets (`parent_asset_id`) or any linked row in service_records, compliance_certificates, service_tickets, inventory_cycle_items, work_orders, alerts, inspections, calendar_events, pm_auto_runs or asset_documents, and says what and how many. The check is in the action, and a failed count also blocks (fails closed). Deletes are still captured by the `assets` audit trigger. For every other admin and super admin `deleteAsset` is unchanged: a cascading hard delete.
+- `updateInternalAsset` now sets `updated_at` (there is no trigger on `assets`), so "recently changed" is accurate. `/assets` now displays `?error=`, which the delete and edit redirects already sent.
+
+**Known limits (follow-up, deliberately not fixed here)**
+- `createAsset`, `updateAsset` and `deleteAsset` still trust the organization for **all other admins**: an admin can create, move or delete a client asset through them. Only preset users are checked.
+- The lock for preset users is in the app. A preset user is still an `admin` in the database, so RLS lets their session read and write client data; someone using the Supabase API directly with their token is not stopped. Closing that needs an RLS change (a schema step).
+- Server actions outside `app/assets/` (tickets, work orders and so on) are blocked by their pages' middleware rule, not by a check inside each action.
+- The Needs attention tile counts condition **For Repair** and **Damaged** (the same set as the Needs Repair pill): the condition list has no "poor".
+
+**Not verified against a signed-in preset session** unless the PR description says otherwise. `npx tsc --noEmit`, `npm run lint` and `npm run build` pass.
+
+## Setup steps
+
+1. Create the test user (Supabase dashboard → Authentication → Users → Add user, tick Auto Confirm User), then run in the SQL editor (profile row as in setup step 4 above, role `admin`):
+   ```sql
+   insert into profiles (id, full_name, role)
+   values ('<AUTH_USER_ID>', '<FULL NAME>', 'admin')
+   on conflict (id) do update set full_name = excluded.full_name, role = excluded.role;
+   ```
+2. Sign in as a Super Admin → **User Access** → find the user under **Staff** → **Edit Access** → **HR & Admin (internal equipment)**. "Saved." appears and the row shows an "HR & Admin" badge.
+3. Sign in as that user: you land on **Dashboard** (`/equipment-dashboard`); the sidebar shows only Dashboard and Assets; `/dashboard`, `/alerts` and `/clients` redirect to the dashboard.
+4. Dashboard numbers match `/assets` for the internal organization; tiles and rows open the right filtered list.
+5. On Assets: add, edit and delete an internal test item. Deleting `PHT-EQ-` items that have child assets or linked records is refused with a message. Change `?org=` to a client organization's id: it is ignored. Open a client asset's `/assets/<id>`: not found.

@@ -99,6 +99,18 @@ export default async function EditAssetPage({
     (o) => o.id === asset.organization_id && o.is_internal,
   );
   if (presetUser && !isInternalAsset) notFound();
+
+  // Custodian history (schema_step48.sql), internal assets only. If the
+  // step has not been run yet the query errors; the page says so rather
+  // than failing.
+  const { data: custodyRows, error: custodyError } =
+    isStaff && isInternalAsset
+      ? await supabase
+          .from("asset_custodian_history")
+          .select("id, custodian, department, started_at, ended_at, profiles(full_name)")
+          .eq("asset_id", params.id)
+          .order("started_at", { ascending: false })
+      : { data: null, error: null };
   const formOrganizations = (organizations ?? []).filter((o) =>
     isInternalAsset ? o.id === asset.organization_id : !o.is_internal,
   );
@@ -233,6 +245,44 @@ export default async function EditAssetPage({
         {isStaff && isInternalAsset && (
           <div className="mt-4 flex justify-end">
             <DeleteAssetButton assetId={asset.id} assetTag={asset.asset_tag} guarded={presetUser} />
+          </div>
+        )}
+
+        {isStaff && isInternalAsset && (
+          <div className="mt-6 rounded-xl border border-hairline bg-surface p-6">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-soft">Custodian History</h2>
+              <Link
+                href={`/assets/${asset.id}/handover`}
+                className="text-xs font-medium text-blue-400 hover:underline"
+              >
+                Print handover form →
+              </Link>
+            </div>
+            {custodyError ? (
+              <p className="text-sm text-slate-500">
+                Custodian history is not set up yet. Run schema_step48.sql in the Supabase SQL editor.
+              </p>
+            ) : custodyRows?.length ? (
+              <ul className="divide-y divide-hairline text-sm">
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                {custodyRows.map((c: any) => (
+                  <li key={c.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2">
+                    <span className="font-medium text-ink">
+                      {c.custodian}
+                      {c.department ? <span className="font-normal text-slate-500"> · {c.department}</span> : null}
+                    </span>
+                    <span className="text-xs text-slate-500">
+                      {dateTimeLabel(c.started_at)} →{" "}
+                      {c.ended_at ? dateTimeLabel(c.ended_at) : <span className="text-emerald-400">Current</span>}
+                      {c.profiles?.full_name ? ` · set by ${c.profiles.full_name}` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-slate-500">No custodian has been recorded for this item yet.</p>
+            )}
           </div>
         )}
 

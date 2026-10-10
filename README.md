@@ -2089,3 +2089,28 @@ Follows PR 4 ("Internal equipment only" preset) and the PR 6 CLAUDE.md rules. **
 3. Sign in as that user: you land on **Dashboard** (`/equipment-dashboard`); the sidebar shows only Dashboard and Assets; `/dashboard`, `/alerts` and `/clients` redirect to the dashboard.
 4. Dashboard numbers match `/assets` for the internal organization; tiles and rows open the right filtered list.
 5. On Assets: add, edit and delete an internal test item. Deleting `PHT-EQ-` items that have child assets or linked records is refused with a message. Change `?org=` to a client organization's id: it is ignored. Open a client asset's `/assets/<id>`: not found.
+
+## Follow-up — Internal equipment register: QR labels, custodian history and handover form
+
+Follows the HR & Admin preset above. Three small features for the internal register.
+
+## Database change, run this first
+
+Run `schema_step48.sql` in the Supabase SQL editor (the whole file). It is idempotent. It creates `asset_custodian_history` (one row per holding: custodian, department, `started_at`, `ended_at`; `ended_at` null means current), a partial unique index so an asset has at most one current holder, RLS with a staff-read policy and no write policies, and an `after insert or update of custodian` trigger on `assets` that closes the old row and opens a new one. The trigger covers internal organizations only, so client assets are untouched, and it covers every write path (the app, load scripts, the SQL editor). The file ends by giving each internal asset that already has a custodian an opening row (dated `date_issued`, else `created_at`), only where it has no history yet.
+
+Why a trigger rather than app code: the batch loads and any manual SQL change the custodian without going through the app. History is deleted with its asset (`on delete cascade`); the `assets` audit trigger still records the asset itself. The HR & Admin delete check does not count these rows, since every held item has one. The app works before the SQL is run: the history card says it is not set up yet.
+
+**What's here**
+- **QR labels** (`/assets/labels`): a printable sheet of labels (QR, asset tag, description, segment) for whatever is filtered on `/assets`, up to 300, or one label with `?id=`. Internal organizations only. Linked from **Print QR labels** on the internal list and **Print label** on each internal asset. The HR & Admin preset now sees the QR block on internal assets (without the client PM / CM checklist links).
+- **Custodian History** card on an internal asset's page: who held it, from when, until when, and who made the change.
+- **Handover form** (`/assets/<id>/handover`): a printable equipment handover / accountability form with the asset's details, current custodian, issue / return / transfer tick boxes and signature lines. Internal assets only.
+
+**Not verified signed in.** `npx tsc --noEmit` and `npm run lint` pass. The trigger and backfill have not been run against Supabase.
+
+## Setup steps
+
+1. Run `schema_step48.sql`. Check: `select count(*) from asset_custodian_history;` returns about the number of internal items that have a custodian.
+2. Open an internal asset: Custodian History shows one "Current" row. Change the custodian and save: the old row gets an end time, a new current row appears with your name under "set by".
+3. Clear the custodian and save: the old row is closed and no new current row appears.
+4. **Print handover form →** opens a white page with the asset's details and signature lines.
+5. `/assets` → **Print QR labels**, and **Print label →** on an asset: see the label checks in the PR description.

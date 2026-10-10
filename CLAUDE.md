@@ -186,6 +186,37 @@ Before working on a feature, read its section. After shipping one, append
 a new section in the same shape. That file is the history of why things
 are the way they are.
 
+## Internal organisation (PHtek equipment register)
+
+`organizations.is_internal = true` marks PHtek's own organisation. Its
+assets (tags `PHT-EQ-NNNN`) are internal office equipment, not client
+equipment. Spec: `docs/HorizonCare360_Internal_Equipment_Spec_v0.1.md`.
+
+- **Keep it out of client features.** Internal assets must never appear in
+  anything client-facing or client-derived: Dashboard, Analytics, alerts,
+  compliance-check, service records, tickets, certificates, PM schedules,
+  exports and reports. Use the helpers in `lib/internal-org.ts`:
+  `getInternalOrgIds`, `excludeInternal`, `isInternalAuditRow`. Any new
+  query or route that reads assets, service_records or audit rows must
+  apply them. `getInternalOrgIds` fails closed (throws) on purpose.
+- **Segment.** `assets.segment` (`pacific_horizon_tek` /
+  `team_fridays_digital`) is required when the org is internal and null
+  otherwise. Two database triggers enforce it: `enforce_asset_segment()`
+  and `enforce_org_internal_segments()`.
+- **Separate logic, not a reskin.** Internal assets use their own status
+  derivation (`deriveInternalStatus` in `lib/internal-equipment.ts`), their
+  own filters (`parseInternalFilters` / `applyInternalFilters`) and their
+  own export route (`/api/assets/export/internal`). Do not reuse the
+  Operational/Down UI for them.
+- **Tags.** `PHT-EQ-NNNN`, with a partial unique index
+  (`schema_step47.sql`).
+- **Sidebar.** For internal-only users it is controlled by
+  `profiles.hidden_modules`, set by the "Internal equipment only" preset on
+  the User Access page.
+- **Never commit load scripts** or any file containing staff names.
+- **New feature that reads assets?** Add a test or a manual check that
+  internal assets do not show up in it, and say which in the PR.
+
 ## Settled decisions, do not reopen without asking
 
 - HorizonCare360's ticketing is **separate** from the internal PHtek CRM.

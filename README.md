@@ -2213,3 +2213,27 @@ Run `schema_step50.sql` in the Supabase SQL editor. It is idempotent. The `categ
 4. Try a file over 4 MB: a clear message appears and nothing is uploaded.
 5. As HR & Admin: the same card and upload work. Delete a document: it asks first, then it is gone.
 6. In a private window with nobody signed in, open a thumbnail's `/api/documents/<id>/download` URL: it is refused or redirected to login, not shown.
+
+## Follow-up — Internal equipment register: asset page cleanup and upload fix
+
+Follows photos and documents above. **No new database change.** If `schema_step50.sql` has not been run yet, run it: it is what lets Photo, Receipt and Warranty be saved.
+
+**The upload failure.** Adding a photo to an internal asset showed "An error occurred in the Server Components render. The specific message is omitted in production builds...". That text is not the real error: in production Next.js replaces the message of any error *thrown* from a Server Action, and `uploadDocument` threw for every failure (storage, database, size). So the dialog hid the cause. The most likely cause is the `asset_documents` category check (step 50 not yet applied: the default category for internal items is Photo, which the original check refuses), with a storage permission or bucket problem as the other candidate. This could not be reproduced from the code alone (it needs a signed-in session), so the fix makes the real cause visible and removes the other suspects:
+- **`uploadDocument` returns `{ ok, error }` and never throws for an expected failure** (`app/assets/[id]/documents-actions.ts`). Known causes get a plain sentence: category not enabled (run step 50), bucket missing (run step 35), no permission, file too large. Unexpected failures are also written to `error_logs` as `asset-documents:upload` / `asset-documents:insert` (view with `node check-errors.mjs asset-documents`). The dialog shows the text, and a failed request shows a generic "check your connection and file size" line, never the Next.js text.
+- **Storage keys no longer contain any part of the file name**: `<asset id>/<generated id>.<extension>`. The original name is kept as the display name (control characters and slashes removed). The old key was already sanitised, so a name like `pacifichorizont...com%2F (1).png` was not the cause, but names are no longer a risk either way. This applies to client asset documents too; only new uploads get the new key shape.
+- **Download header fixed** (`/api/documents/<id>/download`): the file name went into `Content-Disposition` as-is, which breaks the response for names with non-ASCII characters (₱, –, accents, emoji) or quotes. It now sends an ASCII fallback plus the RFC 5987 name.
+- **One size limit everywhere**: 4 MB (`MAX_UPLOAD_BYTES`), matching `next.config.mjs` and Vercel's request cap; the old 25 MB figure could never work.
+
+**Dialog**: the **Title** field is gone for internal assets; the title is the file name. Client assets keep the Title field.
+
+**Internal asset page and Edit Asset page** (the same page, `/assets/<id>`): for internal assets, **Service Tickets** (list, Submit Request form, message / work-order links), **Compliance Certificates**, **Start PM Checklist** and **Start CM Report** are removed, for every user. Left: the form, QR (Download QR, Print label), Custodian History, Photos & Documents, Delete and History. Nothing else client-only was on the page (no inspections, work orders or calendar sections). The ticket and work-order notice banners only appear after a ticket, so they never show for internal assets. A client asset's page is unchanged.
+
+**Not verified signed in.** `npx tsc --noEmit`, `npm run lint` and `npm run build` pass. The path and header helpers were checked in isolation with awkward names (`%2F`, spaces, brackets, accents, emoji, no extension).
+
+## Setup steps
+
+1. (If not done) run `schema_step50.sql`.
+2. Internal asset page: no Service Tickets, Compliance Certificates, Start PM Checklist or Start CM Report. A client asset's page still has them.
+3. **Add Photo / Document** on an internal asset: there is no Title field. Upload a PNG named like `page.com%2F (1).png`, a normal PNG, and a PDF just under 4 MB: each appears, titled with its file name. Open one: it downloads with its real name.
+4. Upload a file over 4 MB: a clear message, nothing uploaded.
+5. If an upload ever fails, the dialog says why; `node check-errors.mjs asset-documents` shows the technical detail.

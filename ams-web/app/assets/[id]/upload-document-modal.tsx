@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { uploadDocument } from "./documents-actions";
-import { DOCUMENT_CATEGORIES, INTERNAL_DOCUMENT_CATEGORIES } from "@/lib/documents";
+import { DOCUMENT_CATEGORIES, INTERNAL_DOCUMENT_CATEGORIES, MAX_UPLOAD_BYTES } from "@/lib/documents";
 
 // Phone photos are several MB each. Internal equipment photos are shrunk in
 // the browser before upload (longest side 1600px, JPEG) unless they are
@@ -61,18 +61,27 @@ export function UploadDocumentModal({
     try {
       const toSend = internal ? await shrinkImage(file) : file;
       // The server accepts 4 MB (next.config.mjs, Vercel's request cap).
-      if (toSend.size > 4_000_000) {
-        throw new Error("That file is over 4 MB. Photos are shrunk automatically; compress a large PDF first.");
+      if (toSend.size > MAX_UPLOAD_BYTES) {
+        setError("That file is over 4 MB. Photos are shrunk automatically; compress a large PDF first.");
+        return;
       }
       const formData = new FormData();
       formData.set("file", toSend);
       formData.set("category", category);
-      formData.set("title", title.trim());
-      await uploadDocument(assetId, formData);
+      // Internal equipment has no Title field: the server uses the file name.
+      if (!internal) formData.set("title", title.trim());
+      const result = await uploadDocument(assetId, formData);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
       router.refresh();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      // Reached only if the request itself failed (offline, body over the
+      // framework limit); the action reports its own failures as a result.
+      console.error("[UploadDocumentModal] upload threw:", err);
+      setError("The upload could not be completed. Check your connection and that the file is under 4 MB, then try again.");
     } finally {
       setSubmitting(false);
     }
@@ -128,17 +137,19 @@ export function UploadDocumentModal({
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-ink-soft">
-              Title <span className="text-slate-500">(optional — defaults to file name)</span>
-            </label>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. PNRI License Certificate"
-              className="mt-1 w-full rounded-lg border border-hairline bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-            />
-          </div>
+          {!internal && (
+            <div>
+              <label className="block text-sm font-medium text-ink-soft">
+                Title <span className="text-slate-500">(optional — defaults to file name)</span>
+              </label>
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. PNRI License Certificate"
+                className="mt-1 w-full rounded-lg border border-hairline bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+          )}
 
           <div className="flex items-center gap-3 pt-1">
             <button

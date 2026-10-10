@@ -107,6 +107,7 @@ const HR_ADMIN_ICONS: Record<string, keyof typeof ICONS> = {
   "/custodians": "clients",
   "/assets/stocktake": "inspections",
   "/warranty": "calendar",
+  "/activity": "audit",
 };
 
 function buildNav(): NavItem[] {

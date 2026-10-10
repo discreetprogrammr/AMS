@@ -2310,3 +2310,27 @@ Tab 3 of the HR & Admin sidebar. **No database change.** Uses `assets.warranty_e
 2. Open **Warranty & Renewals**. Pick a **test** item, set its warranty end to a date within the next 30 days: it appears under "Within 30 days" with the days left, and the tile goes up. Set it to yesterday: "Expired". Set it more than 90 days away: it leaves the page. Clear the date: "No warranty date" goes up.
 3. **Email me this list now**: a green message names your address (or a red one says why not, for example that email is not set up). Check your inbox for the list.
 4. As Super Admin, open `/api/cron/warranty-reminders` while signed in: JSON with `sent` and `recipients` (this sends the real weekly email to the preset users; do it only when that is fine).
+
+## Follow-up — Internal equipment register: Activity tab
+
+Tab 4 of the HR & Admin sidebar. **No database change.**
+
+**Why it reads the audit trail the way it does.** Every change to an asset or an asset document is already written to `audit_log` by the `log_audit` trigger. That table's RLS shows it to **Super Admin only** (`schema_step22b.sql`) and it holds every record in the system, so an admin's own History card on an asset page came back empty. The Activity tab (and that History card, for internal assets) therefore reads `audit_log` with the **service-role client** from `lib/activity.ts`, narrowed to internal equipment and nothing else. It must only be called after a staff check (both callers do `requireStaff()` / are staff-gated). This is a deliberate, narrow bypass of the Super Admin-only policy; the Audit Log page itself is unchanged.
+
+**What's here**
+- **`/activity`** (sidebar tab "Activity", staff): who added, changed or deleted company equipment, and when, as sentences: `Changed PHT-EQ-0007 · Laptop · Ana, 10 Oct 2026, 9:00 AM` with `Custodian: Lourence → Ben` and `Condition: Good → For Repair` underneath. Filters: Everything / Added / Changed / Deleted / Files, Last 7 / 30 / 90 days / All time (default 30), and a search over item, person and change. Up to 200 shown. Changes made from the SQL editor or a load script show as "System".
+- **Scope**: asset rows are filtered by organization in the query (`new_data->>organization_id` or `old_data->>organization_id` in the internal organizations), so deleted internal items still appear and client assets never do. File (photo / document) rows are kept only if the asset is an internal one. Client records are never returned.
+- **Wording**: only fields a person recognises are reported, in the words the app uses (status, condition, ownership and segment as their labels). The derived operating status, timestamps and ids are not; an edit that touched only those is dropped as noise.
+- **Asset page History card**: for an internal asset it now shows the same readable entries (it was empty for non-Super-Admin staff). Client asset pages are unchanged.
+- File entries for an item that has since been deleted are not shown (its audit rows are still there for the Super Admin's Audit Log).
+
+**Not verified signed in.** `npx tsc --noEmit` and `npm run lint` pass. The change-to-sentence logic was checked on sample rows (custodian and condition change, status-only change dropped, add, delete, file, unknown person).
+
+## Setup steps
+
+1. HR & Admin sidebar: Dashboard, Assets, Custodians, Stocktake, Warranty & Renewals, Activity.
+2. On a **test** item, change the custodian and condition, then open **Activity**: a "Changed" entry with `Custodian: A → B` and `Condition: Good → For Repair`, your name and the time.
+3. Add a test item (an "Added" entry), upload a photo to it ("File"), delete the test item (a "Deleted" entry, no link).
+4. Filters: Changed shows only changes; Last 7 days narrows; search a tag or a person.
+5. Open the test item: its **History** card now lists the same entries (it used to say "No history recorded yet" for HR).
+6. Edit a **client** asset: it never appears on Activity.

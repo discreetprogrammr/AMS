@@ -2290,3 +2290,23 @@ The app works before the SQL is run: the page opens, the form says saving is not
 4. Rename a second test person to exactly the first person's name: the confirm says merge; afterwards one person holds all items and the other is gone.
 5. Fill Department and Save: every item they hold has that department.
 6. Set Status = Left the company: amber banner on their page, "Left" in the list, the tile counts their items. Set it back to Active.
+
+## Follow-up — Internal equipment register: Warranty & Renewals tab
+
+Tab 3 of the HR & Admin sidebar. **No database change.** Uses `assets.warranty_end_date` and the existing email and cron setup.
+
+**What's here**
+- **`/warranty`** (sidebar tab "Warranty & Renewals", staff, internal equipment only, retired / lost items left out): tiles for **Expired**, **Within 30 days**, **31 to 60 days**, **61 to 90 days** and **No warranty date** (links to the Assets list filtered to those), then a table per bucket with the asset, item, custodian, department, warranty end date and "N days left" / "expired N days ago". A warranty ending today counts as still in force today. Dates use Manila time. Software licences and subscriptions join this page later (tab 6).
+- **Weekly reminder email**: `app/api/cron/warranty-reminders`, scheduled Mondays 00:30 UTC (8:30 AM Manila) in `vercel.json`, same CRON_SECRET / Super Admin auth as the other cron routes. It goes to everyone who has the HR & Admin preset (found from `profiles.hidden_modules`, no address to configure) and is **skipped on a week when nothing has lapsed or ends within 90 days**. Sections are capped at 25 rows with "and N more". Email is a soft channel (`lib/email.ts`): if Resend is not configured it returns a message and nothing breaks.
+- **Diagnostic breadcrumb**: the tab says whether email is set up (`RESEND_API_KEY` and `RESEND_FROM_EMAIL`), and **Email me this list now** sends the same email to the signed-in person only, even on a quiet week, so the setup can be checked without waiting for Monday. The route returns `{ sent, recipients, skipped, failures }`; failures are logged as `cron:warranty-reminders`.
+- `CLAUDE.md`'s cron table and "five jobs" now say six.
+- Hobby plan note: this is a sixth Vercel cron, weekly. If Vercel ever refuses to deploy it, the schedule can move to a GitHub Action like `sla-check.yml`.
+
+**Not verified signed in; no email was sent.** `npx tsc --noEmit` and `npm run lint` pass. The bucket boundaries (today, 30, 31, 60, 61, 90, 91 days, retired items, no date) were checked in isolation.
+
+## Setup steps
+
+1. HR & Admin sidebar: Dashboard, Assets, Custodians, Stocktake, Warranty & Renewals.
+2. Open **Warranty & Renewals**. Pick a **test** item, set its warranty end to a date within the next 30 days: it appears under "Within 30 days" with the days left, and the tile goes up. Set it to yesterday: "Expired". Set it more than 90 days away: it leaves the page. Clear the date: "No warranty date" goes up.
+3. **Email me this list now**: a green message names your address (or a red one says why not, for example that email is not set up). Check your inbox for the list.
+4. As Super Admin, open `/api/cron/warranty-reminders` while signed in: JSON with `sent` and `recipients` (this sends the real weekly email to the preset users; do it only when that is fine).

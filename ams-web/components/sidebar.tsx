@@ -106,6 +106,7 @@ const ICON_BY_HREF: Record<string, keyof typeof ICONS> = {
 const HR_ADMIN_ICONS: Record<string, keyof typeof ICONS> = {
   "/custodians": "clients",
   "/assets/stocktake": "inspections",
+  "/warranty": "calendar",
 };
 
 function buildNav(): NavItem[] {

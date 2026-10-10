@@ -24,6 +24,7 @@ export const EQUIPMENT_DASHBOARD_HREF = "/equipment-dashboard";
 export const HR_ADMIN_NAV: { href: string; label: string }[] = [
   { href: "/custodians", label: "Custodians" },
   { href: "/assets/stocktake", label: "Stocktake" },
+  { href: "/warranty", label: "Warranty & Renewals" },
 ];
 
 export function isHrAdminPreset(hiddenModules: string[] | null | undefined): boolean {
@@ -39,7 +40,7 @@ export function hrAdminHiddenModules(): string[] {
 // module added to the app later is blocked for them without anyone having
 // to remember to hide it. /profile is the account page; /login is signing
 // out and in.
-const ALLOWED_PREFIXES = ["/assets", EQUIPMENT_DASHBOARD_HREF, "/custodians", "/profile", "/login"];
+const ALLOWED_PREFIXES = ["/assets", EQUIPMENT_DASHBOARD_HREF, "/custodians", "/warranty", "/profile", "/login"];
 // Under /assets but client-only: the CSV importer and the QR scanner.
 const DENIED_PREFIXES = ["/assets/import", "/assets/scan"];
 

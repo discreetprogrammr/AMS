@@ -190,6 +190,14 @@ export default async function AssetsPage({
           >
             Export CSV
           </a>
+          {internalView && (
+            <Link
+              href={`/assets/labels${exportQuery}`}
+              className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
+            >
+              Print QR labels
+            </Link>
+          )}
           {isStaff && !internalView && (
             <a
               href="/api/assets/export/unserviceable"

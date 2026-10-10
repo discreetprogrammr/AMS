@@ -163,7 +163,7 @@ export default async function EditAssetPage({
           </p>
         )}
 
-        {isStaff && qrDataUrl && !presetUser && (
+        {isStaff && qrDataUrl && (
           <div className="mb-6 flex flex-col items-start gap-4 rounded-xl border border-hairline bg-surface p-6 sm:flex-row sm:items-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -174,8 +174,9 @@ export default async function EditAssetPage({
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-ink">Scan tag for this asset</p>
               <p className="mt-0.5 text-xs text-slate-500">
-                Print this onto a physical tag — scanning it (with the app&apos;s Scan Asset
-                page, or any phone camera) jumps straight here instead of a manual search.
+                {presetUser
+                  ? "Print this onto a physical tag — scanning it with any phone camera jumps straight here instead of a manual search."
+                  : "Print this onto a physical tag — scanning it (with the app's Scan Asset page, or any phone camera) jumps straight here instead of a manual search."}
               </p>
               <div className="mt-3 flex flex-wrap gap-3">
                 <a
@@ -185,18 +186,30 @@ export default async function EditAssetPage({
                 >
                   Download QR →
                 </a>
-                <Link
-                  href={`/reports/preventive-checklist?asset_id=${asset.id}`}
-                  className="text-xs font-medium text-blue-400 hover:underline"
-                >
-                  Start PM Checklist →
-                </Link>
-                <Link
-                  href={`/reports/corrective-checklist?asset_id=${asset.id}`}
-                  className="text-xs font-medium text-blue-400 hover:underline"
-                >
-                  Start CM Report →
-                </Link>
+                {isInternalAsset && (
+                  <Link
+                    href={`/assets/labels?id=${asset.id}`}
+                    className="text-xs font-medium text-blue-400 hover:underline"
+                  >
+                    Print label →
+                  </Link>
+                )}
+                {!presetUser && (
+                  <>
+                    <Link
+                      href={`/reports/preventive-checklist?asset_id=${asset.id}`}
+                      className="text-xs font-medium text-blue-400 hover:underline"
+                    >
+                      Start PM Checklist →
+                    </Link>
+                    <Link
+                      href={`/reports/corrective-checklist?asset_id=${asset.id}`}
+                      className="text-xs font-medium text-blue-400 hover:underline"
+                    >
+                      Start CM Report →
+                    </Link>
+                  </>
+                )}
               </div>
             </div>
           </div>

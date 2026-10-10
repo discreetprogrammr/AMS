@@ -5,6 +5,7 @@ import { getInternalOrgIds } from "@/lib/internal-org";
 import { AppShell } from "@/components/app-shell";
 import { SEGMENTS, UNASSIGNED, excludeRetired, internalAssetsHref, labelFor } from "@/lib/internal-equipment";
 import { summariseCustodians, type CustodyRow } from "@/lib/custodians";
+import { loadCustodianProfiles } from "./profiles";
 
 // Custodians: who holds what in the company equipment register. Built from
 // the custodian typed on each internal item, so there is nothing extra to
@@ -33,10 +34,14 @@ export default async function CustodiansPage({ searchParams }: { searchParams: {
     unassigned = rows.filter((r) => !r.custodian?.trim()).length;
   }
 
+  const { byKey: profiles } = await loadCustodianProfiles(supabase);
   const people = summariseCustodians(rows);
+  const leftButHolding = people.filter((p) => profiles.get(p.key)?.status === "left");
   const q = (searchParams?.q ?? "").trim().toLowerCase();
   const shown = q
-    ? people.filter((p) => [p.name, ...p.departments].some((v) => v.toLowerCase().includes(q)))
+    ? people.filter((p) =>
+        [p.name, ...p.departments, profiles.get(p.key)?.job_title ?? ""].some((v) => v.toLowerCase().includes(q)),
+      )
     : people;
   const totalHeld = people.reduce((n, p) => n + p.items, 0);
   const unassignedHref = internalAssetsHref({ org: orgIds[0] ?? "" }, { custodian: UNASSIGNED });
@@ -56,16 +61,22 @@ export default async function CustodiansPage({ searchParams }: { searchParams: {
         </p>
       )}
 
-      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
           { label: "People holding equipment", value: people.length, to: null },
           { label: "Items held", value: totalHeld, to: null },
+          {
+            label: "Left the company, still holding",
+            value: leftButHolding.reduce((n, p) => n + p.items, 0),
+            to: null,
+            warn: leftButHolding.length > 0,
+          },
           { label: "Items with no custodian", value: unassigned, to: unassignedHref },
         ].map((t) => {
           const body = (
             <>
               <p className="text-xs uppercase tracking-wide text-slate-500">{t.label}</p>
-              <p className="mt-1 text-2xl font-semibold text-ink">{t.value}</p>
+              <p className={`mt-1 text-2xl font-semibold ${"warn" in t && t.warn ? "text-amber-400" : "text-ink"}`}>{t.value}</p>
             </>
           );
           return t.to ? (
@@ -81,7 +92,7 @@ export default async function CustodiansPage({ searchParams }: { searchParams: {
       </div>
 
       <form action="/custodians" className="mb-4 flex gap-2">
-        <input name="q" defaultValue={searchParams?.q ?? ""} placeholder="Search a name or department…" className={`${inputClass} w-72`} />
+        <input name="q" defaultValue={searchParams?.q ?? ""} placeholder="Search a name, title or department…" className={`${inputClass} w-72`} />
         <button type="submit" className="rounded-lg border border-hairline px-3 text-sm text-ink-soft hover:bg-surface-2">
           Search
         </button>
@@ -110,6 +121,14 @@ export default async function CustodiansPage({ searchParams }: { searchParams: {
                   <Link href={`/custodians/view?name=${encodeURIComponent(p.name)}`} className="hover:underline">
                     {p.name}
                   </Link>
+                  {profiles.get(p.key)?.status === "left" && (
+                    <span className="ml-2 inline-flex rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400">
+                      Left
+                    </span>
+                  )}
+                  {profiles.get(p.key)?.job_title ? (
+                    <span className="block text-xs font-normal text-slate-500">{profiles.get(p.key)?.job_title}</span>
+                  ) : null}
                 </td>
                 <td className="px-4 py-3 text-ink-soft">{p.departments.join(", ") || "—"}</td>
                 <td className="px-4 py-3 text-ink-soft">{p.segments.map((s) => labelFor(SEGMENTS, s)).join(", ") || "—"}</td>

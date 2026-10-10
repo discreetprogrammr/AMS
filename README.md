@@ -2260,3 +2260,33 @@ The HR & Admin preset's sidebar was only Dashboard and Assets. This section grow
 3. Sign in as Super Admin or any other admin: no Stocktake tab in the sidebar (the Assets toolbar button is still there).
 4. **Custodians**: the list shows people and counts that match the Assets list (filter Custodian = one person: same item count). Search a name. Click a person: their items; **Handover form** opens for an item; **Open in Assets** shows the same items; **Print clearance form** opens a white page with a "Returned" box per item and three signature lines.
 5. Retire a test item of a person in Assets: it leaves their Custodians list and count.
+
+## Follow-up — Internal equipment register: editing custodian details
+
+Extends the Custodians tab above. HR & Admin can now edit a person's details from their page.
+
+## Database change, run this first
+
+Run `schema_step51.sql` in the Supabase SQL editor (after `schema_step48.sql`, whose trigger it extends). It is idempotent. It adds:
+- **`equipment_custodians`**: optional details per person (job title, work email, phone, employee number, status `active` / `left`, notes), matched to items by `name_key` (the lower-cased, trimmed name). Staff-manage RLS.
+- **`rename_custodian(old, new, department)`**: renames the person on every internal item they hold **and in their custodian history**, optionally sets the department on those items, and moves their details to the new name, in one transaction. If the new name is someone who already exists the two are merged (the existing person's details win; blanks are filled in). It refuses non-staff and touches internal equipment only.
+- **`log_asset_custodian_change()`** redefined to stand aside while a rename runs, so a rename is not recorded as a handover (same person, new spelling). Otherwise identical to step 48.
+
+The app works before the SQL is run: the page opens, the form says saving is not set up, and a save shows the same message.
+
+**What's here**
+- **Custodian details** form on a person's page: Name, Job title, Department, Work email, Phone, Employee number, Status (Active / Left the company), Notes. Changing the **name** asks first (and says "merge" when the name already belongs to someone); filling **Department** sets it on all of their items (blank keeps each item's own).
+- **Left the company** with items still held: an amber banner on their page ("print the clearance form"), a "Left" badge and job title in the list, and a tile counting items still held by people who left.
+- The list search also matches job title.
+- `saveCustodian` (`app/custodians/actions.ts`) validates the fields (name required, email shape, status), calls the function only when the name or department changes, then upserts the details.
+
+**Not verified signed in, and the SQL has not been run.** `npx tsc --noEmit` and `npm run lint` pass; no Postgres was available here to syntax-check the SQL.
+
+## Setup steps
+
+1. Run `schema_step51.sql`.
+2. As HR & Admin, open a **test** person's page. Fill Job title and Work email, Save: "Saved." and the list shows the job title.
+3. Rename them (for example add a surname). Confirm: all their items show the new name in Assets, and each item's Custodian History shows the new name on its rows with **no** new handover row.
+4. Rename a second test person to exactly the first person's name: the confirm says merge; afterwards one person holds all items and the other is gone.
+5. Fill Department and Save: every item they hold has that department.
+6. Set Status = Left the company: amber banner on their page, "Left" in the list, the tile counts their items. Set it back to Active.

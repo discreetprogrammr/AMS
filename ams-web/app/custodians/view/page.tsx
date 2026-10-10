@@ -6,11 +6,18 @@ import { getInternalOrgIds } from "@/lib/internal-org";
 import { AppShell } from "@/components/app-shell";
 import { internalAssetsHref } from "@/lib/internal-equipment";
 import { InternalStatusBadges } from "@/app/assets/internal-badges";
-import { loadCustodianItems } from "../load";
+import { loadAllHeld, loadCustodianItems } from "../load";
+import { loadCustodianProfiles } from "../profiles";
+import { CustodianForm } from "../custodian-form";
+import { custodianKey, summariseCustodians } from "@/lib/custodians";
 
 // One person's equipment: what they hold, with a handover form per item and
 // a printable clearance form for when they leave or hand things back.
-export default async function CustodianPage({ searchParams }: { searchParams: { name?: string } }) {
+export default async function CustodianPage({
+  searchParams,
+}: {
+  searchParams: { name?: string; error?: string; saved?: string };
+}) {
   await requireStaff();
   const name = (searchParams?.name ?? "").trim();
   if (!name) redirect("/custodians");
@@ -19,6 +26,11 @@ export default async function CustodianPage({ searchParams }: { searchParams: { 
   const { rows, spelling, error } = await loadCustodianItems(name);
   const supabase = await createClient();
   const orgId = (await getInternalOrgIds(supabase))[0] ?? "";
+  const { byKey: profiles, ready } = await loadCustodianProfiles(supabase);
+  const profile_ = profiles.get(custodianKey(name)) ?? null;
+  // Everyone else who holds equipment, so a rename onto one of them is
+  // recognised as a merge.
+  const everyone = summariseCustodians((await loadAllHeld(supabase)).rows).map((p) => p.name);
   const needsRepair = rows.filter((r) => r.condition === "for_repair" || r.condition === "damaged").length;
   const clearanceHref = `/custodians/clearance?name=${encodeURIComponent(name)}`;
 
@@ -54,6 +66,29 @@ export default async function CustodianPage({ searchParams }: { searchParams: { 
       {error && (
         <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">{error}</p>
       )}
+      {searchParams?.error && (
+        <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+          {searchParams.error}
+        </p>
+      )}
+      {searchParams?.saved && (
+        <p className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400">
+          {searchParams.saved}
+        </p>
+      )}
+      {profile_?.status === "left" && rows.length > 0 && (
+        <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-400">
+          Marked as having left the company, but still holds {rows.length} item{rows.length === 1 ? "" : "s"}. Print
+          the clearance form to get {rows.length === 1 ? "it" : "them"} back.
+        </p>
+      )}
+      <CustodianForm
+        originalName={rows.length ? spelling : name}
+        itemCount={rows.length}
+        profile={profile_}
+        otherNames={everyone}
+        ready={ready}
+      />
 
       {rows.length === 0 ? (
         <p className="rounded-xl border border-hairline bg-surface p-6 text-sm text-slate-500">

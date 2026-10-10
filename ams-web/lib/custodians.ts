@@ -56,3 +56,20 @@ export function summariseCustodians(rows: CustodyRow[]): CustodianSummary[] {
     needsRepair: g.rows.filter((r) => r.condition === "for_repair" || r.condition === "damaged").length,
   })).sort((a, b) => a.name.localeCompare(b.name));
 }
+
+// Optional details per person (schema_step51.sql), matched to items by name.
+export type CustodianProfile = {
+  name_key: string;
+  name: string;
+  job_title: string | null;
+  email: string | null;
+  phone: string | null;
+  employee_no: string | null;
+  status: "active" | "left";
+  notes: string | null;
+};
+
+export const CUSTODIAN_STATUSES = [
+  { value: "active", label: "Active" },
+  { value: "left", label: "Left the company" },
+] as const;

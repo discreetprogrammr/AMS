@@ -2036,3 +2036,17 @@ Follows PR 3 above. **No database change in this step.**
 2. Custodian = Lourence: the CSV has exactly the rows on screen (4 once the batch 1 data is loaded).
 3. Segment = Team Fridays Digital: the CSV has only TFD rows.
 4. Select a client organization: Export CSV, Unserviceable Report, Import CSV and + Add Asset are back. The CSV has client assets only and no `PHT-EQ-` tags.
+
+## Follow-up — Internal equipment register (PR 6: CLAUDE.md internal-organisation rule)
+
+Follows PR 4 and the internal-equipment merge (5234730). **No database change in this step**, and no application code: documentation only.
+
+**What's here**
+- **`CLAUDE.md`** gains an "Internal organisation (PHtek equipment register)" section, placed before "Settled decisions". It records the rules that kept internal assets out of client numbers: `is_internal` and `PHT-EQ-` tags; the `lib/internal-org.ts` helpers every asset, service-record or audit query must use; `assets.segment` and its two triggers; internal status, filters and export being separate from the client ones; the step 47 unique index; the `hidden_modules` preset; no load scripts or staff names in the repo; and a test or manual check that internal assets stay out of any new feature that reads assets.
+- No `ams-web/CLAUDE.md` exists, so only the root file changed.
+
+**Not changed, found while checking**: the existing CLAUDE.md numbers have drifted (schema series end, README line count, TypeScript file count). Left as-is and reported in the PR.
+
+## Setup steps
+
+1. Read the new section in `CLAUDE.md` and check it against your understanding of the register.

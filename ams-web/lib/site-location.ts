@@ -1,6 +1,7 @@
 import type { createClient } from "@/lib/supabase/server";
 import { matchKnownLocation } from "./ph-locations";
 import { geocodeAddressPH } from "./geocode";
+import { excludeInternal, getInternalOrgIds } from "./internal-org";
 
 // Single entry point for "give this new site a location automatically."
 // Tries the known-facility keyword match first (instant, no network,
@@ -32,10 +33,14 @@ export async function resolveSiteCoordinates(
 export async function backfillMissingSiteLocations(
   supabase: Awaited<ReturnType<typeof createClient>>,
 ): Promise<number> {
-  const { data: candidates } = await supabase
-    .from("sites")
-    .select("id, address, latitude, longitude")
-    .not("address", "is", null);
+  // Skips the internal organization's sites: "Head Office" is a label, not
+  // an address, and sending it to the geocoder could pin it somewhere
+  // arbitrary on the client Fleet Map.
+  const internalOrgIds = await getInternalOrgIds(supabase);
+  const { data: candidates } = await excludeInternal(
+    supabase.from("sites").select("id, address, latitude, longitude").not("address", "is", null),
+    internalOrgIds,
+  );
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const missing = (candidates ?? []).filter(

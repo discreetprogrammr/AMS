@@ -19,6 +19,7 @@ import { sendEmail } from "./email";
 import { wrapEmail } from "./notify";
 import { createServiceRoleClient } from "./supabase/service-role";
 import { hoursBetween } from "./sla";
+import { excludeInternal, getInternalOrgIds } from "@/lib/internal-org";
 
 const APP_NAME = "HorizonCare360";
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -39,6 +40,11 @@ export async function buildWeeklyDigest(): Promise<WeeklyDigestData> {
   const supabase = createServiceRoleClient();
   const since = new Date(Date.now() - SEVEN_DAYS_MS).toISOString();
 
+  // The digest summarises client service; internal equipment
+  // (organizations.is_internal) is left out of every count below.
+  const internalOrgIds = await getInternalOrgIds(supabase);
+  const onTicketAssets = <Q,>(q: Q) => excludeInternal(q, internalOrgIds, "assets.organization_id");
+
   const [
     { data: openedRows },
     { data: resolvedRows },
@@ -47,14 +53,20 @@ export async function buildWeeklyDigest(): Promise<WeeklyDigestData> {
     { data: slaRows },
     { data: stockRows },
   ] = await Promise.all([
-    supabase.from("service_tickets").select("id").gte("created_at", since),
-    supabase
-      .from("service_tickets")
-      .select("id, created_at, resolved_at")
-      .not("resolved_at", "is", null)
-      .gte("resolved_at", since),
-    supabase.from("service_tickets").select("id").neq("status", "closed"),
-    supabase.from("assets").select("status"),
+    onTicketAssets(
+      supabase.from("service_tickets").select("id, assets!inner(organization_id)").gte("created_at", since),
+    ),
+    onTicketAssets(
+      supabase
+        .from("service_tickets")
+        .select("id, created_at, resolved_at, assets!inner(organization_id)")
+        .not("resolved_at", "is", null)
+        .gte("resolved_at", since),
+    ),
+    onTicketAssets(
+      supabase.from("service_tickets").select("id, assets!inner(organization_id)").neq("status", "closed"),
+    ),
+    excludeInternal(supabase.from("assets").select("status"), internalOrgIds),
     supabase.from("sla_escalations").select("id, event_type").gte("created_at", since),
     supabase.from("low_stock_alerts").select("last_level"),
   ]);

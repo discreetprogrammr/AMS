@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { excludeInternal, getInternalOrgIds } from "@/lib/internal-org";
 import { requireStaff } from "@/lib/supabase/profile";
 import { isSuperAdminRole } from "@/lib/supabase/roles";
 import { AppShell } from "@/components/app-shell";
@@ -18,12 +19,14 @@ export default async function SlaSettingsPage({
   const canEdit = isSuperAdminRole(profile.role);
 
   const supabase = await createClient();
+  const internalOrgIds = await getInternalOrgIds(supabase);
 
   const [{ data: policies }, { data: organizations }] = await Promise.all([
     supabase
       .from("sla_policies")
       .select("id, organization_id, is_global, response_target_hours, resolution_target_hours, updated_at"),
-    supabase.from("organizations").select("id, name").order("name"),
+    // The internal organization (PHtek itself) is not a client and has no SLA.
+    excludeInternal(supabase.from("organizations").select("id, name").order("name"), internalOrgIds, "id"),
   ]);
 
   const global = (policies ?? []).find((p) => p.is_global) ?? null;

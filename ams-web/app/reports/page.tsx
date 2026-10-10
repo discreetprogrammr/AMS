@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { StatusBadge } from "@/components/status-badge";
+import { excludeInternal, getInternalOrgIds, touchesInternalOrg } from "@/lib/internal-org";
 import { reportKindOf, REPORT_KIND_ORDER, REPORT_KIND_LABELS, type ReportKind } from "@/lib/report-types";
 
 export default async function ReportsPage({
@@ -18,22 +19,37 @@ export default async function ReportsPage({
   // too (it's not in the reference's clientHidden nav list, same check I
   // did before building Calendar). RLS on assets/service_tickets/
   // service_records already scopes a client_viewer to their own org.
-  const [{ data: assets }, { data: tickets }, { data: records }] =
+  // Internal equipment (organizations.is_internal) is not part of the fleet
+  // figures or the report lists — see lib/internal-org.ts.
+  const internalOrgIds = await getInternalOrgIds(supabase);
+  const [{ data: assets }, { data: tickets }, { data: allRecords }] =
     await Promise.all([
-      supabase.from("assets").select("id, status"),
-      supabase
-        .from("service_tickets")
-        .select(
-          "id, status, priority, description, created_at, resolved_at, assets(serial_number, sites(address))",
-        )
-        .order("created_at", { ascending: false }),
+      excludeInternal(supabase.from("assets").select("id, status"), internalOrgIds),
+      excludeInternal(
+        supabase
+          .from("service_tickets")
+          .select(
+            "id, status, priority, description, created_at, resolved_at, assets!inner(serial_number, sites(address))",
+          )
+          .order("created_at", { ascending: false }),
+        internalOrgIds,
+        "assets.organization_id",
+      ),
       supabase
         .from("service_records")
         .select(
-          "id, service_type, date_performed, performed_by, result, downtime_hours, assets(serial_number, sites(address), organizations(name)), sites(address, organizations(name))",
+          "id, service_type, date_performed, performed_by, result, downtime_hours, assets(organization_id, serial_number, sites(address), organizations(name)), sites(organization_id, address, organizations(name))",
         )
         .order("date_performed", { ascending: false }),
     ]);
+  // JS filter, not an inner join: service_records.asset_id is nullable
+  // (schema_step41), so a site-only report has no asset to join through.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const records = (allRecords ?? []).filter((r: any) => {
+    const asset = Array.isArray(r.assets) ? r.assets[0] : r.assets;
+    const site = Array.isArray(r.sites) ? r.sites[0] : r.sites;
+    return !touchesInternalOrg(internalOrgIds, asset?.organization_id, site?.organization_id);
+  });
 
   const totalAssets = assets?.length ?? 0;
   const downAssets =

@@ -62,7 +62,7 @@ export async function parseAssetsImport(formData: FormData): Promise<AssetImport
 
   const supabase = await createClient();
 
-  const { data: orgs } = await supabase.from("organizations").select("id, name");
+  const { data: orgs } = await supabase.from("organizations").select("id, name, is_internal");
   const orgByName = new Map((orgs ?? []).map((o) => [o.name.trim().toLowerCase(), o]));
 
   const { data: existingAssets } = await supabase.from("assets").select("serial_number").not("serial_number", "is", null);
@@ -86,6 +86,17 @@ export async function parseAssetsImport(formData: FormData): Promise<AssetImport
     const org = orgByName.get(orgNameRaw.toLowerCase());
     if (!org) {
       errors.push({ row, message: `No client organization named "${orgNameRaw}" — check spelling, or add the client first.` });
+      return;
+    }
+
+    // This importer is for client fleets. Internal equipment needs a
+    // segment, PHT-EQ tags and a derived status, so it goes through the
+    // "Add Internal Equipment" form instead (spec section 8).
+    if (org.is_internal) {
+      errors.push({
+        row,
+        message: `"${org.name}" is the internal organization. Internal equipment can't be imported from CSV — add it with "+ Add Internal Equipment" on the Assets page.`,
+      });
       return;
     }
 

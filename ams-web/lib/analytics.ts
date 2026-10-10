@@ -19,6 +19,7 @@
 // service-role client needed here.
 import { createClient } from "@/lib/supabase/server";
 import { hoursBetween } from "@/lib/sla";
+import { excludeInternal, getInternalOrgIds, touchesInternalOrg } from "@/lib/internal-org";
 
 const TREND_MONTHS = 6;
 
@@ -60,13 +61,22 @@ function monthBuckets(count: number) {
 export async function getAnalytics(): Promise<AnalyticsSummary> {
   const supabase = await createClient();
   const buckets = monthBuckets(TREND_MONTHS);
+  // Internal equipment (organizations.is_internal) is not part of any client
+  // fleet statistic. Uptime below is only ever computed for assets in
+  // `assets`, so the audit_log history needs no filter of its own: history
+  // for an excluded asset is simply never looked up.
+  const internalOrgIds = await getInternalOrgIds(supabase);
 
   const [{ data: assets }, { data: tickets }, { data: auditRows }] = await Promise.all([
-    supabase.from("assets").select("id, status, created_at"),
-    supabase
-      .from("service_tickets")
-      .select("id, asset_id, created_at, resolved_at")
-      .order("created_at", { ascending: true }),
+    excludeInternal(supabase.from("assets").select("id, status, created_at"), internalOrgIds),
+    excludeInternal(
+      supabase
+        .from("service_tickets")
+        .select("id, asset_id, created_at, resolved_at, assets!inner(organization_id)")
+        .order("created_at", { ascending: true }),
+      internalOrgIds,
+      "assets.organization_id",
+    ),
     // No date filter — need each asset's full status trail, since its most
     // recent change as of an early month in the window may predate the
     // window entirely.
@@ -231,16 +241,24 @@ export type CsatRollup = {
 export async function getCsatRollup(): Promise<CsatRollup> {
   const supabase = await createClient();
   const buckets = monthBuckets(TREND_MONTHS);
+  const internalOrgIds = await getInternalOrgIds(supabase);
 
   const { data } = await supabase
     .from("service_records")
     .select(
-      "date_performed, performed_by, csat_overall, csat_service, csat_machine, csat_support, assets(organization_id, organizations(name))",
+      "date_performed, performed_by, csat_overall, csat_service, csat_machine, csat_support, assets(organization_id, organizations(name)), sites(organization_id)",
     )
     .not("csat_overall", "is", null);
 
+  // Filtered here, not with an inner join: asset_id is nullable on
+  // service_records (schema_step41), and a site-only record that carries a
+  // rating must still count toward the overall averages.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rows = (data ?? []) as any[];
+  const rows = ((data ?? []) as any[]).filter((r) => {
+    const asset = Array.isArray(r.assets) ? r.assets[0] : r.assets;
+    const site = Array.isArray(r.sites) ? r.sites[0] : r.sites;
+    return !touchesInternalOrg(internalOrgIds, asset?.organization_id, site?.organization_id);
+  });
 
   const months: CsatMonthly[] = buckets.map((bucket) => {
     const inMonth = rows.filter((r) => {

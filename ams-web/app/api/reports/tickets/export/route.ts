@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { excludeInternal, getInternalOrgIds } from "@/lib/internal-org";
 
 function csvEscape(value: unknown): string {
   const str = String(value ?? "");
@@ -11,12 +12,16 @@ function csvEscape(value: unknown): string {
 export async function GET() {
   const supabase = await createClient();
 
-  const { data: tickets, error } = await supabase
-    .from("service_tickets")
-    .select(
-      "description, status, priority, created_at, first_response_at, resolved_at, assets(asset_tag, organizations(name))",
-    )
-    .order("created_at", { ascending: false });
+  const { data: tickets, error } = await excludeInternal(
+    supabase
+      .from("service_tickets")
+      .select(
+        "description, status, priority, created_at, first_response_at, resolved_at, assets!inner(asset_tag, organizations(name))",
+      )
+      .order("created_at", { ascending: false }),
+    await getInternalOrgIds(supabase),
+    "assets.organization_id",
+  );
 
   if (error) {
     return new Response(`Failed to export: ${error.message}`, {

@@ -2,6 +2,7 @@ import { createServiceRoleClient } from "@/lib/supabase/service-role";
 import { hoursBetween, getSlaPolicyMap, resolveSlaTargets } from "@/lib/sla";
 import { ticketRef, assetLabel } from "@/lib/format";
 import { notifyStaff } from "@/lib/notify";
+import { excludeInternal, getInternalOrgIds } from "@/lib/internal-org";
 
 // Core logic for "SLA breach escalation" — instead of only ever showing SLA
 // performance after the fact (the dashboard's SLA Performance / Historical
@@ -91,12 +92,20 @@ export async function runSlaEscalationCheck(): Promise<SlaCheckResult> {
   // Anything not yet closed is still "the SLA clock is running" for at
   // least the resolution dimension — parts_pending included, same as the
   // dashboard's own SLA math, which doesn't special-case it either.
-  const { data: tickets, error } = await supabase
-    .from("service_tickets")
-    .select(
-      "id, description, status, priority, created_at, first_response_at, asset_id, assets(asset_tag, serial_number, organization_id, sites(address))",
-    )
-    .neq("status", "closed");
+  // Tickets on internal equipment (organizations.is_internal) are not
+  // client tickets and have no SLA to breach. asset_id is not null on
+  // service_tickets, so the inner join drops nothing else.
+  const internalOrgIds = await getInternalOrgIds(supabase);
+  const { data: tickets, error } = await excludeInternal(
+    supabase
+      .from("service_tickets")
+      .select(
+        "id, description, status, priority, created_at, first_response_at, asset_id, assets!inner(asset_tag, serial_number, organization_id, sites(address))",
+      )
+      .neq("status", "closed"),
+    internalOrgIds,
+    "assets.organization_id",
+  );
 
   if (error) {
     throw new Error(`Failed to load open tickets: ${error.message}`);

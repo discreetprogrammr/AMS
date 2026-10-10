@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getInternalOrgIds, touchesInternalOrg } from "@/lib/internal-org";
 import { reportKindOf, REPORT_KIND_ORDER, type ReportKind } from "@/lib/report-types";
 
 function csvEscape(value: unknown): string {
@@ -28,7 +29,7 @@ export async function GET(request: NextRequest) {
   const { data: records, error } = await supabase
     .from("service_records")
     .select(
-      "service_type, date_performed, performed_by, findings, result, downtime_hours, next_due_date, assets(asset_tag, organizations(name)), sites(address, organizations(name))",
+      "service_type, date_performed, performed_by, findings, result, downtime_hours, next_due_date, assets(organization_id, asset_tag, organizations(name)), sites(organization_id, address, organizations(name))",
     )
     .order("date_performed", { ascending: false });
 
@@ -38,8 +39,17 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  const internalOrgIds = await getInternalOrgIds(supabase);
+  // Internal equipment (organizations.is_internal) is excluded in JS rather
+  // than with an inner join: asset_id is nullable on service_records
+  // (schema_step41), so a site-only report has no asset to join through.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const filtered = (records ?? []).filter((r: any) => (kind ? reportKindOf(r.service_type) === kind : true));
+  const filtered = (records ?? []).filter((r: any) => {
+    const asset = Array.isArray(r.assets) ? r.assets[0] : r.assets;
+    const site = Array.isArray(r.sites) ? r.sites[0] : r.sites;
+    if (touchesInternalOrg(internalOrgIds, asset?.organization_id, site?.organization_id)) return false;
+    return kind ? reportKindOf(r.service_type) === kind : true;
+  });
 
   const header = [
     "Asset",

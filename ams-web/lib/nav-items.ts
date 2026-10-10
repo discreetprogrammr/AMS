@@ -40,6 +40,30 @@ export const NAV_MODULES: NavModule[] = [
   // list — see ALWAYS_ACCESSIBLE_HREFS below for why.
 ];
 
+// "Internal equipment only" preset for app/user-access (internal equipment
+// spec section 5): the modules to HIDE for someone, such as HR & Admin,
+// who should only manage PHtek's own equipment register. Every module here
+// is a client-facing or NII field-service feature (client sites, tickets,
+// work orders, service reports, SLAs). What stays visible is the register
+// and its upkeep: Dashboard and User Access (always accessible), Assets,
+// Scan Asset, Asset Verification (/inventory) and Alerts. Keyed by href for
+// the same reason as hidden_modules itself: labels get renamed. It is a
+// convenience only; the Super Admin can still tick or untick individual
+// modules afterwards.
+export const INTERNAL_EQUIPMENT_HIDDEN_HREFS: string[] = [
+  "/fleet-map",
+  "/clients",
+  "/work-orders",
+  "/tickets",
+  "/inspections",
+  "/parts",
+  "/messages",
+  "/calendar",
+  "/reports",
+  "/analytics",
+  "/sla-settings",
+];
+
 // hidden_modules (schema_step44.sql) is enforced as a real block now, not
 // just a cosmetic sidebar hide (lib/supabase/middleware.ts redirects any
 // blocked request to /dashboard) — which makes these two hrefs load-

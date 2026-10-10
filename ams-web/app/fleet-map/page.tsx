@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { backfillMissingSiteLocations } from "@/lib/site-location";
+import { excludeInternal, getInternalOrgIds } from "@/lib/internal-org";
 import { FleetMapClient } from "./fleet-map-client";
 import type { FleetSite } from "./fleet-map-view";
 
@@ -23,11 +24,17 @@ export default async function FleetMapPage() {
     await backfillMissingSiteLocations(supabase);
   }
 
+  // Internal equipment and the Head Office site are not part of the client
+  // fleet (organizations.is_internal) — see lib/internal-org.ts.
+  const internalOrgIds = await getInternalOrgIds(supabase);
   const [{ data: sites }, { data: assets }] = await Promise.all([
-    supabase
-      .from("sites")
-      .select("id, address, latitude, longitude, organization_id, organizations(name)"),
-    supabase.from("assets").select("id, site_id, status"),
+    excludeInternal(
+      supabase
+        .from("sites")
+        .select("id, address, latitude, longitude, organization_id, organizations(name)"),
+      internalOrgIds,
+    ),
+    excludeInternal(supabase.from("assets").select("id, site_id, status"), internalOrgIds),
   ]);
 
   const allSites = sites ?? [];

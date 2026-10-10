@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { updateHiddenModules } from "./actions";
+import { applyInternalEquipmentPreset, updateHiddenModules } from "./actions";
 import { modulesForRole } from "@/lib/nav-items";
 
 export type UserAccessRow = {
@@ -101,6 +101,16 @@ function UserRow({
     });
   }
 
+  // Writes immediately (not just fills the checkboxes), then syncs local
+  // state to what was stored so further tick/untick + Save works as usual.
+  function handlePreset() {
+    startTransition(async () => {
+      const stored = await applyInternalEquipmentPreset(row.id);
+      setHidden(new Set(stored));
+      setSaved(true);
+    });
+  }
+
   const hiddenCount = row.hidden_modules.length;
 
   return (
@@ -149,6 +159,15 @@ function UserRow({
               className="rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-medium text-ink hover:bg-blue-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save"}
+            </button>
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={handlePreset}
+              title="Hides every client-facing and field-service module, leaving Dashboard, Assets, Scan Asset, Asset Verification and Alerts. Saves immediately."
+              className="rounded-lg border border-hairline-strong px-4 py-1.5 text-xs font-medium text-ink-soft hover:bg-surface-hover disabled:opacity-50"
+            >
+              Internal equipment only
             </button>
             {saved && !isPending && <span className="text-xs text-emerald-400">Saved.</span>}
           </div>

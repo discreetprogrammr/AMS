@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { excludeInternal, getInternalOrgIds } from "@/lib/internal-org";
 import { getProfile } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { createGlobalTicket } from "../../assets/tickets-actions";
@@ -19,11 +20,16 @@ export default async function NewTicketPage({
   const profile = await getProfile();
 
   const supabase = await createClient();
+  // Internal equipment (organizations.is_internal) is never offered here — see lib/internal-org.ts.
+  const internalOrgIds = await getInternalOrgIds(supabase);
 
-  const { data: assets } = await supabase
-    .from("assets")
-    .select("id, asset_tag, serial_number, sites(address), organizations(name)")
-    .order("asset_tag");
+  const { data: assets } = await excludeInternal(
+    supabase
+      .from("assets")
+      .select("id, asset_tag, serial_number, sites(address), organizations(name)")
+      .order("asset_tag"),
+    internalOrgIds,
+  );
 
   return (
     <AppShell profile={profile} title="Request New Service">

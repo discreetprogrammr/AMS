@@ -1,5 +1,6 @@
 import { createServiceRoleClient } from "@/lib/supabase/service-role";
 import { retryRead } from "@/lib/supabase/retry-read";
+import { excludeInternal, getInternalOrgIds } from "@/lib/internal-org";
 
 // Core logic for "Compliance certificate & warranty expiry alerts" — a
 // daily cron job (app/api/cron/compliance-check/route.ts) calls
@@ -65,19 +66,31 @@ export async function runComplianceCheck(): Promise<ComplianceCheckResult> {
 
   // Both reads go through retryRead: this job has repeatedly hit a transient
   // "JWT issued at future" rejection from Supabase. See lib/supabase/retry-read.ts.
+  //
+  // Internal equipment (organizations.is_internal) is excluded for now, so
+  // staff phones and laptops don't raise warranty alerts. Whether HR should
+  // get their own is an open question (spec 12.3).
+  const internalOrgIds = await getInternalOrgIds(supabase);
   const [{ data: certs, error: certsError }, { data: assets, error: assetsError }] =
     await Promise.all([
       retryRead("compliance certificates", () =>
-        supabase
-          .from("compliance_certificates")
-          .select("id, certificate_type, expiry_date, asset_id, assets(asset_tag, status)")
-          .not("expiry_date", "is", null),
+        excludeInternal(
+          supabase
+            .from("compliance_certificates")
+            .select("id, certificate_type, expiry_date, asset_id, assets!inner(asset_tag, status)")
+            .not("expiry_date", "is", null),
+          internalOrgIds,
+          "assets.organization_id",
+        ),
       ),
       retryRead("asset warranties", () =>
-        supabase
-          .from("assets")
-          .select("id, asset_tag, warranty_end_date, status")
-          .not("warranty_end_date", "is", null),
+        excludeInternal(
+          supabase
+            .from("assets")
+            .select("id, asset_tag, warranty_end_date, status")
+            .not("warranty_end_date", "is", null),
+          internalOrgIds,
+        ),
       ),
     ]);
 

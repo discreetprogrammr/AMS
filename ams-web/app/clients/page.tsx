@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getProfile, requireStaff } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { SearchBar } from "@/components/search-bar";
+import { excludeInternal, getInternalOrgIds } from "@/lib/internal-org";
 import { ClientsTable, type ClientRow } from "./clients-table";
 
 export default async function ClientsPage({
@@ -19,10 +20,14 @@ export default async function ClientsPage({
   // no client JS. PostgREST's .or() splits on commas, so strip any first.
   const q = (searchParams?.q ?? "").trim().replace(/,/g, "");
 
-  let orgQuery = supabase
-    .from("organizations")
-    .select("id, name, sector, primary_contact, email")
-    .order("name");
+  // The internal organization (PHtek itself, is_internal) is not a client.
+  const internalOrgIds = await getInternalOrgIds(supabase);
+
+  let orgQuery = excludeInternal(
+    supabase.from("organizations").select("id, name, sector, primary_contact, email").order("name"),
+    internalOrgIds,
+    "id",
+  );
 
   if (q) {
     orgQuery = orgQuery.or(
@@ -33,8 +38,8 @@ export default async function ClientsPage({
   const [{ data: organizations, error }, { data: sites }, { data: assets }] =
     await Promise.all([
       orgQuery,
-      supabase.from("sites").select("id, organization_id"),
-      supabase.from("assets").select("id, organization_id"),
+      excludeInternal(supabase.from("sites").select("id, organization_id"), internalOrgIds),
+      excludeInternal(supabase.from("assets").select("id, organization_id"), internalOrgIds),
     ]);
 
   const siteCounts = new Map<string, number>();

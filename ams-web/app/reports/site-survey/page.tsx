@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { excludeInternal, getInternalOrgIds } from "@/lib/internal-org";
 import { getProfile, requireStaff } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { SiteSurveyForm } from "./site-survey-form";
@@ -12,13 +13,21 @@ export default async function SiteSurveyReportPage({
   const profile = await getProfile();
 
   const supabase = await createClient();
+  // Internal equipment (organizations.is_internal) is never offered here — see lib/internal-org.ts.
+  const internalOrgIds = await getInternalOrgIds(supabase);
 
   const [{ data: sites }, { data: assets }] = await Promise.all([
-    supabase.from("sites").select("id, address, organizations(name)").order("address"),
-    supabase
-      .from("assets")
-      .select("id, asset_tag, serial_number, site_id, sites(address), organizations(name)")
-      .order("asset_tag"),
+    excludeInternal(
+      supabase.from("sites").select("id, address, organizations(name)").order("address"),
+      internalOrgIds,
+    ),
+    excludeInternal(
+      supabase
+        .from("assets")
+        .select("id, asset_tag, serial_number, site_id, sites(address), organizations(name)")
+        .order("asset_tag"),
+      internalOrgIds,
+    ),
   ]);
 
   return (

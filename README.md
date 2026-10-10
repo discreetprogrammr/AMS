@@ -1883,3 +1883,156 @@ Picked back up with live debugging via a connected browser session (Claude in Ch
 **Current state:** `DEBUG_STATIC_GRID` in `app/dashboard/page.tsx` controls this — currently `true` (static grid, safe, matches the emergency mitigation above). `DashboardGrid` itself carries both real fixes from this round (no `WidthProvider`, elements passed as children) and is otherwise unchanged; flipping the flag to `false` re-enables it for whenever the remaining hang gets properly root-caused with local tooling. `lib/supabase/timed.ts` and its call sites are still in place — genuinely useful if this needs revisiting, but worth stripping out eventually since they log on every request, not just `/dashboard`.
 
 Verified with `npx tsc --noEmit` at each step — same three pre-existing `Cannot find module` errors (`web-push`, `papaparse`, `react-grid-layout`) throughout, no new ones introduced.
+
+## Follow-up — Internal equipment register (PR 1 of 6: schema only)
+
+Real ask: use HorizonCare360 as Pacific Horizon Tek's own register for company equipment issued to staff (laptops, phones, monitors, Team Fridays Digital's camera and production kit), in the existing `assets` table rather than a second app or table. The full design is `docs/HorizonCare360_Internal_Equipment_Spec_v0.1.md`; this is only the database half of PR 1 (spec sections 4.1–4.3). **No app code changes in this step**, and nothing is visible in the UI yet.
+
+## Database change, run this first
+
+**`schema_step46.sql`** (new, `[idempotent]`) — **run this in Supabase before any of the later PRs in this series.** Safe to run twice; the second run changes nothing.
+
+- `organizations.is_internal boolean not null default false` — every existing organization is a client, so every existing row correctly reads `false` with no backfill.
+- 15 new `assets` columns, all nullable except `quantity` (`integer not null default 1`): `segment`, `asset_category`, `description`, `quantity`, `ownership`, `date_acquired`, `acquisition_cost` (`numeric(12,2)`, PHP), `supplier`, `department`, `date_issued`, `assignment_status`, `condition`, `return_disposal_date`, `remarks`, `parent_asset_id` (self-reference, `on delete set null`, for desktop components). Existing client assets are untouched.
+- Four named check constraints, added only if missing (`assets_segment_check`, `assets_ownership_check`, `assets_assignment_status_check`, `assets_condition_check`), with exactly the value lists in the spec. `null` passes a check, which is what keeps these optional for client assets.
+- Enforces "`segment` is non-null if and only if the organization is internal" with a trigger (CTO's choice over an application-only rule: a `CHECK` cannot read another table). `assets_enforce_segment` runs on insert and on updates of `organization_id` or `segment`; `organizations_enforce_internal_segments` runs when `is_internal` changes, so flipping an org that already has assets raises instead of silently breaking the rule. Both raise a plain-text exception naming the asset tag or organization. Consequence for later PRs: the data-load script and asset form must set `segment` on every internal asset and leave it null on every client asset, or the insert fails.
+- Seeds one organization, "Pacific Horizon Tek, Inc." (`is_internal = true`), and one site under it, guarded by `where not exists`. `sites` has no name column, so "Head Office" is stored in `sites.address` — the field every screen already uses as a site's label.
+
+**Not in this file, on purpose:**
+- The spec 4.3 status mapping (condition → `assets.status`) is documented in the SQL file's comments but not enforced; the data-load script and asset form will apply it. `asset_status` already has `attention` and `down` (schema_step15).
+- `assets.asset_tag` has **no unique constraint** today. The later idempotent data load ("skip rows whose `asset_tag` already exists") will therefore have to check in the script itself, unless a unique index is added first. Raised, not decided.
+
+**Order matters across the series:** PR 2 (excluding internal assets from analytics, dashboard counts, Fleet Map, Clients, exports and the cron jobs) must ship **before** the data load. After this step alone the new organization and its Head Office site already exist, so until PR 2 lands the internal organization *will* appear in the Clients list and organization pickers, and its site is an address-only row with no coordinates. No equipment rows exist yet, so no figure changes.
+
+## Setup steps
+
+1. Run `schema_step46.sql` in the Supabase SQL editor.
+2. Run it a second time — it should complete with no errors and no changes.
+3. Verify: `select id, name, is_internal from organizations where is_internal;` returns one row, "Pacific Horizon Tek, Inc."; `select address from sites where organization_id = (select id from organizations where is_internal);` returns one row, "Head Office".
+4. Verify: `select count(*) from organizations where name = 'Pacific Horizon Tek, Inc.';` is `1` (not 2) after the second run, and `select count(*) from assets where quantity <> 1;` is `0`.
+5. No redeploy needed; nothing in the app reads the new columns yet.
+
+## Follow-up — Internal equipment register (PR 2 of 6: keep it out of client features)
+
+Follows the schema step above (`schema_step46.sql`, already applied in production). The internal organization, "Pacific Horizon Tek, Inc." (`organizations.is_internal = true`), currently has zero assets, so **nothing visible changes today**. This step makes sure that when its equipment is loaded (PR 5) it never reaches a client-facing number, list, export or scheduled job. **No database change in this step**, no RLS change, and nothing to run first.
+
+**`lib/internal-org.ts`** (new) is the one place that knows about this. `getInternalOrgIds(supabase)` fetches the internal org ids once per Supabase client (so once per page render or cron run), and `excludeInternal(query, ids, column)` adds `column not in (ids)` to an already-built query without touching its select. It **fails closed**: a failed lookup throws rather than returning an empty list that would silently let internal rows back in. A database view was ruled out (no SQL in this step). Tables with no `organization_id` of their own (tickets, certificates) are reached through the asset, with `assets!inner(...)` in the select and `"assets.organization_id"` as the column; `asset_id` is `not null` on both, so the inner join drops nothing else.
+
+**Two deliberate exceptions to the inner join:**
+- `service_records.asset_id` is nullable since `schema_step41.sql` (site surveys and training attach to a site), so an inner join would silently drop those records. They are filtered in JS against both the asset's and the site's organization (`touchesInternalOrg`). This applies to the CSAT rollup, the Reports page and the service-records export.
+- `audit_log` cannot be filtered in SQL: `not in` on a JSON key drops every row where the key is absent. The dashboard's **Recent Activity** fetches 40 rows, drops those about the internal org, its sites, its assets or child records pointing at them (`isInternalAuditRow`), and shows 8. The **Audit Log page is untouched** and still shows everything, by design.
+
+**Excluded:** Analytics (assets, tickets, CSAT; uptime is only ever computed for the filtered asset list); Dashboard (asset and status counts, warranties, service due, equipment alerts, certificates, all ticket counts and SLA queries, Recent Activity); Fleet Map (sites and assets, plus the geocoding backfill, because "Head Office" is a label and would otherwise be sent to the geocoder); Clients list and client detail (the internal org returns not-found); assets, unserviceable, tickets and service-records CSV exports; the Reports page figures and lists; every asset, site, ticket and org picker in tickets/new, work-orders/new, calendar/new, inspections/new, all six report forms and SLA settings; and the `pm-due`, `sla-check`, `weekly-digest` and `compliance-check` jobs. `compliance-check` excludes internal assets *for now*; whether HR should get their own warranty alerts is still open (spec 12.3).
+
+**Deliberately included:** Asset Verification (`/inventory`), Alerts and Scan Asset keep working on internal equipment, because the spec gives them to the HR role for the annual count and for lost/damaged reports. **Not applicable:** `low-stock-check` reads only `parts`, which have no organization. Audit Log and Error Logs are Super Admin views. By-id lookups (the report PDF generator, ticket and asset detail by id) are left alone.
+
+**Known gaps, left for PR 3 as agreed:** the Assets page and asset form are untouched, so until PR 3 the internal organization is still selectable in the **New Asset** organization picker and can be matched by name by the **CSV asset import**. Creating an asset under it fails at the `assets_enforce_segment` trigger (no segment), so nothing can be saved by mistake, but it is visible. List pages for tickets, work orders, calendar, inspections and messages are not filtered; no internal record can reach them while the pickers above exclude internal assets.
+
+**Not verified against the live database.** `tsc` and `lint` pass (see below) but the `assets!inner(...)` plus `.not("assets.organization_id", "in", "(...)")` PostgREST filters have not been executed against Supabase. With zero internal assets they exclude nothing, so a mistake there would show up as an error on the Dashboard, Reports or a cron run rather than as wrong numbers. Check the Setup steps on a preview deployment before promoting.
+
+Verified with `npx tsc --noEmit` and `npm run lint`. `tsc` shows three errors that predate this step and are unrelated (`dashboard-grid.tsx` twice, `site-visit-verification.tsx` once): this working copy's `node_modules` holds Next 15.5 / React 19 while `package.json` on this branch is Next 14 / React 18. Lint is clean.
+
+## Setup steps
+
+1. Push to GitHub and let Vercel build a **preview** deployment first.
+2. On the preview, open **Dashboard**, **Analytics**, **Reports**, **Fleet Map** and **Clients** as Super Admin. Each should load with the same numbers as production and no query error; "Pacific Horizon Tek, Inc." must not appear in Clients, the Fleet Map or any dropdown (New Ticket, New Work Order, SLA Policy, the report forms).
+3. Download the Assets CSV and the Tickets CSV; confirm they open and contain no "Pacific Horizon Tek, Inc." rows.
+4. As Super Admin, call `/api/cron/pm-due`, `/api/cron/sla-check`, `/api/cron/weekly-digest` and `/api/cron/compliance-check` once each and confirm none errors; then `node check-errors.mjs cron 10` should show no new rows.
+5. Promote to production.
+6. Before PR 5 loads any internal assets, repeat step 2 against production once, after temporarily adding one test internal asset (with a segment) and one test warranty date to prove the exclusion actually bites; delete it afterwards.
+
+## Follow-up — Internal equipment register (PR 3 of 6: Assets page and asset form)
+
+Follows PR 2 above. **No database change in this step**: `schema_step46.sql` (already applied) provides every column used, so there is nothing to run first. This step is the first one that lets staff *see and create* internal equipment. Spec sections 4.2, 4.3, 7 and 8.
+
+**What's here**
+- **`lib/internal-equipment.ts`** (new): the value lists mirroring the step 46 CHECK constraints, `deriveInternalStatus()` for the spec 4.3 mapping, the PHT-EQ tag helpers and the export header.
+- **`/assets` filters** (staff only): Organization and Segment selects, state in the URL (`?org=<uuid>&segment=<value>`), default "all organizations". Segment appears only when the chosen org is internal and is ignored otherwise. The search box carries the filters through. `?q=` now also matches `serial_number`, `description` and `custodian`.
+- **Internal table view**: filtered to the internal org, the table shows Asset Tag, Category, Description, Brand / Model, Serial, Custodian, Department, Segment, Assignment, Condition and Warranty End (spec 7.2), and drops Equipment Type, PNRI and Next Service Due. The unfiltered view is the same table as before, now including internal rows for staff.
+- **Asset form, internal mode**: `/assets/new?internal=1` ("+ Add Internal Equipment", shown when an internal org exists). The organization is the single locked choice. The normal `/assets/new` lists **client organizations only**, closing the PR 2 gap. The edit page of an internal asset shows the internal form with the org locked; a client asset's edit form lists client orgs only.
+- **Server-side rules** (`app/assets/actions.ts`), decided from the organization's `is_internal`, never from hidden form fields: `equipment_type = 'other'`; `pnri_license_number` and `next_service_due` set null; `sold_by` and `install_date` not touched; `segment` required; `status` derived, first match wins: assignment `retired_disposed`/`lost` → `unserviceable`, condition `lost` → `unserviceable`, `for_repair` → `down`, `damaged` → `attention`, otherwise `operational`. The manual Status field is hidden for internal assets.
+- **Asset numbers**: internal assets use `PHT-EQ-NNNN` (not the `OTH` prefix). The form prefills the next number (highest existing + 1); the server recomputes at save time. A blank field gets the next number; an untouched but stale prefill is renumbered; a number the user typed that is already used is rejected with a message. The same duplicate check applies on edit. Client prefixes are unchanged.
+- **CSV importer**: a row naming the internal org is rejected with a message pointing to "+ Add Internal Equipment" (spec section 8).
+- **Export internal equipment** (`/api/assets/export/internal`, staff only, button shown when filtered to the internal org): the spreadsheet's Equipment List column names in order, plus Segment. **Unit** has no database column and exports blank; **Current Location** is the site address. UTF-8 BOM for Excel.
+
+**Known limits**
+- `assets.asset_tag` still has no unique constraint, so the duplicate check is application-level and two simultaneous saves could in principle take the same number. Raised, not decided: a unique index would close it.
+- The asset detail page's ticket, certificate and Start CM Report sections still show for internal assets; trimming them is not in this PR.
+
+**Not verified in a browser or against Supabase.** `npx tsc --noEmit` and `npm run lint` pass. The new filters, the `or()` search and the insert/update payloads have not been exercised against the live database.
+
+## Setup steps
+
+1. Push and let Vercel build a preview.
+2. `/assets` as staff: pick "Pacific Horizon Tek, Inc." in Organization; Segment appears and the internal columns show. Pick another org; Segment disappears and the standard columns return.
+3. Add an item via **+ Add Internal Equipment**: Asset No. is prefilled with the next `PHT-EQ-` number; saving without a segment is blocked; condition "For Repair" gives status Down.
+4. Try a duplicate Asset No. and confirm the rejection message. Edit the item and confirm the org is locked.
+5. `/assets/new` (normal) must not list the internal org. Upload a CSV with an internal-org row and confirm it is rejected.
+6. Download **Export internal equipment** and open it in Excel. Delete the test item afterwards.
+
+## Follow-up — Internal equipment register (PR 4 of 6: "Internal equipment only" preset)
+
+Follows PR 3 above. **No database change in this step**: it writes the existing `profiles.hidden_modules` (schema_step44.sql) through the existing service-role path. Spec section 5.
+
+**What's here**
+- **`INTERNAL_EQUIPMENT_HIDDEN_HREFS`** in `lib/nav-items.ts`, next to `NAV_MODULES`, keyed by href: `/fleet-map`, `/clients`, `/work-orders`, `/tickets`, `/inspections`, `/parts`, `/messages`, `/calendar`, `/reports`, `/analytics`, `/sla-settings`. Left visible: Dashboard, User Access (always accessible), Assets, Scan Asset, Asset Verification (`/inventory`), Alerts.
+- **`applyInternalEquipmentPreset(userId)`** in `app/user-access/actions.ts`: `requireSuperAdmin()`, then overwrites that user's `hidden_modules` with exactly the preset. Refuses any target that is not `admin` or `client_viewer`.
+- **"Internal equipment only" button** in each user's expanded Edit Access panel, beside Save. It saves immediately and syncs the checkboxes, so the Super Admin can still tick or untick modules and Save afterwards. Super Admin accounts are never listed, so they never get the button.
+
+**Known limit**: the preset replaces the user's existing hidden modules rather than merging with them.
+
+**Not verified in a browser or against Supabase.** `npx tsc --noEmit` and `npm run lint` pass.
+
+## Setup steps
+
+1. Push and let Vercel build a preview.
+2. `/user-access` as Super Admin: expand an admin user, click **Internal equipment only**. "Saved." appears, 11 modules are unticked and the row shows "11 hidden".
+3. Sign in as that user: the sidebar shows only Dashboard, Assets, Scan Asset, Asset Verification, Alerts. Opening `/clients` directly redirects to the Dashboard.
+4. Back in User Access, tick one module and Save; confirm it sticks.
+
+## Follow-up — Internal equipment register: unique index on internal asset tags
+
+Follows PR 3 above and closes its first known limit. Applies to internal assets only; client asset tags are not constrained.
+
+**Database change, run this first**
+
+Run `schema_step47.sql` in the Supabase SQL editor. It is idempotent:
+
+```sql
+create unique index if not exists assets_internal_asset_tag_key
+  on assets (asset_tag) where asset_tag like 'PHT-EQ-%';
+```
+
+Why: PR 3 checks for a duplicate `PHT-EQ-NNNN` in the app only, so two simultaneous saves could both pass the check and take the same number. The partial index makes Postgres refuse the second. If any duplicate `PHT-EQ-` tags already exist, the statement fails and names them; fix those rows first. The code works before the index exists (it just has no race protection), so deploy order does not matter.
+
+**What's here**
+- **`internalSaveError()`** in `app/assets/actions.ts`: when an internal asset insert or update returns Postgres `23505` on `assets_internal_asset_tag_key`, the user sees "Asset No. PHT-EQ-NNNN was just taken by another save. Clear the field for the next free number, or pick another." instead of the raw Postgres message. Other errors are unchanged.
+
+**Not verified against Supabase.** `npx tsc --noEmit` and `npm run lint` pass. The 23505 branch has not been triggered against a live database.
+
+## Setup steps
+
+1. Run `schema_step47.sql` in the Supabase SQL editor.
+2. Confirm: `select indexname from pg_indexes where indexname = 'assets_internal_asset_tag_key';` returns one row.
+3. Optional race check: open two tabs on **+ Add Internal Equipment** with the same typed Asset No., save both; the second shows the friendly message (or the existing "already in use" message if it loses before the write).
+
+## Follow-up — Internal equipment register (PR 3b: filter-aware Export CSV in the internal view)
+
+Follows PR 3 above. **No database change in this step.**
+
+**The bug**: with the Pacific Horizon Tek organization selected on `/assets`, the toolbar still showed the client **Export CSV** button, which hits `/api/assets/export`. That route returns client assets only (X-ray machines) and ignores the internal filters. A user filtered Custodian = Lourence (4 items), clicked Export CSV, and got the client register instead.
+
+**What's here**
+- **One Export CSV in the internal view** (`app/assets/page.tsx`): its href is `/api/assets/export/internal` plus the active filters (`segment`, `view`, `custodian`, `department`, `category`, `warranty`, and `q`). `view` is the Assigned / In Stock / Needs Repair / Returned / Retired pill, which is how assignment status and condition are filtered. The separate "Export internal equipment" link is gone.
+- **Client-only actions hidden in the internal view**: Unserviceable Report, Import CSV and + Add Asset. + Add Internal Equipment stays. The client view is unchanged.
+- **Internal export route** (`app/api/assets/export/internal/route.ts`): parses the query with `parseInternalFilters` and filters with `applyInternalFilters`, the same helpers as the list, so the CSV matches the screen. It is restricted to internal organizations through `getInternalOrgIds()` (fails closed: a lookup error returns 500). A bare URL with no `view` still exports every internal row, retired included. The file is `phtek-internal-equipment-YYYY-MM-DD.csv`, dated in Asia/Manila (it was UTC, so exports before 08:00 Manila carried yesterday's date). Columns follow `INTERNAL_EXPORT_HEADER`. Staff-only check unchanged.
+- **Client export** (`app/api/assets/export/route.ts`): already excluded internal orgs through `excludeInternal()`. No change.
+
+**Verification**: `npx tsc --noEmit` and `npm run lint` are clean. A request without a session gets 403 from the internal export. The client export without a session returns 200 with a header row only, because RLS returns no rows; that is how it already behaved. **Manually verified on 2026-10-10** with a signed-in staff session: unfiltered internal view (internal rows only), Custodian filter, Segment = Team Fridays Digital, and a client organization selected (client assets only, no `PHT-EQ-` tags). The four checks under Setup steps below all passed.
+
+## Setup steps
+
+1. `/assets` as staff, Pacific Horizon Tek selected, no filters: there is one Export CSV and no Unserviceable Report, Import CSV or + Add Asset. The file has internal rows only, all `PHT-EQ-` tags, and is named with today's Manila date.
+2. Custodian = Lourence: the CSV has exactly the rows on screen (4 once the batch 1 data is loaded).
+3. Segment = Team Fridays Digital: the CSV has only TFD rows.
+4. Select a client organization: Export CSV, Unserviceable Report, Import CSV and + Add Asset are back. The CSV has client assets only and no `PHT-EQ-` tags.

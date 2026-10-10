@@ -2015,3 +2015,24 @@ Why: PR 3 checks for a duplicate `PHT-EQ-NNNN` in the app only, so two simultane
 1. Run `schema_step47.sql` in the Supabase SQL editor.
 2. Confirm: `select indexname from pg_indexes where indexname = 'assets_internal_asset_tag_key';` returns one row.
 3. Optional race check: open two tabs on **+ Add Internal Equipment** with the same typed Asset No., save both; the second shows the friendly message (or the existing "already in use" message if it loses before the write).
+
+## Follow-up — Internal equipment register (PR 3b: filter-aware Export CSV in the internal view)
+
+Follows PR 3 above. **No database change in this step.**
+
+**The bug**: with the Pacific Horizon Tek organization selected on `/assets`, the toolbar still showed the client **Export CSV** button, which hits `/api/assets/export`. That route returns client assets only (X-ray machines) and ignores the internal filters. A user filtered Custodian = Lourence (4 items), clicked Export CSV, and got the client register instead.
+
+**What's here**
+- **One Export CSV in the internal view** (`app/assets/page.tsx`): its href is `/api/assets/export/internal` plus the active filters (`segment`, `view`, `custodian`, `department`, `category`, `warranty`, and `q`). `view` is the Assigned / In Stock / Needs Repair / Returned / Retired pill, which is how assignment status and condition are filtered. The separate "Export internal equipment" link is gone.
+- **Client-only actions hidden in the internal view**: Unserviceable Report, Import CSV and + Add Asset. + Add Internal Equipment stays. The client view is unchanged.
+- **Internal export route** (`app/api/assets/export/internal/route.ts`): parses the query with `parseInternalFilters` and filters with `applyInternalFilters`, the same helpers as the list, so the CSV matches the screen. It is restricted to internal organizations through `getInternalOrgIds()` (fails closed: a lookup error returns 500). A bare URL with no `view` still exports every internal row, retired included. The file is `phtek-internal-equipment-YYYY-MM-DD.csv`, dated in Asia/Manila (it was UTC, so exports before 08:00 Manila carried yesterday's date). Columns follow `INTERNAL_EXPORT_HEADER`. Staff-only check unchanged.
+- **Client export** (`app/api/assets/export/route.ts`): already excluded internal orgs through `excludeInternal()`. No change.
+
+**Verification**: `npx tsc --noEmit` and `npm run lint` are clean. A request without a session gets 403 from the internal export. The client export without a session returns 200 with a header row only, because RLS returns no rows; that is how it already behaved. **The manual export checks below have not been run**: they need a signed-in staff session against production data.
+
+## Setup steps
+
+1. `/assets` as staff, Pacific Horizon Tek selected, no filters: there is one Export CSV and no Unserviceable Report, Import CSV or + Add Asset. The file has internal rows only, all `PHT-EQ-` tags, and is named with today's Manila date.
+2. Custodian = Lourence: the CSV has exactly the rows on screen (4 once the batch 1 data is loaded).
+3. Segment = Team Fridays Digital: the CSV has only TFD rows.
+4. Select a client organization: Export CSV, Unserviceable Report, Import CSV and + Add Asset are back. The CSV has client assets only and no `PHT-EQ-` tags.

@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { getProfile, isStaffRole } from "@/lib/supabase/profile";
+import { getInternalOrgIds } from "@/lib/internal-org";
 import {
   ASSIGNMENT_STATUSES,
   CONDITIONS,
@@ -37,14 +38,12 @@ export async function GET(request: Request) {
   }
 
   const supabase = await createClient();
-  const { data: orgs, error: orgError } = await supabase
-    .from("organizations")
-    .select("id")
-    .eq("is_internal", true);
-  if (orgError) {
-    return new Response(`Failed to export: ${orgError.message}`, { status: 500 });
+  let orgIds: string[];
+  try {
+    orgIds = await getInternalOrgIds(supabase);
+  } catch (e) {
+    return new Response(`Failed to export: ${(e as Error).message}`, { status: 500 });
   }
-  const orgIds = (orgs ?? []).map((o) => o.id);
 
   const { searchParams } = new URL(request.url);
   const filters = parseInternalFilters(Object.fromEntries(searchParams));
@@ -106,7 +105,7 @@ export async function GET(request: Request) {
     "﻿" +
     [[...INTERNAL_EXPORT_HEADER], ...rows].map((row) => row.map(csvEscape).join(",")).join("\r\n");
 
-  const filename = `phtek-internal-equipment-${new Date().toISOString().slice(0, 10)}.csv`;
+  const filename = `phtek-internal-equipment-${manilaDate()}.csv`;
 
   return new Response(csv, {
     headers: {

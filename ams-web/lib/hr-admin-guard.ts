@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/supabase/profile";
+import { getInternalOrgIds } from "@/lib/internal-org";
 import { isHrAdminPreset } from "@/lib/hr-admin-preset";
 
 // Server-side guards for the "HR & Admin" preset (lib/hr-admin-preset.ts).
@@ -22,6 +24,22 @@ export async function forbidHrAdminPreset(): Promise<Response | null> {
 export async function denyHrAdminPresetAction(redirectTo = "/assets"): Promise<void> {
   const profile = await getProfile();
   if (profile && isHrAdminPreset(profile.hidden_modules)) redirect(redirectTo);
+}
+
+/**
+ * For actions that are client-facing for everyone else but fine on internal
+ * equipment (documents and photos): a preset user is let through only when
+ * the asset belongs to an internal organization. No-op for anyone else.
+ */
+export async function denyHrAdminPresetUnlessInternalAsset(assetId: string, redirectTo = "/assets"): Promise<void> {
+  const profile = await getProfile();
+  if (!profile || !isHrAdminPreset(profile.hidden_modules)) return;
+  const supabase = await createClient();
+  const [{ data: asset }, internalOrgIds] = await Promise.all([
+    supabase.from("assets").select("organization_id").eq("id", assetId).maybeSingle(),
+    getInternalOrgIds(supabase),
+  ]);
+  if (!asset || !internalOrgIds.includes(asset.organization_id)) redirect(redirectTo);
 }
 
 // Every table with `asset_id ... on delete cascade` to assets (schema.sql

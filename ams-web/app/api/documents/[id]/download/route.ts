@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { forbidHrAdminPreset } from "@/lib/hr-admin-guard";
+import { getProfile } from "@/lib/supabase/profile";
+import { getInternalOrgIds } from "@/lib/internal-org";
+import { isHrAdminPreset } from "@/lib/hr-admin-preset";
+import { isInlineImage } from "@/lib/documents";
 
 // Streams a stored asset document back as a real file download. Uses the
 // signed-in user's own session (not service-role) for both the catalog
@@ -12,20 +15,30 @@ export async function GET(
   request: Request,
   { params }: { params: { id: string } },
 ) {
-  // HR & Admin preset users get nothing from client-facing routes.
-  const forbidden = await forbidHrAdminPreset();
-  if (forbidden) return forbidden;
-
   const supabase = await createClient();
 
   const { data: doc } = await supabase
     .from("asset_documents")
-    .select("file_name, file_path, mime_type")
+    .select("asset_id, file_name, file_path, mime_type")
     .eq("id", params.id)
     .single();
 
   if (!doc) {
     return new NextResponse("Document not found.", { status: 404 });
+  }
+
+  // HR & Admin preset: only documents of internal equipment (photos,
+  // receipts, warranty cards). A client asset's document looks like it does
+  // not exist.
+  const profile = await getProfile();
+  if (profile && isHrAdminPreset(profile.hidden_modules)) {
+    const [{ data: asset }, internalOrgIds] = await Promise.all([
+      supabase.from("assets").select("organization_id").eq("id", doc.asset_id).maybeSingle(),
+      getInternalOrgIds(supabase),
+    ]);
+    if (!asset || !internalOrgIds.includes(asset.organization_id)) {
+      return new NextResponse("Document not found.", { status: 404 });
+    }
   }
 
   const { data: file, error } = await supabase.storage
@@ -38,10 +51,15 @@ export async function GET(
 
   const buffer = Buffer.from(await file.arrayBuffer());
 
+  // ?inline=1 shows a photo in the page (thumbnails). Only for safe image
+  // types; everything else, and every plain request, stays a download.
+  const inline = new URL(request.url).searchParams.get("inline") === "1" && isInlineImage(doc.mime_type);
+
   return new NextResponse(buffer, {
     headers: {
       "Content-Type": doc.mime_type || "application/octet-stream",
-      "Content-Disposition": `attachment; filename="${doc.file_name}"`,
+      "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${doc.file_name}"`,
+      "X-Content-Type-Options": "nosniff",
       "Cache-Control": "private, no-store",
     },
   });

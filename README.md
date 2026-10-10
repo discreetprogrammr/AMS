@@ -2186,3 +2186,30 @@ Follows bulk edit above. **No database change in this step.** The client importe
 3. Add a bad row (Segment blank, or Condition "Broken", or a date as `15/01/2026`) and preview again: it appears under errors with its row number and the reason.
 4. **Import**: "Imported 2 items." The new items appear on the list with the right tags and status. Delete the test items afterwards.
 5. Upload the same file again: the explicit tag is reported as already in use and the serials as skipped.
+
+## Follow-up — Internal equipment register: photos and documents per item
+
+Follows CSV import above. Uses the existing document library (`asset_documents`, `asset-documents` storage bucket, schema_step35.sql), with internal wording and categories.
+
+## Database change, run this first
+
+Run `schema_step50.sql` in the Supabase SQL editor. It is idempotent. The `category` check on `asset_documents` only allowed `manual`, `datasheet`, `compliance` and `other`; the file replaces it (looking the constraint up by what it checks, since step 35 created it unnamed) with one that also allows `photo`, `receipt` and `warranty`. Existing rows stay valid. Client assets keep offering their original four in the app: the app, not the constraint, decides which list an asset sees (`INTERNAL_DOCUMENT_CATEGORIES` in `lib/documents.ts`). Until the SQL is run, uploading a Photo / Receipt / Warranty fails with a constraint error; Manual and Other work.
+
+**What's here**
+- **Photos & Documents card** on an internal asset's page (staff, including the HR & Admin preset; internal equipment only). **Add Photo / Document** takes a photo, receipt or invoice, warranty card, manual or other file. Photos show as a thumbnail grid (click to download the original); everything else is a list. Delete asks first.
+- **Photos are shrunk in the browser** before upload (longest side 1600px, JPEG) unless already small, so a phone photo is a few hundred KB, not several MB.
+- **Server side**: the category list is decided by the asset (internal or not), not the form. For the HR & Admin preset, upload, delete and download work only for documents of internal assets (`denyHrAdminPresetUnlessInternalAsset`, and a check in `/api/documents/<id>/download`). Deleting a document now also requires the document to belong to the asset in the call, for everyone.
+- **`/api/documents/<id>/download?inline=1`** shows an image inline (JPEG, PNG, WebP, GIF only; SVG is never served inline). Everything else, and any request without the flag, stays a download. Every request is checked against the signed-in user; the bucket stays private.
+- **Upload size is now 4 MB** (`next.config.mjs`, `serverActions.bodySizeLimit`). Server Actions defaulted to 1 MB, which rejected most photos and PDFs, and Vercel caps a request body at 4.5 MB anyway. The upload form says so. This also applies to client asset documents, whose "25MB" limit could never have worked in production.
+- Documents on an internal asset still count in the HR & Admin delete check, so an item with files must have them deleted before the item can be deleted.
+
+**Not verified signed in.** `npx tsc --noEmit`, `npm run lint` and `npm run build` pass. The SQL has not been run against Supabase.
+
+## Setup steps
+
+1. Run `schema_step50.sql`.
+2. As Super Admin, open a **test** internal asset. The **Photos & Documents** card shows "Nothing on file yet". **Add Photo / Document**, choose a phone photo, category Photo, upload: a thumbnail appears.
+3. Add a PDF as Receipt / Invoice and another as Warranty: they appear in the list below the photos with their category. Click one: it downloads.
+4. Try a file over 4 MB: a clear message appears and nothing is uploaded.
+5. As HR & Admin: the same card and upload work. Delete a document: it asks first, then it is gone.
+6. In a private window with nobody signed in, open a thumbnail's `/api/documents/<id>/download` URL: it is refused or redirected to login, not shown.

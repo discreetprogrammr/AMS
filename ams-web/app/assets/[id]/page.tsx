@@ -21,6 +21,7 @@ import {
 } from "../tickets-actions";
 import { deleteDocument } from "./documents-actions";
 import { UploadDocumentButton } from "./upload-document-button";
+import { InternalDocumentsCard } from "./internal-documents-card";
 
 const EQUIPMENT_LABEL: Record<string, string> = {
   xray_screening: "X-ray Screening",
@@ -73,7 +74,7 @@ export default async function EditAssetPage({
     // scopes this the same way certificates above already are.
     supabase
       .from("asset_documents")
-      .select("id, category, title, file_name, file_size, created_at")
+      .select("id, category, title, file_name, file_size, mime_type, created_at")
       .eq("asset_id", params.id)
       .order("created_at", { ascending: false }),
     // RLS restricts this to staff only — a client_viewer's query just
@@ -286,6 +287,10 @@ export default async function EditAssetPage({
           </div>
         )}
 
+        {isStaff && isInternalAsset && (
+          <InternalDocumentsCard assetId={params.id} documents={documents ?? []} canEdit />
+        )}
+
         {!presetUser && (
           <>
         <div className="mt-6 rounded-xl border border-hairline bg-surface p-6">
@@ -314,6 +319,7 @@ export default async function EditAssetPage({
           )}
         </div>
 
+        {!isInternalAsset && (
         <div className="mt-6 rounded-xl border border-hairline bg-surface p-6">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-soft">
@@ -362,6 +368,8 @@ export default async function EditAssetPage({
             </p>
           )}
         </div>
+
+        )}
 
         <div className="mt-6 rounded-xl border border-hairline bg-surface p-6">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-soft">

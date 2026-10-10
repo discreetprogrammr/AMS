@@ -10,8 +10,26 @@ export const DOCUMENT_CATEGORIES = [
   { value: "other", label: "Other" },
 ] as const;
 
+// Internal equipment (schema_step50.sql): what an office item needs on file.
+export const INTERNAL_DOCUMENT_CATEGORIES = [
+  { value: "photo", label: "Photo" },
+  { value: "receipt", label: "Receipt / Invoice" },
+  { value: "warranty", label: "Warranty" },
+  { value: "manual", label: "Manual" },
+  { value: "other", label: "Other" },
+] as const;
+
 export function categoryLabel(category: string): string {
-  return DOCUMENT_CATEGORIES.find((c) => c.value === category)?.label ?? "Other";
+  return (
+    [...DOCUMENT_CATEGORIES, ...INTERNAL_DOCUMENT_CATEGORIES].find((c) => c.value === category)?.label ?? "Other"
+  );
+}
+
+/** Image types the browser can show inline. SVG is left out on purpose: it can carry script. */
+export const INLINE_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+
+export function isInlineImage(mimeType: string | null | undefined): boolean {
+  return !!mimeType && INLINE_IMAGE_TYPES.includes(mimeType.toLowerCase());
 }
 
 function randomId(): string {

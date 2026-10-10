@@ -5,11 +5,13 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/supabase/profile";
 import { notifyTicketStatusChange } from "@/lib/notify";
+import { denyHrAdminPresetAction } from "@/lib/hr-admin-guard";
 
 // Anyone who can see the asset can raise a ticket on it — RLS restricts a
 // client_viewer to only their own organization's assets (see
 // "clients can raise tickets on own assets" policy in schema.sql).
 export async function createTicket(assetId: string, formData: FormData) {
+  await denyHrAdminPresetAction();
   const supabase = await createClient();
 
   const {
@@ -49,6 +51,7 @@ export async function createTicket(assetId: string, formData: FormData) {
 // their own org regardless of what asset_id gets submitted; "staff manage
 // tickets" lets staff raise one for any org.
 export async function createGlobalTicket(formData: FormData) {
+  await denyHrAdminPresetAction();
   const supabase = await createClient();
 
   const {
@@ -91,6 +94,7 @@ export async function createGlobalTicket(formData: FormData) {
 // UI path back to this once in_progress, but just in case) won't overwrite
 // an earlier real response time.
 export async function acknowledgeTicket(assetId: string, ticketId: string) {
+  await denyHrAdminPresetAction();
   await requireStaff(`/assets/${assetId}`);
 
   const supabase = await createClient();
@@ -126,6 +130,7 @@ export async function acknowledgeTicket(assetId: string, ticketId: string) {
 // ticket_status's terminal value is "closed" as of schema_step21.sql
 // (renamed from "resolved", to match work_order_status's vocabulary).
 export async function resolveTicket(assetId: string, ticketId: string) {
+  await denyHrAdminPresetAction();
   await requireStaff(`/assets/${assetId}`);
 
   const supabase = await createClient();
@@ -163,6 +168,7 @@ export async function resolveTicket(assetId: string, ticketId: string) {
 // Doesn't touch first_response_at/resolved_at; a part-pending ticket isn't
 // closed yet, so neither timestamp is appropriate here.
 export async function markTicketPartsPending(assetId: string, ticketId: string) {
+  await denyHrAdminPresetAction();
   await requireStaff(`/assets/${assetId}`);
 
   const supabase = await createClient();
@@ -200,6 +206,7 @@ export async function markTicketPartsPending(assetId: string, ticketId: string) 
 // already does — keeps a ticket and its work order from drifting apart
 // regardless of which side someone changes the status from.
 export async function updateTicketStatus(ticketId: string, status: string) {
+  await denyHrAdminPresetAction();
   await requireStaff("/tickets");
 
   const supabase = await createClient();

@@ -25,10 +25,13 @@ export function Topbar({
   title,
   subtitle,
   actions,
+  hidePush = false,
 }: {
   title: string;
   subtitle?: string;
   actions?: ReactNode;
+  // HR & Admin preset: push alerts carry client tickets and SLA breaches.
+  hidePush?: boolean;
 }) {
   const { setOpen } = useMobileNav();
 
@@ -54,7 +57,7 @@ export function Topbar({
       </div>
       <div className="flex flex-wrap items-center gap-3">
         {actions}
-        <PushSubscribeButton />
+        {!hidePush && <PushSubscribeButton />}
         <ThemeToggle />
       </div>
     </header>

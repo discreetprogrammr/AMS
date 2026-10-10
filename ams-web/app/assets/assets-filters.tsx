@@ -2,6 +2,10 @@
 
 import { useRouter } from "next/navigation";
 import {
+  ASSIGNMENT_STATUSES,
+  CONDITIONS,
+  MISSING_FIELDS,
+  NONE,
   SEGMENTS,
   UNASSIGNED,
   WARRANTY_FILTERS,
@@ -33,12 +37,15 @@ export function AssetsFilters({
   filters,
   options,
   q,
+  hideOrganization = false,
 }: {
   organizations: Org[];
   orgId: string;
   filters: InternalFilters;
   options: InternalOptions | null;
   q: string;
+  // HR & Admin preset: locked to the internal organization, no picker.
+  hideOrganization?: boolean;
 }) {
   const router = useRouter();
   const selected = organizations.find((o) => o.id === orgId);
@@ -57,21 +64,23 @@ export function AssetsFilters({
 
   return (
     <div className="mb-4 flex flex-wrap items-center gap-3">
-      <label className={labelClass}>
-        Organization
-        <select
-          value={orgId}
-          onChange={(e) => changeOrg(e.target.value)}
-          className={selectClass}
-        >
-          <option value="">All organizations</option>
-          {organizations.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      {!hideOrganization && (
+        <label className={labelClass}>
+          Organization
+          <select
+            value={orgId}
+            onChange={(e) => changeOrg(e.target.value)}
+            className={selectClass}
+          >
+            <option value="">All organizations</option>
+            {organizations.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       {selected?.is_internal && (
         <label className={labelClass}>
           Segment
@@ -115,6 +124,7 @@ export function AssetsFilters({
               className={selectClass}
             >
               <option value="">All departments</option>
+              <option value={NONE}>Not set</option>
               {options.departments.map((d) => (
                 <option key={d} value={d}>
                   {d}
@@ -130,9 +140,57 @@ export function AssetsFilters({
               className={selectClass}
             >
               <option value="">All categories</option>
+              <option value={NONE}>Not set</option>
               {options.categories.map((c) => (
                 <option key={c} value={c}>
                   {c}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className={labelClass}>
+            Status
+            <select
+              value={filters.assignment}
+              onChange={(e) => change({ assignment: e.target.value })}
+              className={selectClass}
+            >
+              <option value="">Any status</option>
+              {ASSIGNMENT_STATUSES.map((a) => (
+                <option key={a.value} value={a.value}>
+                  {a.label}
+                </option>
+              ))}
+              <option value={NONE}>Not set</option>
+            </select>
+          </label>
+          <label className={labelClass}>
+            Condition
+            <select
+              value={filters.condition}
+              onChange={(e) => change({ condition: e.target.value })}
+              className={selectClass}
+            >
+              <option value="">Any condition</option>
+              {CONDITIONS.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
+              <option value={NONE}>Not set</option>
+            </select>
+          </label>
+          <label className={labelClass}>
+            Missing
+            <select
+              value={filters.missing}
+              onChange={(e) => change({ missing: e.target.value })}
+              className={selectClass}
+            >
+              <option value="">Nothing</option>
+              {MISSING_FIELDS.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
                 </option>
               ))}
             </select>

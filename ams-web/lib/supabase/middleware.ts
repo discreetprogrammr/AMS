@@ -1,6 +1,12 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { NAV_MODULES, ALWAYS_ACCESSIBLE_HREFS } from "@/lib/nav-items";
+import {
+  EQUIPMENT_DASHBOARD_HREF,
+  hrAdminMayVisit,
+  isHrAdminPreset,
+  skipsPresetLookup,
+} from "@/lib/hr-admin-preset";
 import { fetchWithTimeout } from "./fetch-with-timeout";
 import { timed } from "./timed";
 
@@ -68,7 +74,14 @@ export async function updateSession(request: NextRequest) {
     const pathname = request.nextUrl.pathname;
     const matched = ALWAYS_ACCESSIBLE_HREFS.includes(pathname) ? undefined : matchModule(pathname);
 
-    if (matched && !ALWAYS_ACCESSIBLE_HREFS.includes(matched.href)) {
+    // The profile is read for module paths (as before) and, for the "HR &
+    // Admin" preset, for any other path except the few that preset users
+    // may always open (see skipsPresetLookup). Those are the only extra
+    // reads: /dashboard, /, /user-access and unknown routes.
+    const needsProfile =
+      (matched && !ALWAYS_ACCESSIBLE_HREFS.includes(matched.href)) || !skipsPresetLookup(pathname);
+
+    if (needsProfile) {
       const { data: profile } = await timed(
         `middleware.profileSelect ${pathname}`,
         supabase.from("profiles").select("role, hidden_modules").eq("id", user.id).single(),
@@ -78,8 +91,25 @@ export async function updateSession(request: NextRequest) {
       // normally only one, and app/user-access excludes Super Admin rows
       // from the UI entirely, so this row should always be empty for them,
       // but skip explicitly anyway rather than trust that invariant holds.
+      const restricted = profile?.role !== "super_admin";
+
+      // "HR & Admin" preset (lib/hr-admin-preset.ts): default-deny. Their
+      // landing page and every blocked-route redirect is the equipment
+      // dashboard, which is itself on the allow list, so it cannot loop.
+      // /dashboard is not allowed for them, so login (which always ends at
+      // /dashboard) and the root page both bounce there.
+      if (restricted && isHrAdminPreset(profile?.hidden_modules) && !hrAdminMayVisit(pathname)) {
+        const url = request.nextUrl.clone();
+        url.pathname = EQUIPMENT_DASHBOARD_HREF;
+        url.search = pathname === "/dashboard" || pathname === "/" ? "" : "?access_denied=1";
+        return NextResponse.redirect(url);
+      }
+
       const isBlocked =
-        profile?.role !== "super_admin" && (profile?.hidden_modules ?? []).includes(matched.href);
+        !!matched &&
+        !ALWAYS_ACCESSIBLE_HREFS.includes(matched.href) &&
+        restricted &&
+        (profile?.hidden_modules ?? []).includes(matched.href);
 
       if (isBlocked) {
         const url = request.nextUrl.clone();

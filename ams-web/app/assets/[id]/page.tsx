@@ -7,6 +7,7 @@ import { changedFields } from "@/lib/audit";
 import { woRef, dateTimeLabel } from "@/lib/format";
 import { generateQrDataUrl } from "@/lib/qr";
 import { categoryLabel, formatFileSize } from "@/lib/documents";
+import { isHrAdminPreset } from "@/lib/hr-admin-preset";
 import { AppShell } from "@/components/app-shell";
 import { StatusBadge } from "@/components/status-badge";
 import { AssetForm } from "../asset-form";
@@ -86,11 +87,17 @@ export default async function EditAssetPage({
 
   if (!asset) notFound();
 
+  // HR & Admin preset: internal equipment only. A client asset is "not
+  // found" for them, and the client-facing sections (QR/checklist links,
+  // certificates, documents, tickets) are not shown on an internal one.
+  const presetUser = isHrAdminPreset(profile?.hidden_modules);
+
   // An internal asset gets the internal form with its organization locked;
   // a client asset only ever sees client organizations in the picker.
   const isInternalAsset = (organizations ?? []).some(
     (o) => o.id === asset.organization_id && o.is_internal,
   );
+  if (presetUser && !isInternalAsset) notFound();
   const formOrganizations = (organizations ?? []).filter((o) =>
     isInternalAsset ? o.id === asset.organization_id : !o.is_internal,
   );
@@ -155,7 +162,7 @@ export default async function EditAssetPage({
           </p>
         )}
 
-        {isStaff && qrDataUrl && (
+        {isStaff && qrDataUrl && !presetUser && (
           <div className="mb-6 flex flex-col items-start gap-4 rounded-xl border border-hairline bg-surface p-6 sm:flex-row sm:items-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -209,6 +216,8 @@ export default async function EditAssetPage({
           <AssetDetailReadOnly asset={asset} />
         )}
 
+        {!presetUser && (
+          <>
         <div className="mt-6 rounded-xl border border-hairline bg-surface p-6">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-soft">
             Compliance Certificates
@@ -413,6 +422,9 @@ export default async function EditAssetPage({
             </div>
           </form>
         </div>
+
+          </>
+        )}
 
         {isStaff && (
           <div className="mt-6 rounded-xl border border-hairline bg-surface p-6">

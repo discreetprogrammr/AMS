@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/supabase/profile";
 import { makeDocumentPath, MAX_DOCUMENT_BYTES } from "@/lib/documents";
+import { denyHrAdminPresetAction } from "@/lib/hr-admin-guard";
 
 // Staff-only. Client-invoked (throw-on-error) rather than a plain <form
 // action> — this is called from upload-document-modal.tsx, which needs to
@@ -19,6 +20,7 @@ import { makeDocumentPath, MAX_DOCUMENT_BYTES } from "@/lib/documents";
 // supported boundary type (it's exactly what a native <form action> submit
 // already sends under the hood), so wrapping the file in one sidesteps it.
 export async function uploadDocument(assetId: string, formData: FormData): Promise<void> {
+  await denyHrAdminPresetAction();
   await requireStaff(`/assets/${assetId}`);
 
   const file = formData.get("file");
@@ -72,6 +74,7 @@ export async function uploadDocument(assetId: string, formData: FormData): Promi
 // redirect-on-error rather than throw, since there's no client-side catch
 // wrapping this one.
 export async function deleteDocument(assetId: string, documentId: string) {
+  await denyHrAdminPresetAction();
   await requireStaff(`/assets/${assetId}`);
 
   const supabase = await createClient();

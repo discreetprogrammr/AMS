@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { forbidHrAdminPreset } from "@/lib/hr-admin-guard";
 
 // Streams a stored asset document back as a real file download. Uses the
 // signed-in user's own session (not service-role) for both the catalog
@@ -11,6 +12,10 @@ export async function GET(
   request: Request,
   { params }: { params: { id: string } },
 ) {
+  // HR & Admin preset users get nothing from client-facing routes.
+  const forbidden = await forbidHrAdminPreset();
+  if (forbidden) return forbidden;
+
   const supabase = await createClient();
 
   const { data: doc } = await supabase

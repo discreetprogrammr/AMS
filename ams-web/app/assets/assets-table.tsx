@@ -63,6 +63,7 @@ export function AssetsTable({
   orgId = "",
   q = "",
   filters,
+  guardedDelete = false,
   emptyMessage,
 }: {
   assets: AssetRow[];
@@ -75,6 +76,8 @@ export function AssetsTable({
   orgId?: string;
   q?: string;
   filters?: InternalFilters;
+  // HR & Admin preset: the server refuses a delete that would cascade.
+  guardedDelete?: boolean;
   emptyMessage: string;
 }) {
   const router = useRouter();
@@ -178,7 +181,7 @@ export function AssetsTable({
                 <td className="px-4 py-3 text-ink-soft">{asset.warranty_end_date ?? "—"}</td>
                 {isStaff && (
                   <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                    <AssetRowActions assetId={asset.id} assetTag={asset.asset_tag} />
+                    <AssetRowActions assetId={asset.id} assetTag={asset.asset_tag} guarded={guardedDelete} />
                   </td>
                 )}
               </tr>

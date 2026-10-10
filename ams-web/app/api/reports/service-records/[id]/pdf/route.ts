@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { reportRef } from "@/lib/format";
 import { reportKindOf, REPORT_KIND_REF_PREFIX } from "@/lib/report-types";
+import { forbidHrAdminPreset } from "@/lib/hr-admin-guard";
 
 // Streams the stored PDF (schema_step20.sql / lib/pdf/generate-and-store.ts)
 // back as a real file download. Falls back to the live-rendered report
@@ -12,6 +13,10 @@ export async function GET(
   request: Request,
   { params }: { params: { id: string } },
 ) {
+  // HR & Admin preset users get nothing from client-facing routes.
+  const forbidden = await forbidHrAdminPreset();
+  if (forbidden) return forbidden;
+
   const supabase = await createClient();
 
   const { data: record } = await supabase

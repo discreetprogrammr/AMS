@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/supabase/profile";
 import { parseCsvFile, trimmedOrNull, isValidIsoDate, MAX_IMPORT_ROWS } from "@/lib/csv-import";
 import { resolveSiteId, nextAssetTag } from "../actions";
+import { denyHrAdminPresetAction } from "@/lib/hr-admin-guard";
 
 // Two-phase bulk import (parse/validate, then commit) rather than one shot
 // straight to the database — an asset-registry import can easily be 50-200+
@@ -48,6 +49,7 @@ export type AssetImportPreview = {
 };
 
 export async function parseAssetsImport(formData: FormData): Promise<AssetImportPreview> {
+  await denyHrAdminPresetAction();
   await requireStaff();
 
   const file = formData.get("file");
@@ -175,6 +177,7 @@ export type AssetImportResult = {
 };
 
 export async function commitAssetsImport(rows: ParsedAssetRow[]): Promise<AssetImportResult> {
+  await denyHrAdminPresetAction();
   await requireStaff();
 
   const supabase = await createClient();

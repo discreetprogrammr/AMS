@@ -132,6 +132,15 @@ export const UNASSIGNED = "__unassigned";
 
 export const WARRANTY_WINDOW_DAYS = 60;
 
+/** category / department / condition / assignment filter value meaning "not set". */
+export const NONE = "__none";
+
+/** "Missing data" filter values: housekeeping on the equipment dashboard. */
+export const MISSING_FIELDS = [
+  { value: "acquisition_cost", label: "No acquisition cost" },
+  { value: "date_acquired", label: "No date acquired" },
+] as const;
+
 /** Not a pill: lets the export route keep its old "everything" default. */
 export const EVERY_VIEW = "every";
 
@@ -142,6 +151,9 @@ export type InternalFilters = {
   department: string;
   category: string;
   warranty: string; // a WARRANTY_FILTERS value, or ""
+  condition: string; // a CONDITIONS value, NONE, or ""
+  assignment: string; // an ASSIGNMENT_STATUSES value, NONE, or ""
+  missing: string; // a MISSING_FIELDS value, or ""
 };
 
 type Params = Record<string, string | string[] | undefined>;
@@ -149,6 +161,10 @@ type Params = Record<string, string | string[] | undefined>;
 function one(params: Params, key: string): string {
   const v = params[key];
   return (Array.isArray(v) ? v[0] : v)?.trim() ?? "";
+}
+
+function oneOfOrNone(options: readonly Option[], value: string): string {
+  return value === NONE || isOneOf(options, value || null) ? value : "";
 }
 
 export function parseInternalFilters(params: Params): InternalFilters {
@@ -162,6 +178,9 @@ export function parseInternalFilters(params: Params): InternalFilters {
     department: one(params, "department"),
     category: one(params, "category"),
     warranty: isOneOf(WARRANTY_FILTERS, warranty || null) ? warranty : "",
+    condition: oneOfOrNone(CONDITIONS, one(params, "condition")),
+    assignment: oneOfOrNone(ASSIGNMENT_STATUSES, one(params, "assignment")),
+    missing: isOneOf(MISSING_FIELDS, one(params, "missing") || null) ? one(params, "missing") : "",
   };
 }
 
@@ -249,8 +268,15 @@ export function applyInternalFilters<Q extends Filterable>(query: Q, f: Internal
   }
   if (f.custodian === UNASSIGNED) q = q.or("custodian.is.null,custodian.eq.");
   else if (f.custodian) q = q.eq("custodian", f.custodian);
-  if (f.department) q = q.eq("department", f.department);
-  if (f.category) q = q.eq("asset_category", f.category);
+  if (f.department === NONE) q = q.or("department.is.null,department.eq.");
+  else if (f.department) q = q.eq("department", f.department);
+  if (f.category === NONE) q = q.or("asset_category.is.null,asset_category.eq.");
+  else if (f.category) q = q.eq("asset_category", f.category);
+  if (f.condition === NONE) q = q.is("condition", null);
+  else if (f.condition) q = q.eq("condition", f.condition);
+  if (f.assignment === NONE) q = q.is("assignment_status", null);
+  else if (f.assignment) q = q.eq("assignment_status", f.assignment);
+  if (f.missing) q = q.is(f.missing, null);
   return applyWarrantyFilter(q, f.warranty, today);
 }
 
@@ -268,5 +294,21 @@ export function internalAssetsHref(
   if (f.department) params.set("department", f.department);
   if (f.category) params.set("category", f.category);
   if (f.warranty) params.set("warranty", f.warranty);
+  if (f.condition) params.set("condition", f.condition);
+  if (f.assignment) params.set("assignment", f.assignment);
+  if (f.missing) params.set("missing", f.missing);
   return `/assets?${params.toString()}`;
+}
+
+/**
+ * Retired / lost: the rows excludeRetired() leaves out of All, Total and
+ * every pill but "Retired / Lost". The same rule as RETIRED_OR above, for
+ * code that has the rows in hand (the equipment dashboard).
+ */
+export function isRetiredRow(row: { assignment_status: string | null; condition: string | null }): boolean {
+  return (
+    row.assignment_status === "retired_disposed" ||
+    row.assignment_status === "lost" ||
+    row.condition === "lost"
+  );
 }

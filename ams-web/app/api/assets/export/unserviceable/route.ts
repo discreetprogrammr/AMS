@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { excludeInternal, getInternalOrgIds } from "@/lib/internal-org";
+import { forbidHrAdminPreset } from "@/lib/hr-admin-guard";
 
 // Dedicated unserviceable-equipment report — the AMS equivalent of COA's
 // Inspection and Inventory Report of Unserviceable Property (IIRUP).
@@ -12,6 +13,10 @@ function csvEscape(value: unknown): string {
 }
 
 export async function GET() {
+  // HR & Admin preset users get nothing from client-facing routes.
+  const forbidden = await forbidHrAdminPreset();
+  if (forbidden) return forbidden;
+
   const supabase = await createClient();
 
   // Client equipment only (organizations.is_internal is excluded).

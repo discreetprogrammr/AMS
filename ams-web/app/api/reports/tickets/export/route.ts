@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { excludeInternal, getInternalOrgIds } from "@/lib/internal-org";
+import { forbidHrAdminPreset } from "@/lib/hr-admin-guard";
 
 function csvEscape(value: unknown): string {
   const str = String(value ?? "");
@@ -10,6 +11,10 @@ function csvEscape(value: unknown): string {
 }
 
 export async function GET() {
+  // HR & Admin preset users get nothing from client-facing routes.
+  const forbidden = await forbidHrAdminPreset();
+  if (forbidden) return forbidden;
+
   const supabase = await createClient();
 
   const { data: tickets, error } = await excludeInternal(

@@ -22,6 +22,7 @@ export const EQUIPMENT_DASHBOARD_HREF = "/equipment-dashboard";
 // must also open for them (ALLOWED_PREFIXES below), and each page checks its
 // own access. components/sidebar.tsx owns the icons.
 export const HR_ADMIN_NAV: { href: string; label: string }[] = [
+  { href: "/custodians", label: "Custodians" },
   { href: "/assets/stocktake", label: "Stocktake" },
 ];
 
@@ -38,7 +39,7 @@ export function hrAdminHiddenModules(): string[] {
 // module added to the app later is blocked for them without anyone having
 // to remember to hide it. /profile is the account page; /login is signing
 // out and in.
-const ALLOWED_PREFIXES = ["/assets", EQUIPMENT_DASHBOARD_HREF, "/profile", "/login"];
+const ALLOWED_PREFIXES = ["/assets", EQUIPMENT_DASHBOARD_HREF, "/custodians", "/profile", "/login"];
 // Under /assets but client-only: the CSV importer and the QR scanner.
 const DENIED_PREFIXES = ["/assets/import", "/assets/scan"];
 

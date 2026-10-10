@@ -2246,8 +2246,17 @@ The HR & Admin preset's sidebar was only Dashboard and Assets. This section grow
 
 **Tab 1: Stocktake** (`/assets/stocktake`, built earlier): now a sidebar tab for HR & Admin, no longer only a button on the Assets list. The button stays. No new page and no database change; the tab highlights on the stocktake pages and Assets does not.
 
+**Tab 2: Custodians** (`/custodians`): who holds which company equipment. Built from the custodian typed on each internal item, so there is nothing extra to maintain and **no database change**. Active items only (retired / lost left out), internal equipment only, staff only.
+- **List**: people with their departments, segments, number of items and how many need repair; search by name or department; tiles for people holding equipment, items held, and items with no custodian (links to the Assets list filtered to those).
+- **Person** (`/custodians/view?name=`): their items with status, issue date and a **Handover form** link per item; **Open in Assets** (the Assets list filtered to them, where Bulk edit can reassign everything) and **Print clearance form**.
+- **Clearance form** (`/custodians/clearance?name=`): a printable white page listing every item the person holds with a "Returned" tick-box and remarks, and signature lines for the employee, the person receiving, and HR / Admin. Printing changes nothing.
+- Names are grouped ignoring capital letters and extra spaces, so "Lourence", "lourence " and "LOURENCE" are one person, shown with the most common spelling. A genuinely different spelling (a nickname) is a separate person until the items are corrected with Bulk edit.
+- Uses a query string (`?name=`) rather than a path segment so names with spaces, `%` or `/` need no decoding.
+
 ## Setup steps
 
-1. Sign in as HR & Admin: the sidebar shows Dashboard, Assets, Stocktake.
+1. Sign in as HR & Admin: the sidebar shows Dashboard, Assets, Custodians, Stocktake.
 2. Click **Stocktake**: the stocktake list opens and only Stocktake is highlighted. Open a stocktake: still highlighted. Click **Assets**: Assets is highlighted.
 3. Sign in as Super Admin or any other admin: no Stocktake tab in the sidebar (the Assets toolbar button is still there).
+4. **Custodians**: the list shows people and counts that match the Assets list (filter Custodian = one person: same item count). Search a name. Click a person: their items; **Handover form** opens for an item; **Open in Assets** shows the same items; **Print clearance form** opens a white page with a "Returned" box per item and three signature lines.
+5. Retire a test item of a person in Assets: it leaves their Custodians list and count.

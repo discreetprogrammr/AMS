@@ -50,6 +50,11 @@ export function matchOption(options: readonly Option[], raw: string | null | und
   return options.find((o) => norm(o.value) === wanted || norm(o.label) === wanted)?.value ?? null;
 }
 
+/** Escapes % _ and \\ so a person's name can go into an ilike as a plain, case-insensitive match. */
+export function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => "\\" + c);
+}
+
 export function isOneOf(options: readonly Option[], value: string | null): value is string {
   return value !== null && options.some((o) => o.value === value);
 }

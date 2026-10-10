@@ -38,6 +38,18 @@ export function labelFor(options: readonly Option[], value: string | null | unde
   return options.find((o) => o.value === value)?.label ?? value;
 }
 
+/**
+ * Finds an option from what a person typed in a spreadsheet: the stored
+ * value ("for_repair") or the label ("For Repair"), ignoring case, spacing
+ * and punctuation ("retired / disposed" matches Retired / Disposed).
+ */
+export function matchOption(options: readonly Option[], raw: string | null | undefined): string | null {
+  const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const wanted = norm(raw ?? "");
+  if (!wanted) return null;
+  return options.find((o) => norm(o.value) === wanted || norm(o.label) === wanted)?.value ?? null;
+}
+
 export function isOneOf(options: readonly Option[], value: string | null): value is string {
   return value !== null && options.some((o) => o.value === value);
 }

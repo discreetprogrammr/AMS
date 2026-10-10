@@ -97,7 +97,7 @@ export async function parseAssetsImport(formData: FormData): Promise<AssetImport
     if (org.is_internal) {
       errors.push({
         row,
-        message: `"${org.name}" is the internal organization. Internal equipment can't be imported from CSV — add it with "+ Add Internal Equipment" on the Assets page.`,
+        message: `"${org.name}" is the internal organization. Internal equipment has its own importer: choose the internal organization on the Assets page and use "Import CSV" there, or add items with "+ Add Internal Equipment".`,
       });
       return;
     }

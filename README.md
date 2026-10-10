@@ -2164,3 +2164,25 @@ Follows the equipment stocktake above. **No database change in this step.**
 4. Set a Custodian: each item's Custodian History card gets a new current row.
 5. Use **Clear custodian** and apply: the custodian empties and the history row is closed.
 6. Use the header checkbox with a pill such as "In Stock" chosen: it selects only the rows shown.
+
+## Follow-up — Internal equipment register: CSV import
+
+Follows bulk edit above. **No database change in this step.** The client importer (`/assets/import`) still rejects internal rows on purpose (spec section 8: they need a segment, PHT-EQ tags and a derived status). This is its internal counterpart.
+
+**What's here**
+- **`/assets/internal-import`** (linked as **Import CSV** on the internal Assets list; staff, including the HR & Admin preset): choose a CSV, preview what would happen, then import. The client importer stays hidden from the preset.
+- **Columns are the internal export's** (`INTERNAL_EXPORT_HEADER`), so a sheet exported from the register, or the downloadable template (`/api/assets/import/internal-template`), can be filled in and uploaded. Unit is ignored (no database column). Everything is added to the internal organization; the organization is never read from the file.
+- **Rules per row** (the same ones the single-item form enforces): Segment required; a description, or a brand or model; Asset No. optional, otherwise the next `PHT-EQ-NNNN` is given at import, and a given one must match the pattern and not already exist or repeat in the file; Status, Condition, Ownership and Segment accept the names shown in the app or the stored values; dates `YYYY-MM-DD`; Qty a whole number of at least 1; Acquisition Cost a number (₱ and commas are ignored). Operating status is derived from condition and status. A serial number already on another internal item, or repeated in the file, is skipped, not an error. Up to 500 rows.
+- **The import step re-reads and re-validates the uploaded file on the server** instead of trusting rows sent back by the browser. Rows are added one at a time (tag numbers depend on the previous row), with the unique index from `schema_step47.sql` refusing any collision; a row that fails is reported by row number and the rest continue.
+- Rows only ever add items. Existing items are never changed by an import.
+- The client importer's message for internal rows now points here.
+
+**Not verified signed in.** `npx tsc --noEmit` and `npm run lint` pass; option matching was checked in isolation.
+
+## Setup steps
+
+1. `/assets` (Pacific Horizon Tek) → **Import CSV** → **Download the template**. Open it, delete the example row, add two test rows (one with a blank Asset No., one with a typed unused `PHT-EQ-` number), save as CSV.
+2. **Preview Import**: "Will Import" shows 2; the table shows the first rows.
+3. Add a bad row (Segment blank, or Condition "Broken", or a date as `15/01/2026`) and preview again: it appears under errors with its row number and the reason.
+4. **Import**: "Imported 2 items." The new items appear on the list with the right tags and status. Delete the test items afterwards.
+5. Upload the same file again: the explicit tag is reported as already in use and the serials as skipped.

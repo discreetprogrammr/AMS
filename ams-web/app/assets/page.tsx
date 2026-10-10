@@ -201,6 +201,14 @@ export default async function AssetsPage({
           )}
           {isStaff && internalView && (
             <Link
+              href="/assets/internal-import"
+              className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
+            >
+              Import CSV
+            </Link>
+          )}
+          {isStaff && internalView && (
+            <Link
               href="/assets/stocktake"
               className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
             >

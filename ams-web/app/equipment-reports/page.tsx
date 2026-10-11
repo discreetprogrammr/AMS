@@ -2,7 +2,9 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile, requireStaff } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
-import { INTERNAL_CATEGORIES, INTERNAL_DEPARTMENTS, NONE, SEGMENTS } from "@/lib/internal-equipment";
+import { INTERNAL_CATEGORIES, INTERNAL_DEPARTMENTS, NONE, SEGMENTS, UNASSIGNED } from "@/lib/internal-equipment";
+import { getInternalOrgIds } from "@/lib/internal-org";
+import { loadCustodianNames } from "@/app/assets/custodian-names";
 import { GROUPS, REPORT_STATUSES, formatMoney, loadEquipmentReport } from "@/lib/equipment-report";
 import { ReportTable } from "./report-table";
 
@@ -19,11 +21,15 @@ export default async function EquipmentReportsPage({
   const profile = await getProfile();
   const supabase = await createClient();
   const report = await loadEquipmentReport(supabase, searchParams);
+  // Everyone who holds or has held internal equipment, people who left included:
+  // a report on an old handover should still be able to find them.
+  const custodianNames = await loadCustodianNames(supabase, await getInternalOrgIds(supabase), report.custodian, true);
 
   const qs = new URLSearchParams();
   if (report.filters.segment) qs.set("segment", report.filters.segment);
   if (report.filters.department) qs.set("department", report.filters.department);
   if (report.filters.category) qs.set("category", report.filters.category);
+  if (report.custodian) qs.set("custodian", report.custodian);
   if (report.statusParam !== "all") qs.set("status", report.statusParam);
   if (report.group !== "none") qs.set("group", report.group);
   const query = qs.toString() ? `?${qs.toString()}` : "";
@@ -38,7 +44,7 @@ export default async function EquipmentReportsPage({
       title="Reports"
       subtitle="The equipment register as a report: filter it, group it, print it or download it."
     >
-      <form action="/equipment-reports" className="mb-5 grid grid-cols-2 gap-3 rounded-xl border border-hairline bg-surface p-4 lg:grid-cols-6">
+      <form action="/equipment-reports" className="mb-5 grid grid-cols-2 gap-3 rounded-xl border border-hairline bg-surface p-4 lg:grid-cols-4 xl:grid-cols-7">
         <label className={label}>
           Segment
           <select name="segment" defaultValue={report.filters.segment} className={select}>
@@ -72,6 +78,18 @@ export default async function EquipmentReportsPage({
               </option>
             ))}
             <option value={NONE}>Not set</option>
+          </select>
+        </label>
+        <label className={label}>
+          Custodian
+          <select name="custodian" defaultValue={report.custodian} className={select}>
+            <option value="">Everyone</option>
+            <option value={UNASSIGNED}>No custodian</option>
+            {custodianNames.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
           </select>
         </label>
         <label className={label}>

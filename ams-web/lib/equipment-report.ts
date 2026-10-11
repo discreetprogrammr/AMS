@@ -7,12 +7,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getInternalOrgIds } from "@/lib/internal-org";
 import { loadAssemblyIds, withoutAssemblies } from "@/lib/assemblies";
+import { custodianKey } from "@/lib/custodians";
 import {
   ASSIGNMENT_STATUSES,
   CONDITIONS,
   EVERY_VIEW,
   NONE,
   SEGMENTS,
+  UNASSIGNED,
   VIEWS,
   applyInternalFilters,
   labelFor,
@@ -56,6 +58,7 @@ export type ReportRow = {
 
 export type ReportGroup = { label: string; rows: ReportRow[]; cost: number };
 export type EquipmentReport = {
+  custodian: string; // "" = everyone, UNASSIGNED = items with no custodian, else a name
   groups: ReportGroup[];
   items: number;
   cost: number;
@@ -69,7 +72,12 @@ export type EquipmentReport = {
 type Params = Record<string, string | string[] | undefined>;
 const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)?.trim() ?? "";
 
-export function parseReportParams(params: Params): { filters: InternalFilters; statusParam: string; group: GroupKey } {
+export function parseReportParams(params: Params): {
+  filters: InternalFilters;
+  statusParam: string;
+  group: GroupKey;
+  custodian: string;
+} {
   const statusParam = first(params.status);
   const filters = parseInternalFilters({
     segment: first(params.segment),
@@ -81,7 +89,10 @@ export function parseReportParams(params: Params): { filters: InternalFilters; s
   if (statusParam === EVERY_VIEW) filters.view = EVERY_VIEW;
   const g = first(params.group);
   const group = GROUPS.some((x) => x.value === g) ? (g as GroupKey) : "none";
-  return { filters, statusParam: filters.view, group };
+  // The custodian is matched in code (loadEquipmentReport), ignoring capitals
+  // and spacing, so "Lourence" and "lourence " are one person here as they are
+  // on the Custodians tab; the list query's exact match would split them.
+  return { filters, statusParam: filters.view, group, custodian: first(params.custodian) };
 }
 
 export const cost = (v: number | string | null | undefined) => {
@@ -127,8 +138,9 @@ export function groupRows(rows: ReportRow[], key: GroupKey): ReportGroup[] {
 }
 
 /** A line saying what the report covers, for the page and the printout. */
-export function describeReport(filters: InternalFilters, group: GroupKey): string {
+export function describeReport(filters: InternalFilters, group: GroupKey, custodian = ""): string {
   const parts: string[] = [];
+  if (custodian) parts.push(`Custodian: ${custodian === UNASSIGNED ? "no custodian" : custodian}`);
   if (filters.segment) parts.push(`Segment: ${labelFor(SEGMENTS, filters.segment)}`);
   if (filters.department) parts.push(`Department: ${filters.department === NONE ? "not set" : filters.department}`);
   if (filters.category) parts.push(`Category: ${filters.category === NONE ? "not set" : filters.category}`);
@@ -150,10 +162,18 @@ export function statusText(r: ReportRow): string {
 const FIELDS =
   "id, asset_tag, asset_category, description, brand, model, serial_number, quantity, unit, segment, custodian, department, assignment_status, condition, date_acquired, acquisition_cost, warranty_end_date";
 
+/** Keeps one person's items (ignoring capitals and spacing), or the items with no custodian. */
+export function filterByCustodian<T extends { custodian: string | null }>(rows: T[], custodian: string): T[] {
+  if (!custodian) return rows;
+  if (custodian === UNASSIGNED) return rows.filter((r) => !custodianKey(r.custodian));
+  const key = custodianKey(custodian);
+  return rows.filter((r) => custodianKey(r.custodian) === key);
+}
+
 /** Loads the report. Internal equipment only, whatever is in the URL. */
 export async function loadEquipmentReport(supabase: SupabaseClient, params: Params): Promise<EquipmentReport> {
-  const { filters, statusParam, group } = parseReportParams(params);
-  const base = { filters, statusParam, group, description: describeReport(filters, group) };
+  const { filters, statusParam, group, custodian } = parseReportParams(params);
+  const base = { filters, statusParam, group, custodian, description: describeReport(filters, group, custodian) };
   const orgIds = await getInternalOrgIds(supabase);
   if (orgIds.length === 0) return { ...base, groups: [], items: 0, cost: 0, error: null };
 
@@ -162,7 +182,10 @@ export async function loadEquipmentReport(supabase: SupabaseClient, params: Para
   const { data, error } = await query;
   if (error) return { ...base, groups: [], items: 0, cost: 0, error: error.message };
 
-  const rows = withoutAssemblies((data ?? []) as ReportRow[], await loadAssemblyIds(supabase, orgIds));
+  const rows = filterByCustodian(
+    withoutAssemblies((data ?? []) as ReportRow[], await loadAssemblyIds(supabase, orgIds)),
+    custodian,
+  );
   const groups = groupRows(rows, group);
   return { ...base, groups, items: rows.length, cost: rows.reduce((n, r) => n + cost(r.acquisition_cost), 0), error: null };
 }

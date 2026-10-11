@@ -18,7 +18,7 @@ export default async function PrintReportPage({
   const report = await loadEquipmentReport(supabase, searchParams);
 
   const qs = new URLSearchParams();
-  for (const k of ["segment", "department", "category", "status", "group"]) {
+  for (const k of ["segment", "department", "category", "custodian", "status", "group"]) {
     const v = searchParams[k];
     if (typeof v === "string" && v) qs.set(k, v);
   }

@@ -5,6 +5,8 @@ import { isHrAdminPreset } from "@/lib/hr-admin-preset";
 import { AppShell } from "@/components/app-shell";
 import { AssetForm } from "../asset-form";
 import { createAsset, nextInternalAssetTag } from "../actions";
+import { getInternalOrgIds } from "@/lib/internal-org";
+import { loadCustodianNames } from "../custodian-names";
 
 export default async function NewAssetPage({
   searchParams,
@@ -36,6 +38,7 @@ export default async function NewAssetPage({
     .eq("is_internal", internal)
     .order("name");
   const suggestedTag = internal ? await nextInternalAssetTag(supabase) : undefined;
+  const custodianNames = internal ? await loadCustodianNames(supabase, await getInternalOrgIds(supabase)) : [];
 
   return (
     <AppShell profile={profile} title={internal ? "Add Internal Equipment" : "Add Asset"}>
@@ -50,6 +53,7 @@ export default async function NewAssetPage({
           action={createAsset}
           mode={internal ? "internal" : "client"}
           suggestedTag={suggestedTag}
+          custodianNames={custodianNames}
           cancelHref={internal ? "/assets?org=" + (organizations?.[0]?.id ?? "") : "/assets"}
         />
       </div>

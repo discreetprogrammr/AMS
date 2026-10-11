@@ -31,7 +31,7 @@ export default async function CustodianPage({
   // Everyone else who holds equipment, so a rename onto one of them is
   // recognised as a merge.
   const everyone = summariseCustodians((await loadAllHeld(supabase)).rows).map((p) => p.name);
-  const needsRepair = rows.filter((r) => r.condition === "for_repair" || r.condition === "damaged").length;
+  const needsRepair = rows.filter((r) => r.condition === "for_repair" || r.condition === "damaged" || r.assignment_status === "for_repair").length;
   const clearanceHref = `/custodians/clearance?name=${encodeURIComponent(name)}`;
 
   return (

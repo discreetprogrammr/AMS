@@ -24,6 +24,8 @@ import { UploadDocumentButton } from "./upload-document-button";
 import { InternalDocumentsCard } from "./internal-documents-card";
 import { loadInternalActivity } from "@/lib/activity";
 import { canViewActivity } from "@/lib/hr-admin-preset";
+import { getInternalOrgIds } from "@/lib/internal-org";
+import { loadCustodianNames } from "../custodian-names";
 
 const EQUIPMENT_LABEL: Record<string, string> = {
   xray_screening: "X-ray Screening",
@@ -129,6 +131,12 @@ export default async function EditAssetPage({
             : Promise.resolve({ data: null }),
         ])
       : [{ data: null }, { data: null }];
+
+  // Names for the Custodian drop-down on an internal item's form.
+  const custodianNames =
+    isStaff && isInternalAsset
+      ? await loadCustodianNames(supabase, await getInternalOrgIds(supabase), asset.custodian)
+      : [];
 
   // The audit trail itself is Super Admin only, so an admin's own History card
   // came back empty. For internal equipment it is read through the Activity
@@ -268,6 +276,7 @@ export default async function EditAssetPage({
             organizations={formOrganizations}
             mode={isInternalAsset ? "internal" : "client"}
             action={boundUpdate}
+            custodianNames={custodianNames}
             defaultValues={{
               ...asset,
               site_address: asset.sites?.address ?? "",

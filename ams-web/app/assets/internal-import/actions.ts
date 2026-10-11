@@ -10,6 +10,7 @@ import {
   INTERNAL_TAG_PATTERN,
   OWNERSHIPS,
   SEGMENTS,
+  UNITS,
   deriveInternalStatus,
   matchOption,
   nextInternalTagFrom,
@@ -37,6 +38,7 @@ export type InternalImportRow = {
   model: string | null;
   serial_number: string | null;
   quantity: number;
+  unit: string;
   ownership: string | null;
   date_acquired: string | null;
   acquisition_cost: number | null;
@@ -140,6 +142,10 @@ async function readAndValidate(supabase: Supabase, formData: FormData): Promise<
     const quantity = qtyRaw === null ? 1 : Number(qtyRaw);
     if (!Number.isInteger(quantity) || quantity < 1) return fail(`Qty must be a whole number of at least 1 (got "${qtyRaw}").`);
 
+    const unitRaw = trimmedOrNull(raw["Unit"]);
+    const unit = unitRaw ? matchOption(UNITS, unitRaw) : "pc";
+    if (!unit) return fail(`Unit must be one of: ${UNITS.map((u) => u.label).join(", ")} (got "${unitRaw}").`);
+
     const costRaw = trimmedOrNull(raw["Acquisition Cost"])?.replace(/[₱,\s]/g, "") ?? null;
     const cost = costRaw === null ? null : Number(costRaw);
     if (cost !== null && (!Number.isFinite(cost) || cost < 0)) return fail(`Acquisition Cost must be a number, 0 or more (got "${raw["Acquisition Cost"]}").`);
@@ -169,6 +175,7 @@ async function readAndValidate(supabase: Supabase, formData: FormData): Promise<
       model,
       serial_number: serial,
       quantity,
+      unit,
       ownership: ownership.value,
       date_acquired: trimmedOrNull(raw["Date Acquired"]),
       acquisition_cost: cost,
@@ -238,6 +245,7 @@ export async function commitInternalImport(formData: FormData): Promise<Internal
         model: r.model,
         serial_number: r.serial_number,
         quantity: r.quantity,
+        unit: r.unit,
         ownership: r.ownership,
         supplier: r.supplier,
         date_acquired: r.date_acquired,

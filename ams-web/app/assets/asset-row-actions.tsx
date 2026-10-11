@@ -21,9 +21,13 @@ import { deleteAsset } from "./actions";
 export function AssetRowActions({
   assetId,
   assetTag,
+  guarded = false,
 }: {
   assetId: string;
   assetTag: string;
+  // HR & Admin preset: deleteAsset refuses when anything is linked to the
+  // asset, so the dialog does not promise a cascade.
+  guarded?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<{ top: number; right: number } | null>(
@@ -112,7 +116,9 @@ export function AssetRowActions({
               action={deleteAsset.bind(null, assetId)}
               onSubmit={(e) => {
                 const ok = window.confirm(
-                  `Delete asset ${assetTag}? This also removes its service records, tickets, and other linked history. This can't be undone.`,
+                  guarded
+                    ? `Delete asset ${assetTag}? This can't be undone.`
+                    : `Delete asset ${assetTag}? This also removes its service records, tickets, and other linked history. This can't be undone.`,
                 );
                 if (!ok) {
                   e.preventDefault();

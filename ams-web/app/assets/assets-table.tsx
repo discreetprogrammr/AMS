@@ -13,6 +13,7 @@ import {
 } from "@/lib/internal-equipment";
 import { AssetRowActions } from "./asset-row-actions";
 import { InternalStatusBadges } from "./internal-badges";
+import { BulkEditBar } from "./bulk-edit-bar";
 
 const EQUIPMENT_LABEL: Record<string, string> = {
   xray_screening: "X-ray Screening",
@@ -63,6 +64,7 @@ export function AssetsTable({
   orgId = "",
   q = "",
   filters,
+  guardedDelete = false,
   emptyMessage,
 }: {
   assets: AssetRow[];
@@ -75,15 +77,36 @@ export function AssetsTable({
   orgId?: string;
   q?: string;
   filters?: InternalFilters;
+  // HR & Admin preset: the server refuses a delete that would cascade.
+  guardedDelete?: boolean;
   emptyMessage: string;
 }) {
   const router = useRouter();
   const [filter, setFilter] = useState<FilterKey>("all");
+  // Internal view, staff: tick rows to edit several at once (BulkEditBar).
+  const bulkEnabled = internalView && isStaff;
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const rows = useMemo(() => {
     if (internalView || filter === "all") return assets;
     return assets.filter((a) => a.status === filter);
   }, [assets, filter, internalView]);
+
+  // Only rows still on screen count, so a changed filter cannot leave
+  // invisible ticks behind.
+  const selectedIds = rows.filter((r) => selected.has(r.id)).map((r) => r.id);
+  const allTicked = rows.length > 0 && selectedIds.length === rows.length;
+  function toggleOne(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function toggleAll() {
+    setSelected(allTicked ? new Set() : new Set(rows.map((r) => r.id)));
+  }
 
   return (
     <div>
@@ -123,11 +146,25 @@ export function AssetsTable({
       </div>
       )}
 
+      {bulkEnabled && selectedIds.length > 0 && (
+        <BulkEditBar ids={selectedIds} onClear={() => setSelected(new Set())} />
+      )}
+
       <div className="overflow-x-auto rounded-xl border border-hairline bg-surface">
         <table className="w-full text-left text-sm">
           <thead className="bg-surface-2 text-xs uppercase tracking-wide text-slate-500">
             {internalView ? (
               <tr>
+                {bulkEnabled && (
+                  <th className="w-10 px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={allTicked}
+                      onChange={toggleAll}
+                      aria-label="Select all shown items"
+                    />
+                  </th>
+                )}
                 <th className="px-4 py-3">Asset Tag</th>
                 <th className="px-4 py-3">Category</th>
                 <th className="px-4 py-3">Description</th>
@@ -138,7 +175,7 @@ export function AssetsTable({
                 <th className="px-4 py-3">Segment</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Warranty End</th>
-                {isStaff && <th className="px-4 py-3 text-right">Actions</th>}
+                {isStaff && <th className="sticky right-0 bg-surface-2 px-4 py-3 text-right">Actions</th>}
               </tr>
             ) : (
             <tr>
@@ -159,6 +196,16 @@ export function AssetsTable({
                 onClick={() => router.push(`/assets/${asset.id}`)}
                 className="cursor-pointer border-t border-hairline hover:bg-surface-2"
               >
+                {bulkEnabled && (
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(asset.id)}
+                      onChange={() => toggleOne(asset.id)}
+                      aria-label={`Select ${asset.asset_tag}`}
+                    />
+                  </td>
+                )}
                 <td className="px-4 py-3 font-medium text-ink">{asset.asset_tag}</td>
                 <td className="px-4 py-3 text-ink-soft">{asset.asset_category ?? "—"}</td>
                 <td className="px-4 py-3 text-ink-soft">{asset.description ?? "—"}</td>
@@ -177,8 +224,8 @@ export function AssetsTable({
                 </td>
                 <td className="px-4 py-3 text-ink-soft">{asset.warranty_end_date ?? "—"}</td>
                 {isStaff && (
-                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                    <AssetRowActions assetId={asset.id} assetTag={asset.asset_tag} />
+                  <td className="sticky right-0 bg-surface px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                    <AssetRowActions assetId={asset.id} assetTag={asset.asset_tag} guarded={guardedDelete} />
                   </td>
                 )}
               </tr>
@@ -211,7 +258,7 @@ export function AssetsTable({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={internalView ? (isStaff ? 11 : 10) : isStaff ? 7 : 6} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={internalView ? (isStaff ? 12 : 10) : isStaff ? 7 : 6} className="px-4 py-8 text-center text-slate-500">
                   {emptyMessage}
                 </td>
               </tr>

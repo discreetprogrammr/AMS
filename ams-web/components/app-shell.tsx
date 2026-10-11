@@ -3,6 +3,7 @@ import type { Profile } from "@/lib/supabase/profile";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 import { MobileNavProvider } from "./mobile-nav";
+import { isHrAdminPreset } from "@/lib/hr-admin-preset";
 
 // Shared page shell: sidebar + topbar around a scrollable content area.
 // Every page wraps its content in this instead of hand-rolling its own nav
@@ -32,7 +33,12 @@ export function AppShell({
             an inner `overflow-x-auto` wrapper has nothing to actually
             scroll within on narrow viewports. */}
         <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-          <Topbar title={title} subtitle={subtitle} actions={actions} />
+          <Topbar
+            title={title}
+            subtitle={subtitle}
+            actions={actions}
+            hidePush={profile?.role !== "super_admin" && isHrAdminPreset(profile?.hidden_modules)}
+          />
           <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
         </div>
       </div>

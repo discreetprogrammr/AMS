@@ -7,7 +7,7 @@ import { UploadDocumentModal } from "./upload-document-modal";
 // offer this action without the whole page needing to become a client
 // component just to hold the modal's open/closed state — same reasoning as
 // app/parts/receive-stock-button.tsx.
-export function UploadDocumentButton({ assetId }: { assetId: string }) {
+export function UploadDocumentButton({ assetId, internal = false }: { assetId: string; internal?: boolean }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -17,10 +17,10 @@ export function UploadDocumentButton({ assetId }: { assetId: string }) {
         onClick={() => setOpen(true)}
         className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm font-medium text-blue-400 hover:bg-blue-500/20"
       >
-        Upload Document
+        {internal ? "Add Photo / Document" : "Upload Document"}
       </button>
       {open && (
-        <UploadDocumentModal assetId={assetId} onClose={() => setOpen(false)} />
+        <UploadDocumentModal assetId={assetId} internal={internal} onClose={() => setOpen(false)} />
       )}
     </>
   );

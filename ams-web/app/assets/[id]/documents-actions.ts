@@ -4,7 +4,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/supabase/profile";
-import { makeDocumentPath, MAX_DOCUMENT_BYTES } from "@/lib/documents";
+import {
+  DOCUMENT_CATEGORIES,
+  INTERNAL_DOCUMENT_CATEGORIES,
+  makeDocumentPath,
+  MAX_DOCUMENT_BYTES,
+} from "@/lib/documents";
+import { getInternalOrgIds } from "@/lib/internal-org";
+import { denyHrAdminPresetUnlessInternalAsset } from "@/lib/hr-admin-guard";
 
 // Staff-only. Client-invoked (throw-on-error) rather than a plain <form
 // action> — this is called from upload-document-modal.tsx, which needs to
@@ -19,6 +26,8 @@ import { makeDocumentPath, MAX_DOCUMENT_BYTES } from "@/lib/documents";
 // supported boundary type (it's exactly what a native <form action> submit
 // already sends under the hood), so wrapping the file in one sidesteps it.
 export async function uploadDocument(assetId: string, formData: FormData): Promise<void> {
+  // HR & Admin preset: internal equipment only (photos, receipts, warranty).
+  await denyHrAdminPresetUnlessInternalAsset(assetId);
   await requireStaff(`/assets/${assetId}`);
 
   const file = formData.get("file");
@@ -33,6 +42,17 @@ export async function uploadDocument(assetId: string, formData: FormData): Promi
   }
 
   const supabase = await createClient();
+
+  // Which categories are on offer depends on the asset: internal equipment
+  // has its own list (schema_step50.sql). The server decides, not the form.
+  const { data: asset } = await supabase.from("assets").select("organization_id").eq("id", assetId).maybeSingle();
+  if (!asset) throw new Error("That asset no longer exists.");
+  const internalOrgIds = await getInternalOrgIds(supabase);
+  const allowed = internalOrgIds.includes(asset.organization_id)
+    ? INTERNAL_DOCUMENT_CATEGORIES
+    : DOCUMENT_CATEGORIES;
+  if (!allowed.some((c) => c.value === category)) throw new Error("That category is not available for this asset.");
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -72,6 +92,7 @@ export async function uploadDocument(assetId: string, formData: FormData): Promi
 // redirect-on-error rather than throw, since there's no client-side catch
 // wrapping this one.
 export async function deleteDocument(assetId: string, documentId: string) {
+  await denyHrAdminPresetUnlessInternalAsset(assetId);
   await requireStaff(`/assets/${assetId}`);
 
   const supabase = await createClient();
@@ -80,9 +101,12 @@ export async function deleteDocument(assetId: string, documentId: string) {
     .from("asset_documents")
     .select("file_path")
     .eq("id", documentId)
+    .eq("asset_id", assetId)
     .single();
 
-  const { error } = await supabase.from("asset_documents").delete().eq("id", documentId);
+  // asset_id as well as id, so a document can only be removed through the
+  // asset it belongs to (the internal-asset check above is on assetId).
+  const { error } = await supabase.from("asset_documents").delete().eq("id", documentId).eq("asset_id", assetId);
   if (error) {
     redirect(`/assets/${assetId}?error=${encodeURIComponent(error.message)}`);
   }

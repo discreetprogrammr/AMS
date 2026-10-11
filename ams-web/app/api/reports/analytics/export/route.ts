@@ -1,4 +1,5 @@
 import { getAnalytics } from "@/lib/analytics";
+import { forbidHrAdminPreset } from "@/lib/hr-admin-guard";
 
 function csvEscape(value: unknown): string {
   const str = String(value ?? "");
@@ -12,6 +13,10 @@ function csvEscape(value: unknown): string {
 // always matches what's on screen — including RLS scoping (a client's
 // session only ever sees their own org's rows, same as everywhere else).
 export async function GET() {
+  // HR & Admin preset users get nothing from client-facing routes.
+  const forbidden = await forbidHrAdminPreset();
+  if (forbidden) return forbidden;
+
   const { months, totals } = await getAnalytics();
 
   const header = [

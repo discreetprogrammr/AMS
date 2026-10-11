@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/supabase/profile";
+import { isHrAdminPreset } from "@/lib/hr-admin-preset";
+import { assetDeleteBlocker } from "@/lib/hr-admin-guard";
 import { resolveSiteCoordinates } from "@/lib/site-location";
 import {
   ASSIGNMENT_STATUSES,
@@ -268,7 +270,9 @@ async function updateInternalAsset(supabase: Supabase, assetId: string, formData
   const site_id = await resolveSiteId(supabase, parsed.values.organization_id, formData.get("site_address"));
   const { error } = await supabase
     .from("assets")
-    .update({ ...parsed.values, asset_tag: tag, site_id })
+    // updated_at has no trigger on assets, so set it here: the equipment
+    // dashboard's "recently changed" list reads it.
+    .update({ ...parsed.values, asset_tag: tag, site_id, updated_at: new Date().toISOString() })
     .eq("id", assetId);
   if (error) return back(internalSaveError(error, tag));
 
@@ -277,10 +281,16 @@ async function updateInternalAsset(supabase: Supabase, assetId: string, formData
 }
 
 export async function createAsset(formData: FormData) {
-  await requireStaff();
+  const profile = await requireStaff();
 
   const supabase = await createClient();
-  if (await isInternalOrganization(supabase, String(formData.get("organization_id")))) {
+  const internalOrg = await isInternalOrganization(supabase, String(formData.get("organization_id")));
+  // HR & Admin preset: internal organization only, decided here and not by
+  // the form. Other admins are unchanged (follow-up: they are not checked).
+  if (isHrAdminPreset(profile.hidden_modules) && !internalOrg) {
+    redirect(`/assets/new?internal=1&error=${encodeURIComponent("You can only add internal equipment.")}`);
+  }
+  if (internalOrg) {
     return createInternalAsset(supabase, formData);
   }
   const values = parseAssetForm(formData);
@@ -309,10 +319,24 @@ export async function createAsset(formData: FormData) {
 }
 
 export async function updateAsset(assetId: string, formData: FormData) {
-  await requireStaff(`/assets/${assetId}`);
+  const profile = await requireStaff(`/assets/${assetId}`);
 
   const supabase = await createClient();
-  if (await isInternalOrganization(supabase, String(formData.get("organization_id")))) {
+  const internalOrg = await isInternalOrganization(supabase, String(formData.get("organization_id")));
+  // HR & Admin preset: both the asset being edited and the organization it
+  // would end up in must be internal. Other admins are unchanged.
+  if (isHrAdminPreset(profile.hidden_modules)) {
+    const { data: existing } = await supabase
+      .from("assets")
+      .select("organization_id")
+      .eq("id", assetId)
+      .maybeSingle();
+    const existingInternal = existing ? await isInternalOrganization(supabase, existing.organization_id) : false;
+    if (!existingInternal || !internalOrg) {
+      redirect(`/assets?error=${encodeURIComponent("You can only edit internal equipment.")}`);
+    }
+  }
+  if (internalOrg) {
     return updateInternalAsset(supabase, assetId, formData);
   }
   const values = parseAssetForm(formData);
@@ -343,9 +367,28 @@ export async function updateAsset(assetId: string, formData: FormData) {
 // is a real cascading delete at the database level — the confirm dialog
 // on the client side says as much rather than hiding it.
 export async function deleteAsset(assetId: string) {
-  await requireStaff();
+  const profile = await requireStaff();
 
   const supabase = await createClient();
+
+  // HR & Admin preset only (other admins keep the cascading delete above;
+  // follow-up): internal equipment only, and refuse rather than cascade.
+  // The count check lives here, in the action, not in the confirm dialog.
+  if (isHrAdminPreset(profile.hidden_modules)) {
+    const refuse = (message: string) => redirect(`/assets?error=${encodeURIComponent(message)}`);
+    const { data: target } = await supabase
+      .from("assets")
+      .select("asset_tag, organization_id")
+      .eq("id", assetId)
+      .maybeSingle();
+    if (!target) return refuse("That asset no longer exists.");
+    if (!(await isInternalOrganization(supabase, target.organization_id))) {
+      return refuse("You can only delete internal equipment.");
+    }
+    const blocker = await assetDeleteBlocker(supabase, assetId, target.asset_tag);
+    if (blocker) return refuse(blocker);
+  }
+
   const { error } = await supabase.from("assets").delete().eq("id", assetId);
 
   if (error) {

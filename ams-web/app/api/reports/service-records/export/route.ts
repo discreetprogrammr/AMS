@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getInternalOrgIds, touchesInternalOrg } from "@/lib/internal-org";
 import { reportKindOf, REPORT_KIND_ORDER, type ReportKind } from "@/lib/report-types";
+import { forbidHrAdminPreset } from "@/lib/hr-admin-guard";
 
 function csvEscape(value: unknown): string {
   const str = String(value ?? "");
@@ -16,6 +17,10 @@ function isReportKind(value: string | null): value is ReportKind {
 }
 
 export async function GET(request: NextRequest) {
+  // HR & Admin preset users get nothing from client-facing routes.
+  const forbidden = await forbidHrAdminPreset();
+  if (forbidden) return forbidden;
+
   // One shared source of truth for the six report kinds (lib/report-types.ts)
   // — this used to re-declare its own PM_TYPES array independently from
   // app/reports/page.tsx, which is exactly the kind of duplication that

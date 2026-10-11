@@ -1,8 +1,14 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { applyInternalEquipmentPreset, updateHiddenModules } from "./actions";
+import {
+  applyHrAdminPreset,
+  applyInternalEquipmentPreset,
+  removeHrAdminPreset,
+  updateHiddenModules,
+} from "./actions";
 import { modulesForRole } from "@/lib/nav-items";
+import { isHrAdminPreset } from "@/lib/hr-admin-preset";
 
 export type UserAccessRow = {
   id: string;
@@ -111,6 +117,27 @@ function UserRow({
     });
   }
 
+  // HR & Admin preset: set and removed as a whole. Its checkboxes are not
+  // shown, so a stray tick cannot half-undo it.
+  const [hrPreset, setHrPreset] = useState(() => isHrAdminPreset(row.hidden_modules));
+
+  function handleHrPreset() {
+    startTransition(async () => {
+      await applyHrAdminPreset(row.id);
+      setHrPreset(true);
+      setSaved(true);
+    });
+  }
+
+  function handleRemoveHrPreset() {
+    startTransition(async () => {
+      await removeHrAdminPreset(row.id);
+      setHrPreset(false);
+      setHidden(new Set());
+      setSaved(true);
+    });
+  }
+
   const hiddenCount = row.hidden_modules.length;
 
   return (
@@ -128,7 +155,12 @@ function UserRow({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {hiddenCount > 0 && (
+          {hrPreset && (
+            <span className="rounded-full bg-blue-500/15 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-blue-400">
+              HR &amp; Admin
+            </span>
+          )}
+          {!hrPreset && hiddenCount > 0 && (
             <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-amber-400">
               {hiddenCount} hidden
             </span>
@@ -137,7 +169,27 @@ function UserRow({
         </div>
       </button>
 
-      {expanded && (
+      {expanded && hrPreset && (
+        <div className="border-t border-hairline px-5 py-4">
+          <p className="text-xs text-slate-500">
+            HR &amp; Admin (internal equipment): this person sees Dashboard (their own internal-equipment
+            dashboard) and Assets only, and can add, edit and delete internal equipment only.
+          </p>
+          <div className="mt-4 flex items-center gap-3">
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={handleRemoveHrPreset}
+              className="rounded-lg border border-hairline-strong px-4 py-1.5 text-xs font-medium text-ink-soft hover:bg-surface-hover disabled:opacity-50"
+            >
+              Remove HR &amp; Admin preset
+            </button>
+            {saved && !isPending && <span className="text-xs text-emerald-400">Saved.</span>}
+          </div>
+        </div>
+      )}
+
+      {expanded && !hrPreset && (
         <div className="border-t border-hairline px-5 py-4">
           <p className="mb-3 text-xs text-slate-500">
             Unchecking a module removes it from this person&apos;s sidebar and blocks them from opening it
@@ -169,6 +221,17 @@ function UserRow({
             >
               Internal equipment only
             </button>
+            {isStaff && (
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={handleHrPreset}
+                title="Dashboard (their own internal-equipment dashboard) and Assets only; internal equipment only. Saves immediately."
+                className="rounded-lg border border-hairline-strong px-4 py-1.5 text-xs font-medium text-ink-soft hover:bg-surface-hover disabled:opacity-50"
+              >
+                HR &amp; Admin (internal equipment)
+              </button>
+            )}
             {saved && !isPending && <span className="text-xs text-emerald-400">Saved.</span>}
           </div>
         </div>

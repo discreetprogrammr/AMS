@@ -11,10 +11,13 @@ Implements Step 1 of the build order in `AMS_Spec_v0.3.docx`: Supabase project s
 1. **Create (or open) your Supabase project** at supabase.com — free tier is fine for the build/demo phase (Section 8 of the spec).
 2. Go to the **SQL Editor** in the Supabase dashboard.
 3. Paste the full contents of `schema.sql` and run it. This creates every table, enum, trigger, and RLS policy in one pass.
-4. **Create your first internal-staff user**: sign up a user through Supabase Auth (dashboard → Authentication → Add user, or your app's sign-up flow), then insert a matching row into `profiles` with `role = 'internal_staff'` so you can log in and manage data:
+4. **Create a staff user** (this step originally said `role = 'internal_staff'`; `schema_step22.sql` renamed that role to `admin` and added `super_admin`, so the current roles are `admin`, `super_admin` and `client_viewer`). There is no invite flow in the app and no trigger that creates a profile, so it is two manual steps:
+   1. Supabase dashboard → **Authentication** → **Users** → **Add user** → **Create new user**: enter the email and a password, and tick **Auto Confirm User**. Copy the new user's **UID** from the Users list.
+   2. SQL Editor, insert the matching `profiles` row (use `'super_admin'` for a Super Admin; `'admin'` for everyone else on staff):
    ```sql
    insert into profiles (id, full_name, role)
-   values ('<the auth user's UUID>', 'Lourence Loque', 'internal_staff');
+   values ('<AUTH_USER_ID>', '<FULL NAME>', 'admin')
+   on conflict (id) do update set full_name = excluded.full_name, role = excluded.role;
    ```
 5. **Create a test organization and asset** to confirm everything works end to end:
    ```sql
@@ -2050,3 +2053,163 @@ Follows PR 4 and the internal-equipment merge (5234730). **No database change in
 ## Setup steps
 
 1. Read the new section in `CLAUDE.md` and check it against your understanding of the register.
+
+## Follow-up — Internal equipment register (HR & Admin preset and internal dashboard)
+
+Follows PR 4 ("Internal equipment only" preset) and the PR 6 CLAUDE.md rules. **No database change in this step**: the preset is stored in the existing `profiles.hidden_modules` (schema_step44.sql), so there is nothing to run first.
+
+**What's here**
+- **"HR & Admin (internal equipment)" preset** on User Access, for `admin` accounts only. The person sees exactly two sidebar items: **Dashboard** (their own internal-equipment dashboard) and **Assets**. The existing "Internal equipment only" preset is unchanged. A preset user's row shows an "HR & Admin" badge, no checkboxes, and a **Remove HR & Admin preset** button.
+- **How a preset user is identified**: a marker string `preset:hr_admin` stored in `hidden_modules` beside the hidden hrefs (`lib/hr-admin-preset.ts`). Not an exact match of the hidden list, which would stop matching as soon as a module is added or one box is ticked. `updateHiddenModules` keeps the marker and never accepts it from the client.
+- **Middleware is default-deny for them** (`lib/supabase/middleware.ts`): only `/assets` (except `/assets/import` and `/assets/scan`), `/equipment-dashboard`, `/profile` and `/login` open. Everything else, including `/dashboard`, `/` and any module added later, redirects to `/equipment-dashboard`; a blocked route adds `?access_denied=1`. Login still ends at `/dashboard`, which now bounces them on. `/equipment-dashboard` never redirects them, so there is no loop. Users without the preset behave as before; the only extra profile read is for `/dashboard`, `/` and `/user-access`.
+- **API routes** (`lib/hr-admin-guard.ts`, `forbidHrAdminPreset()`): 403 for preset users on the client asset export, unserviceable report, both import templates, the three report exports, the service-record PDF, the inventory export, document download and TURN credentials. Left open: the internal export (which they need) and `log-client-error`. The cron routes are untouched. The middleware matcher still excludes `/api/*`.
+- **Equipment dashboard** (`/equipment-dashboard`, staff): internal organizations only (`getInternalOrgIds`). Tiles: total, Pacific Horizon Tek, Team Fridays Digital, Needs attention; breakdowns by category, department, status and condition; a segment-by-category table; housekeeping (no custodian, no acquisition cost, no date acquired); the 10 most recently added or changed assets. Counts exclude retired / lost, like **All** on `/assets`. Every tile and row links to `/assets` with the matching filters. No warranty alerts, no cost totals. The client `/dashboard` is untouched.
+- **New `/assets` filters** so every dashboard link has a target: `condition`, `assignment` (shown as Status), `missing` (`acquisition_cost` or `date_acquired`), and "Not set" for category and department. They apply to the export too.
+- **Assets locked to the internal organization for preset users**: the organization list is internal only, one is always selected, the Organization filter is hidden, `/assets/new` always opens the internal form, and a client asset's detail page is "not found" (its certificates, documents, tickets and QR / checklist links are not shown on internal assets either). `createAsset`, `updateAsset` and `deleteAsset` reject a non-internal organization for them, checked on the server. The Topbar push button is hidden for them.
+- **Delete, preset users only**: `deleteAsset` refuses when the asset has child assets (`parent_asset_id`) or any linked row in service_records, compliance_certificates, service_tickets, inventory_cycle_items, work_orders, alerts, inspections, calendar_events, pm_auto_runs or asset_documents, and says what and how many. The check is in the action, and a failed count also blocks (fails closed). Deletes are still captured by the `assets` audit trigger. For every other admin and super admin `deleteAsset` is unchanged: a cascading hard delete.
+- `updateInternalAsset` now sets `updated_at` (there is no trigger on `assets`), so "recently changed" is accurate. `/assets` now displays `?error=`, which the delete and edit redirects already sent.
+
+**Known limits (follow-up, deliberately not fixed here)**
+- `createAsset`, `updateAsset` and `deleteAsset` still trust the organization for **all other admins**: an admin can create, move or delete a client asset through them. Only preset users are checked.
+- The lock for preset users is in the app. A preset user is still an `admin` in the database, so RLS lets their session read and write client data; someone using the Supabase API directly with their token is not stopped. Closing that needs an RLS change (a schema step).
+- Server actions outside `app/assets/` (tickets, work orders and so on) are blocked by their pages' middleware rule, not by a check inside each action.
+- The Needs attention tile counts condition **For Repair** and **Damaged** (the same set as the Needs Repair pill): the condition list has no "poor".
+
+**Not verified against a signed-in preset session** unless the PR description says otherwise. `npx tsc --noEmit`, `npm run lint` and `npm run build` pass.
+
+## Setup steps
+
+1. Create the test user (Supabase dashboard → Authentication → Users → Add user, tick Auto Confirm User), then run in the SQL editor (profile row as in setup step 4 above, role `admin`):
+   ```sql
+   insert into profiles (id, full_name, role)
+   values ('<AUTH_USER_ID>', '<FULL NAME>', 'admin')
+   on conflict (id) do update set full_name = excluded.full_name, role = excluded.role;
+   ```
+2. Sign in as a Super Admin → **User Access** → find the user under **Staff** → **Edit Access** → **HR & Admin (internal equipment)**. "Saved." appears and the row shows an "HR & Admin" badge.
+3. Sign in as that user: you land on **Dashboard** (`/equipment-dashboard`); the sidebar shows only Dashboard and Assets; `/dashboard`, `/alerts` and `/clients` redirect to the dashboard.
+4. Dashboard numbers match `/assets` for the internal organization; tiles and rows open the right filtered list.
+5. On Assets: add, edit and delete an internal test item. Deleting `PHT-EQ-` items that have child assets or linked records is refused with a message. Change `?org=` to a client organization's id: it is ignored. Open a client asset's `/assets/<id>`: not found.
+
+## Follow-up — Internal equipment register: QR labels, custodian history and handover form
+
+Follows the HR & Admin preset above. Three small features for the internal register.
+
+## Database change, run this first
+
+Run `schema_step48.sql` in the Supabase SQL editor (the whole file). It is idempotent. It creates `asset_custodian_history` (one row per holding: custodian, department, `started_at`, `ended_at`; `ended_at` null means current), a partial unique index so an asset has at most one current holder, RLS with a staff-read policy and no write policies, and an `after insert or update of custodian` trigger on `assets` that closes the old row and opens a new one. The trigger covers internal organizations only, so client assets are untouched, and it covers every write path (the app, load scripts, the SQL editor). The file ends by giving each internal asset that already has a custodian an opening row (dated `date_issued`, else `created_at`), only where it has no history yet.
+
+Why a trigger rather than app code: the batch loads and any manual SQL change the custodian without going through the app. History is deleted with its asset (`on delete cascade`); the `assets` audit trigger still records the asset itself. The HR & Admin delete check does not count these rows, since every held item has one. The app works before the SQL is run: the history card says it is not set up yet.
+
+**What's here**
+- **QR labels** (`/assets/labels`): a printable sheet of labels (QR, asset tag, description, segment) for whatever is filtered on `/assets`, up to 300, or one label with `?id=`. Internal organizations only. Linked from **Print QR labels** on the internal list and **Print label** on each internal asset. The HR & Admin preset now sees the QR block on internal assets (without the client PM / CM checklist links).
+- **Custodian History** card on an internal asset's page: who held it, from when, until when, and who made the change.
+- **Handover form** (`/assets/<id>/handover`): a printable equipment handover / accountability form with the asset's details, current custodian, issue / return / transfer tick boxes and signature lines. Internal assets only.
+
+**Not verified signed in.** `npx tsc --noEmit` and `npm run lint` pass. The trigger and backfill have not been run against Supabase.
+
+## Setup steps
+
+1. Run `schema_step48.sql`. Check: `select count(*) from asset_custodian_history;` returns about the number of internal items that have a custodian.
+2. Open an internal asset: Custodian History shows one "Current" row. Change the custodian and save: the old row gets an end time, a new current row appears with your name under "set by".
+3. Clear the custodian and save: the old row is closed and no new current row appears.
+4. **Print handover form →** opens a white page with the asset's details and signature lines.
+5. `/assets` → **Print QR labels**, and **Print label →** on an asset: see the label checks in the PR description.
+
+## Follow-up — Internal equipment register: equipment stocktake
+
+Follows the custodian history step above. A physical count of the company equipment register: a yearly (or any time) "is each item here, and who has it?" check. Separate from the client Asset Verification (`inventory_cycles`), which is per site, stays untouched and stays hidden from the HR & Admin preset.
+
+## Database change, run this first
+
+Run `schema_step49.sql` in the Supabase SQL editor (the whole file). It is idempotent. It creates two tables:
+- `equipment_stocktakes`: name, scope (one segment or all), status (`open` / `completed`), who started it and when.
+- `equipment_stocktake_items`: one row per item, copied when the stocktake starts (tag, description, expected holder and department), then the result (`found`, `missing`, `different_holder`; null = not counted yet), the holder actually seen, a condition note, and who counted it and when.
+
+Both have RLS with a single staff-manage policy. Items keep their own copy of the tag and description, and `asset_id` is `on delete set null`, so a stocktake still reads correctly after an item is edited or deleted, and these rows never block deleting an asset. There are no audit triggers on purpose: `log_audit` would put these rows on the Audit Log page, which is meant for client-facing records. The app works before the SQL is run: `/assets/stocktake` says it is not set up.
+
+**What's here**
+- **`/assets/stocktake`** (linked as **Stocktake** on the internal Assets list): start a stocktake (name, and all segments or one), see all stocktakes with progress.
+- **Starting** takes a snapshot of every active internal item in scope, using the same rule as "All" on `/assets` (retired and lost items are left out).
+- **`/assets/stocktake/<id>`**: count item by item with **Found**, **Different holder** (type who holds it) or **Missing**, plus an optional condition note; **Clear** undoes an item. Views: To count (default), Found, Missing, Different holder, All, and a search box. **Complete stocktake** locks the counts (it warns if items are uncounted). **Delete stocktake** removes it and its counts.
+- **Report only, no automatic changes**: counting never edits the register. `/assets/stocktake/<id>/report` is a printable discrepancy report (missing, held by someone else, condition notes, not counted, signature lines), and **Export CSV** downloads every item with its result.
+- Available to Super Admin and Admin, including the HR & Admin preset.
+
+**Not verified signed in.** `npx tsc --noEmit` and `npm run lint` pass. The SQL has not been run against Supabase.
+
+## Setup steps
+
+1. Run `schema_step49.sql`.
+2. `/assets` (Pacific Horizon Tek selected) → **Stocktake** → start one named "TEST stocktake" with all segments. It opens with every active item listed as to count.
+3. Mark one item Found, one Missing, one Different holder (type a name) with a note. The tiles update and the item leaves the To count view. **Clear** puts one back.
+4. **Print report** shows the missing and different-holder items. **Export CSV** has one row per item.
+5. **Complete stocktake**: buttons disappear and counts can no longer change. Then **Delete stocktake** to remove the test.
+
+## Follow-up — Internal equipment register: bulk edit
+
+Follows the equipment stocktake above. **No database change in this step.**
+
+**What's here**
+- **Tick-and-edit on the internal Assets list** (staff): a checkbox on every row plus a select-all in the header. While anything is ticked, a bar appears above the table to set **Custodian**, **Department**, **Status** (assignment) and **Condition** for all ticked items at once. A field left blank, or "Leave unchanged", is not touched; **Clear custodian / Clear department** empty a field on purpose. A confirm dialog gives the count before it applies, and a green message reports how many items were updated.
+- **`bulkUpdateInternalAssets`** (`app/assets/bulk-actions.ts`), checked on the server: staff only; at most 200 items; every id must belong to an internal organization (`getInternalOrgIds`), and if any does not, nothing is changed; status and condition values must be valid. Each item's operating status is re-derived from its resulting condition and assignment status (`deriveInternalStatus`), as a single edit does, and `updated_at` is set. Items that end up with the same changes are updated in one statement.
+- Custodian changes made this way are logged by the custodian-history trigger (`schema_step48.sql`) like any other.
+- Only ticked rows that are still on screen are applied, so a changed filter cannot leave hidden ticks behind.
+
+**Not verified signed in.** `npx tsc --noEmit` and `npm run lint` pass.
+
+## Setup steps
+
+1. `/assets` for Pacific Horizon Tek, as Super Admin and as HR & Admin. Tick two or three **test** items: the bar appears with the count.
+2. Set only Department and apply: only the department changes; custodian, status and condition stay.
+3. Set Condition to For Repair: those items show the For Repair badge and their operating status becomes Down.
+4. Set a Custodian: each item's Custodian History card gets a new current row.
+5. Use **Clear custodian** and apply: the custodian empties and the history row is closed.
+6. Use the header checkbox with a pill such as "In Stock" chosen: it selects only the rows shown.
+
+## Follow-up — Internal equipment register: CSV import
+
+Follows bulk edit above. **No database change in this step.** The client importer (`/assets/import`) still rejects internal rows on purpose (spec section 8: they need a segment, PHT-EQ tags and a derived status). This is its internal counterpart.
+
+**What's here**
+- **`/assets/internal-import`** (linked as **Import CSV** on the internal Assets list; staff, including the HR & Admin preset): choose a CSV, preview what would happen, then import. The client importer stays hidden from the preset.
+- **Columns are the internal export's** (`INTERNAL_EXPORT_HEADER`), so a sheet exported from the register, or the downloadable template (`/api/assets/import/internal-template`), can be filled in and uploaded. Unit is ignored (no database column). Everything is added to the internal organization; the organization is never read from the file.
+- **Rules per row** (the same ones the single-item form enforces): Segment required; a description, or a brand or model; Asset No. optional, otherwise the next `PHT-EQ-NNNN` is given at import, and a given one must match the pattern and not already exist or repeat in the file; Status, Condition, Ownership and Segment accept the names shown in the app or the stored values; dates `YYYY-MM-DD`; Qty a whole number of at least 1; Acquisition Cost a number (₱ and commas are ignored). Operating status is derived from condition and status. A serial number already on another internal item, or repeated in the file, is skipped, not an error. Up to 500 rows.
+- **The import step re-reads and re-validates the uploaded file on the server** instead of trusting rows sent back by the browser. Rows are added one at a time (tag numbers depend on the previous row), with the unique index from `schema_step47.sql` refusing any collision; a row that fails is reported by row number and the rest continue.
+- Rows only ever add items. Existing items are never changed by an import.
+- The client importer's message for internal rows now points here.
+
+**Not verified signed in.** `npx tsc --noEmit` and `npm run lint` pass; option matching was checked in isolation.
+
+## Setup steps
+
+1. `/assets` (Pacific Horizon Tek) → **Import CSV** → **Download the template**. Open it, delete the example row, add two test rows (one with a blank Asset No., one with a typed unused `PHT-EQ-` number), save as CSV.
+2. **Preview Import**: "Will Import" shows 2; the table shows the first rows.
+3. Add a bad row (Segment blank, or Condition "Broken", or a date as `15/01/2026`) and preview again: it appears under errors with its row number and the reason.
+4. **Import**: "Imported 2 items." The new items appear on the list with the right tags and status. Delete the test items afterwards.
+5. Upload the same file again: the explicit tag is reported as already in use and the serials as skipped.
+
+## Follow-up — Internal equipment register: photos and documents per item
+
+Follows CSV import above. Uses the existing document library (`asset_documents`, `asset-documents` storage bucket, schema_step35.sql), with internal wording and categories.
+
+## Database change, run this first
+
+Run `schema_step50.sql` in the Supabase SQL editor. It is idempotent. The `category` check on `asset_documents` only allowed `manual`, `datasheet`, `compliance` and `other`; the file replaces it (looking the constraint up by what it checks, since step 35 created it unnamed) with one that also allows `photo`, `receipt` and `warranty`. Existing rows stay valid. Client assets keep offering their original four in the app: the app, not the constraint, decides which list an asset sees (`INTERNAL_DOCUMENT_CATEGORIES` in `lib/documents.ts`). Until the SQL is run, uploading a Photo / Receipt / Warranty fails with a constraint error; Manual and Other work.
+
+**What's here**
+- **Photos & Documents card** on an internal asset's page (staff, including the HR & Admin preset; internal equipment only). **Add Photo / Document** takes a photo, receipt or invoice, warranty card, manual or other file. Photos show as a thumbnail grid (click to download the original); everything else is a list. Delete asks first.
+- **Photos are shrunk in the browser** before upload (longest side 1600px, JPEG) unless already small, so a phone photo is a few hundred KB, not several MB.
+- **Server side**: the category list is decided by the asset (internal or not), not the form. For the HR & Admin preset, upload, delete and download work only for documents of internal assets (`denyHrAdminPresetUnlessInternalAsset`, and a check in `/api/documents/<id>/download`). Deleting a document now also requires the document to belong to the asset in the call, for everyone.
+- **`/api/documents/<id>/download?inline=1`** shows an image inline (JPEG, PNG, WebP, GIF only; SVG is never served inline). Everything else, and any request without the flag, stays a download. Every request is checked against the signed-in user; the bucket stays private.
+- **Upload size is now 4 MB** (`next.config.mjs`, `serverActions.bodySizeLimit`). Server Actions defaulted to 1 MB, which rejected most photos and PDFs, and Vercel caps a request body at 4.5 MB anyway. The upload form says so. This also applies to client asset documents, whose "25MB" limit could never have worked in production.
+- Documents on an internal asset still count in the HR & Admin delete check, so an item with files must have them deleted before the item can be deleted.
+
+**Not verified signed in.** `npx tsc --noEmit`, `npm run lint` and `npm run build` pass. The SQL has not been run against Supabase.
+
+## Setup steps
+
+1. Run `schema_step50.sql`.
+2. As Super Admin, open a **test** internal asset. The **Photos & Documents** card shows "Nothing on file yet". **Add Photo / Document**, choose a phone photo, category Photo, upload: a thumbnail appears.
+3. Add a PDF as Receipt / Invoice and another as Warranty: they appear in the list below the photos with their category. Click one: it downloads.
+4. Try a file over 4 MB: a clear message appears and nothing is uploaded.
+5. As HR & Admin: the same card and upload work. Delete a document: it asks first, then it is gone.
+6. In a private window with nobody signed in, open a thumbnail's `/api/documents/<id>/download` URL: it is refused or redirected to login, not shown.

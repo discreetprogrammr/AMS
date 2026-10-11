@@ -1,3 +1,5 @@
+import { forbidHrAdminPreset } from "@/lib/hr-admin-guard";
+
 // Downloadable starter CSV for bulk asset import (app/assets/import/). Same
 // hand-rolled CSV building as app/api/assets/export/route.ts, deliberately
 // not papaparse — this direction (object -> CSV text) is simple enough not
@@ -47,6 +49,10 @@ const EXAMPLE_ROW = [
 ];
 
 export async function GET() {
+  // HR & Admin preset users get nothing from client-facing routes.
+  const forbidden = await forbidHrAdminPreset();
+  if (forbidden) return forbidden;
+
   const csv = [HEADER, EXAMPLE_ROW]
     .map((row) => row.map(csvEscape).join(","))
     .join("\n");

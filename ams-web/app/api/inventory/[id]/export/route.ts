@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { forbidHrAdminPreset } from "@/lib/hr-admin-guard";
 
 function csvEscape(value: unknown): string {
   const str = String(value ?? "");
@@ -12,6 +13,10 @@ export async function GET(
   request: Request,
   { params }: { params: { id: string } },
 ) {
+  // HR & Admin preset users get nothing from client-facing routes.
+  const forbidden = await forbidHrAdminPreset();
+  if (forbidden) return forbidden;
+
   const supabase = await createClient();
 
   const { data: cycle } = await supabase

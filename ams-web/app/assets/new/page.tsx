@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 import { getProfile, requireStaff } from "@/lib/supabase/profile";
+import { isHrAdminPreset } from "@/lib/hr-admin-preset";
 import { AppShell } from "@/components/app-shell";
 import { AssetForm } from "../asset-form";
 import { createAsset, nextInternalAssetTag } from "../actions";
@@ -11,6 +13,12 @@ export default async function NewAssetPage({
 }) {
   await requireStaff();
   const profile = await getProfile();
+
+  // HR & Admin preset: internal equipment only, so the client form is
+  // never offered. (createAsset enforces this again on submit.)
+  if (isHrAdminPreset(profile?.hidden_modules) && searchParams?.internal !== "1") {
+    redirect("/assets/new?internal=1");
+  }
 
   const supabase = await createClient();
 

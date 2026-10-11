@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import type { Profile } from "@/lib/supabase/profile";
 import { isStaffRole, isSuperAdminRole } from "@/lib/supabase/roles";
 import { NAV_MODULES, ALWAYS_ACCESSIBLE_HREFS } from "@/lib/nav-items";
+import { EQUIPMENT_DASHBOARD_HREF, isHrAdminPreset } from "@/lib/hr-admin-preset";
 import { logout } from "@/app/login/actions";
 import { useMobileNav } from "./mobile-nav";
 import { MessagesUnreadDot } from "./messages-unread-dot";
@@ -139,12 +140,21 @@ export function Sidebar({ profile }: { profile: Profile | null }) {
   // lib/nav-items.ts) — same exemption lib/supabase/middleware.ts enforces
   // at the route level, so the sidebar and the actual block never disagree.
   const hiddenModules = profile?.hidden_modules ?? [];
-  const nav = buildNav().filter((item) => {
-    if (item.superAdminOnly && !isSuperAdmin) return false;
-    if (item.staffOnly && !isStaff) return false;
-    if (!ALWAYS_ACCESSIBLE_HREFS.includes(item.href) && hiddenModules.includes(item.href)) return false;
-    return true;
-  });
+  // "HR & Admin" preset (lib/hr-admin-preset.ts): exactly Dashboard, which
+  // points at their own internal-equipment dashboard, and Assets. Allow-list
+  // rather than hidden_modules, so a module added later stays hidden.
+  const hrAdminPreset = !isSuperAdmin && isHrAdminPreset(hiddenModules);
+  const nav = buildNav()
+    .filter((item) => {
+      if (hrAdminPreset) return item.href === "/dashboard" || item.href === "/assets";
+      if (item.superAdminOnly && !isSuperAdmin) return false;
+      if (item.staffOnly && !isStaff) return false;
+      if (!ALWAYS_ACCESSIBLE_HREFS.includes(item.href) && hiddenModules.includes(item.href)) return false;
+      return true;
+    })
+    .map((item) =>
+      hrAdminPreset && item.href === "/dashboard" ? { ...item, href: EQUIPMENT_DASHBOARD_HREF } : item,
+    );
 
   // Picks the single longest-matching href as "active" — needed now that
   // /assets/scan sits under /assets as its own sibling nav item rather

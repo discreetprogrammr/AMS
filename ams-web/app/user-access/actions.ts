@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireSuperAdmin } from "@/lib/supabase/profile";
 import { createServiceRoleClient } from "@/lib/supabase/service-role";
 import { INTERNAL_EQUIPMENT_HIDDEN_HREFS } from "@/lib/nav-items";
+import { HR_ADMIN_PRESET_MARKER, hrAdminHiddenModules } from "@/lib/hr-admin-preset";
 
 // User Access (schema_step44.sql) — Super Admin picking which sidebar
 // modules a specific staff or client account sees. hidden_modules is
@@ -17,9 +18,19 @@ export async function updateHiddenModules(userId: string, hiddenModules: string[
   await requireSuperAdmin();
 
   const supabase = createServiceRoleClient();
+
+  // The "HR & Admin" preset marker is never accepted from the client, and
+  // is kept if the user already has it: ticking boxes on a preset user must
+  // not quietly turn them into an ordinary admin (use "Remove HR & Admin
+  // preset" for that).
+  const { data: current } = await supabase.from("profiles").select("hidden_modules").eq("id", userId).single();
+  const keepMarker = (current?.hidden_modules ?? []).includes(HR_ADMIN_PRESET_MARKER);
+  const next = hiddenModules.filter((h) => h !== HR_ADMIN_PRESET_MARKER);
+  if (keepMarker) next.push(HR_ADMIN_PRESET_MARKER);
+
   const { error } = await supabase
     .from("profiles")
-    .update({ hidden_modules: hiddenModules })
+    .update({ hidden_modules: next })
     .eq("id", userId);
 
   if (error) {
@@ -61,4 +72,53 @@ export async function applyInternalEquipmentPreset(userId: string) {
 
   revalidatePath("/user-access");
   return hidden;
+}
+
+// "HR & Admin (internal equipment)" preset: Dashboard (their own internal
+// dashboard) and Assets only, internal equipment only. Hides every module
+// but Assets and stores the marker that lib/hr-admin-preset.ts looks for.
+// Admin accounts only: a client_viewer must never be given Assets-with-
+// write access by a preset, and super_admin is exempt from all of this.
+export async function applyHrAdminPreset(userId: string) {
+  await requireSuperAdmin();
+
+  const supabase = createServiceRoleClient();
+  const { data: target, error: lookupError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", userId)
+    .single();
+
+  if (lookupError) {
+    throw new Error(lookupError.message);
+  }
+  if (target.role !== "admin") {
+    throw new Error("The HR & Admin preset can only be applied to admin accounts.");
+  }
+
+  const hidden = hrAdminHiddenModules();
+  const { error } = await supabase.from("profiles").update({ hidden_modules: hidden }).eq("id", userId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  revalidatePath("/user-access");
+  return hidden;
+}
+
+// Back to an ordinary admin: nothing hidden. Only for HR & Admin preset
+// users, whose checkboxes are not shown (see user-access-list.tsx).
+export async function removeHrAdminPreset(userId: string) {
+  await requireSuperAdmin();
+
+  const supabase = createServiceRoleClient();
+  const { error } = await supabase.from("profiles").update({ hidden_modules: [] }).eq("id", userId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  revalidatePath("/user-access");
+  return [] as string[];
 }

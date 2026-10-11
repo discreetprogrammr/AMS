@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile, isStaffRole } from "@/lib/supabase/profile";
+import { isHrAdminPreset } from "@/lib/hr-admin-preset";
 import { AppShell } from "@/components/app-shell";
 import { SearchBar } from "@/components/search-bar";
 import {
@@ -19,6 +20,8 @@ export default async function AssetsPage({
     q?: string;
     deleted?: string;
     org?: string;
+    error?: string;
+    bulk?: string;
   };
 }) {
   const supabase = await createClient();
@@ -34,14 +37,17 @@ export default async function AssetsPage({
   // Filters live in the URL (?org=<uuid>&segment=<value>), staff only: a
   // client_viewer is already scoped to one organization by RLS. Segment
   // only means something for the internal organization (schema_step46).
-  const { data: orgList } = isStaff
-    ? await supabase
-        .from("organizations")
-        .select("id, name, is_internal")
-        .order("name")
-    : { data: [] };
+  //
+  // HR & Admin preset (lib/hr-admin-preset.ts): the list of organizations
+  // is internal organizations only, and one of them is always selected, so
+  // neither ?org= nor anything else in the URL can reach a client asset.
+  const hrAdminPreset = isStaff && isHrAdminPreset(profile?.hidden_modules);
+  let orgQuery = supabase.from("organizations").select("id, name, is_internal").order("name");
+  if (hrAdminPreset) orgQuery = orgQuery.eq("is_internal", true);
+  const { data: orgList } = isStaff ? await orgQuery : { data: [] };
   const organizations = orgList ?? [];
-  const selectedOrg = organizations.find((o) => o.id === searchParams?.org);
+  const selectedOrg =
+    organizations.find((o) => o.id === searchParams?.org) ?? (hrAdminPreset ? organizations[0] : undefined);
   const internalView = !!selectedOrg?.is_internal;
   // Segment / view / custodian / department / category / warranty only
   // mean something for the internal organization (parseInternalFilters).
@@ -65,7 +71,9 @@ export default async function AssetsPage({
     );
   }
 
-  const { data: assets, error } = await query;
+  // A preset user with no internal organization to select sees nothing,
+  // rather than an unscoped list.
+  const { data: assets, error } = hrAdminPreset && !selectedOrg ? { data: [], error: null } : await query;
 
   // Internal view extras: summary tiles (org + Segment only, not q or the
   // other filters) and the distinct values behind the dropdowns.
@@ -82,7 +90,18 @@ export default async function AssetsPage({
       // for tsc once they pass through the shared helper.
       const result = (await applyInternalFilters(
         base,
-        { ...filters, view: "all", custodian: "", department: "", category: "", warranty: "", ...extra },
+        {
+          ...filters,
+          view: "all",
+          custodian: "",
+          department: "",
+          category: "",
+          warranty: "",
+          condition: "",
+          assignment: "",
+          missing: "",
+          ...extra,
+        },
         today,
       )) as { count: number | null };
       return result.count ?? 0;
@@ -161,6 +180,9 @@ export default async function AssetsPage({
               department: filters.department,
               category: filters.category,
               warranty: filters.warranty,
+              condition: filters.condition,
+              assignment: filters.assignment,
+              missing: filters.missing,
             }}
           />
           <a
@@ -169,6 +191,30 @@ export default async function AssetsPage({
           >
             Export CSV
           </a>
+          {internalView && (
+            <Link
+              href={`/assets/labels${exportQuery}`}
+              className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
+            >
+              Print QR labels
+            </Link>
+          )}
+          {isStaff && internalView && (
+            <Link
+              href="/assets/internal-import"
+              className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
+            >
+              Import CSV
+            </Link>
+          )}
+          {isStaff && internalView && (
+            <Link
+              href="/assets/stocktake"
+              className="rounded-lg border border-hairline px-4 py-2 text-sm text-ink-soft hover:bg-surface-2"
+            >
+              Stocktake
+            </Link>
+          )}
           {isStaff && !internalView && (
             <a
               href="/api/assets/export/unserviceable"
@@ -209,6 +255,16 @@ export default async function AssetsPage({
           Asset deleted.
         </p>
       )}
+      {searchParams?.bulk && (
+        <p className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400">
+          {searchParams.bulk}
+        </p>
+      )}
+      {searchParams?.error && (
+        <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+          {searchParams.error}
+        </p>
+      )}
       {error && (
         <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
           {error.message}
@@ -222,6 +278,7 @@ export default async function AssetsPage({
           filters={filters}
           options={options}
           q={q}
+          hideOrganization={hrAdminPreset}
         />
       )}
       {summary && <InternalSummaryTiles summary={summary} />}
@@ -233,6 +290,7 @@ export default async function AssetsPage({
         orgId={selectedOrg?.id ?? ""}
         q={q}
         filters={filters}
+        guardedDelete={hrAdminPreset}
         emptyMessage={
           q
             ? `No assets match "${q}".`

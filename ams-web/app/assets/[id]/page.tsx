@@ -7,9 +7,11 @@ import { changedFields } from "@/lib/audit";
 import { woRef, dateTimeLabel } from "@/lib/format";
 import { generateQrDataUrl } from "@/lib/qr";
 import { categoryLabel, formatFileSize } from "@/lib/documents";
+import { isHrAdminPreset } from "@/lib/hr-admin-preset";
 import { AppShell } from "@/components/app-shell";
 import { StatusBadge } from "@/components/status-badge";
 import { AssetForm } from "../asset-form";
+import { DeleteAssetButton } from "../delete-asset-button";
 import { updateAsset } from "../actions";
 import {
   createTicket,
@@ -19,6 +21,7 @@ import {
 } from "../tickets-actions";
 import { deleteDocument } from "./documents-actions";
 import { UploadDocumentButton } from "./upload-document-button";
+import { InternalDocumentsCard } from "./internal-documents-card";
 
 const EQUIPMENT_LABEL: Record<string, string> = {
   xray_screening: "X-ray Screening",
@@ -71,7 +74,7 @@ export default async function EditAssetPage({
     // scopes this the same way certificates above already are.
     supabase
       .from("asset_documents")
-      .select("id, category, title, file_name, file_size, created_at")
+      .select("id, category, title, file_name, file_size, mime_type, created_at")
       .eq("asset_id", params.id)
       .order("created_at", { ascending: false }),
     // RLS restricts this to staff only — a client_viewer's query just
@@ -86,11 +89,29 @@ export default async function EditAssetPage({
 
   if (!asset) notFound();
 
+  // HR & Admin preset: internal equipment only. A client asset is "not
+  // found" for them, and the client-facing sections (QR/checklist links,
+  // certificates, documents, tickets) are not shown on an internal one.
+  const presetUser = isHrAdminPreset(profile?.hidden_modules);
+
   // An internal asset gets the internal form with its organization locked;
   // a client asset only ever sees client organizations in the picker.
   const isInternalAsset = (organizations ?? []).some(
     (o) => o.id === asset.organization_id && o.is_internal,
   );
+  if (presetUser && !isInternalAsset) notFound();
+
+  // Custodian history (schema_step48.sql), internal assets only. If the
+  // step has not been run yet the query errors; the page says so rather
+  // than failing.
+  const { data: custodyRows, error: custodyError } =
+    isStaff && isInternalAsset
+      ? await supabase
+          .from("asset_custodian_history")
+          .select("id, custodian, department, started_at, ended_at, profiles(full_name)")
+          .eq("asset_id", params.id)
+          .order("started_at", { ascending: false })
+      : { data: null, error: null };
   const formOrganizations = (organizations ?? []).filter((o) =>
     isInternalAsset ? o.id === asset.organization_id : !o.is_internal,
   );
@@ -166,8 +187,9 @@ export default async function EditAssetPage({
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-ink">Scan tag for this asset</p>
               <p className="mt-0.5 text-xs text-slate-500">
-                Print this onto a physical tag — scanning it (with the app&apos;s Scan Asset
-                page, or any phone camera) jumps straight here instead of a manual search.
+                {presetUser
+                  ? "Print this onto a physical tag — scanning it with any phone camera jumps straight here instead of a manual search."
+                  : "Print this onto a physical tag — scanning it (with the app's Scan Asset page, or any phone camera) jumps straight here instead of a manual search."}
               </p>
               <div className="mt-3 flex flex-wrap gap-3">
                 <a
@@ -177,18 +199,30 @@ export default async function EditAssetPage({
                 >
                   Download QR →
                 </a>
-                <Link
-                  href={`/reports/preventive-checklist?asset_id=${asset.id}`}
-                  className="text-xs font-medium text-blue-400 hover:underline"
-                >
-                  Start PM Checklist →
-                </Link>
-                <Link
-                  href={`/reports/corrective-checklist?asset_id=${asset.id}`}
-                  className="text-xs font-medium text-blue-400 hover:underline"
-                >
-                  Start CM Report →
-                </Link>
+                {isInternalAsset && (
+                  <Link
+                    href={`/assets/labels?id=${asset.id}`}
+                    className="text-xs font-medium text-blue-400 hover:underline"
+                  >
+                    Print label →
+                  </Link>
+                )}
+                {!presetUser && (
+                  <>
+                    <Link
+                      href={`/reports/preventive-checklist?asset_id=${asset.id}`}
+                      className="text-xs font-medium text-blue-400 hover:underline"
+                    >
+                      Start PM Checklist →
+                    </Link>
+                    <Link
+                      href={`/reports/corrective-checklist?asset_id=${asset.id}`}
+                      className="text-xs font-medium text-blue-400 hover:underline"
+                    >
+                      Start CM Report →
+                    </Link>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -209,6 +243,56 @@ export default async function EditAssetPage({
           <AssetDetailReadOnly asset={asset} />
         )}
 
+        {isStaff && isInternalAsset && (
+          <div className="mt-4 flex justify-end">
+            <DeleteAssetButton assetId={asset.id} assetTag={asset.asset_tag} guarded={presetUser} />
+          </div>
+        )}
+
+        {isStaff && isInternalAsset && (
+          <div className="mt-6 rounded-xl border border-hairline bg-surface p-6">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-soft">Custodian History</h2>
+              <Link
+                href={`/assets/${asset.id}/handover`}
+                className="text-xs font-medium text-blue-400 hover:underline"
+              >
+                Print handover form →
+              </Link>
+            </div>
+            {custodyError ? (
+              <p className="text-sm text-slate-500">
+                Custodian history is not set up yet. Run schema_step48.sql in the Supabase SQL editor.
+              </p>
+            ) : custodyRows?.length ? (
+              <ul className="divide-y divide-hairline text-sm">
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                {custodyRows.map((c: any) => (
+                  <li key={c.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2">
+                    <span className="font-medium text-ink">
+                      {c.custodian}
+                      {c.department ? <span className="font-normal text-slate-500"> · {c.department}</span> : null}
+                    </span>
+                    <span className="text-xs text-slate-500">
+                      {dateTimeLabel(c.started_at)} →{" "}
+                      {c.ended_at ? dateTimeLabel(c.ended_at) : <span className="text-emerald-400">Current</span>}
+                      {c.profiles?.full_name ? ` · set by ${c.profiles.full_name}` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-slate-500">No custodian has been recorded for this item yet.</p>
+            )}
+          </div>
+        )}
+
+        {isStaff && isInternalAsset && (
+          <InternalDocumentsCard assetId={params.id} documents={documents ?? []} canEdit />
+        )}
+
+        {!presetUser && (
+          <>
         <div className="mt-6 rounded-xl border border-hairline bg-surface p-6">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-soft">
             Compliance Certificates
@@ -235,6 +319,7 @@ export default async function EditAssetPage({
           )}
         </div>
 
+        {!isInternalAsset && (
         <div className="mt-6 rounded-xl border border-hairline bg-surface p-6">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-soft">
@@ -283,6 +368,8 @@ export default async function EditAssetPage({
             </p>
           )}
         </div>
+
+        )}
 
         <div className="mt-6 rounded-xl border border-hairline bg-surface p-6">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-soft">
@@ -413,6 +500,9 @@ export default async function EditAssetPage({
             </div>
           </form>
         </div>
+
+          </>
+        )}
 
         {isStaff && (
           <div className="mt-6 rounded-xl border border-hairline bg-surface p-6">

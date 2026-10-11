@@ -56,6 +56,9 @@ export type AssetRow = {
   assignment_status: string | null;
   condition: string | null;
   warranty_end_date: string | null;
+  // Internal equipment: an assembly has parts; a part names its assembly.
+  is_assembly?: boolean;
+  parent_tag?: string | null;
 };
 
 // Same pill-filter pattern as Tickets/Work Orders (tickets-table.tsx) —
@@ -232,10 +235,22 @@ export function AssetsTable({
                 <td className="px-4 py-3">
                   <div className="min-w-[14rem] max-w-[24rem]">
                     <p className="line-clamp-2 font-medium text-ink">
+                      {asset.is_assembly && (
+                        <span
+                          title="A record that groups other items. Its parts are counted, not this record."
+                          className="mr-2 inline-flex rounded-md bg-blue-500/15 px-2 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-blue-400"
+                        >
+                          Assembly
+                        </span>
+                      )}
                       {asset.description || [asset.brand, asset.model].filter(Boolean).join(" ") || "—"}
                     </p>
                     <p className="mt-0.5 truncate text-xs text-slate-500">
-                      {[asset.description ? [asset.brand, asset.model].filter(Boolean).join(" ") : "", asset.serial_number ? `SN ${asset.serial_number}` : ""]
+                      {[
+                        asset.description ? [asset.brand, asset.model].filter(Boolean).join(" ") : "",
+                        asset.serial_number ? `SN ${asset.serial_number}` : "",
+                        asset.parent_tag ? `Part of ${asset.parent_tag}` : "",
+                      ]
                         .filter(Boolean)
                         .join(" · ")}
                     </p>

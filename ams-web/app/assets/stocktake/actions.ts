@@ -7,6 +7,7 @@ import { requireStaff } from "@/lib/supabase/profile";
 import { getInternalOrgIds } from "@/lib/internal-org";
 import { SEGMENTS, excludeRetired, isOneOf } from "@/lib/internal-equipment";
 import { STOCKTAKE_RESULTS } from "@/lib/stocktake";
+import { loadAssemblyIds, withoutAssemblies } from "@/lib/assemblies";
 
 // Equipment stocktake (schema_step49.sql). Staff only; the tables hold
 // internal equipment only, and the snapshot below is built from internal
@@ -41,8 +42,11 @@ export async function startStocktake(formData: FormData) {
     .order("asset_tag", { ascending: true });
   assetQuery = excludeRetired(assetQuery);
   if (segmentRaw) assetQuery = assetQuery.eq("segment", segmentRaw);
-  const { data: assets, error: assetError } = await assetQuery;
+  const { data: allAssets, error: assetError } = await assetQuery;
   if (assetError) return fail(assetError.message);
+  // An assembly (the Desktop PC record) is not counted: it is not a thing on
+  // a shelf. Its parts are, and they are in the snapshot.
+  const assets = withoutAssemblies(allAssets ?? [], await loadAssemblyIds(supabase, orgIds));
   if (!assets || assets.length === 0) return fail("There is no equipment in that scope to count.");
 
   const { data: created, error: createError } = await supabase

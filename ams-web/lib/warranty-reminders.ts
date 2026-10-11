@@ -12,6 +12,7 @@ import { getInternalOrgIds } from "@/lib/internal-org";
 import { HR_ADMIN_PRESET_MARKER } from "@/lib/hr-admin-preset";
 import { excludeRetired, manilaDate } from "@/lib/internal-equipment";
 import { bucketWarranties, daysLabel, WARRANTY_BUCKETS, type WarrantyBuckets, type WarrantyRow } from "@/lib/warranty";
+import { loadAssemblyIds, withoutAssemblies } from "@/lib/assemblies";
 
 const APP_NAME = "HorizonCare360";
 const MAX_ROWS_PER_SECTION = 25;
@@ -29,7 +30,8 @@ export async function loadWarrantyBuckets(): Promise<{ buckets: WarrantyBuckets;
   query = excludeRetired(query);
   const { data, error } = await query;
   if (error) throw new Error(`Failed to load internal warranties: ${error.message}`);
-  return { buckets: bucketWarranties((data ?? []) as WarrantyRow[], today), today };
+  const assemblies = await loadAssemblyIds(supabase, orgIds);
+  return { buckets: bucketWarranties(withoutAssemblies((data ?? []) as WarrantyRow[], assemblies), today), today };
 }
 
 /** Emails of everyone with the HR & Admin preset. */

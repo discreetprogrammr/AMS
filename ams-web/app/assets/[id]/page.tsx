@@ -114,6 +114,22 @@ export default async function EditAssetPage({
           .eq("asset_id", params.id)
           .order("started_at", { ascending: false })
       : { data: null, error: null };
+  // Assemblies (lib/assemblies.ts): the parts of this item, if it is one, and
+  // the item this one is a part of, if it is a part.
+  const [{ data: partRows }, { data: parentRow }] =
+    isStaff && isInternalAsset
+      ? await Promise.all([
+          supabase
+            .from("assets")
+            .select("id, asset_tag, description, brand, model, serial_number, warranty_end_date")
+            .eq("parent_asset_id", params.id)
+            .order("asset_tag", { ascending: true }),
+          asset.parent_asset_id
+            ? supabase.from("assets").select("id, asset_tag, description").eq("id", asset.parent_asset_id).maybeSingle()
+            : Promise.resolve({ data: null }),
+        ])
+      : [{ data: null }, { data: null }];
+
   // The audit trail itself is Super Admin only, so an admin's own History card
   // came back empty. For internal equipment it is read through the Activity
   // loader, which is limited to internal equipment.
@@ -237,6 +253,16 @@ export default async function EditAssetPage({
           </div>
         )}
 
+        {parentRow && (
+          <p className="mb-4 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-400">
+            Part of{" "}
+            <Link href={`/assets/${parentRow.id}`} className="font-semibold underline">
+              {parentRow.asset_tag}
+            </Link>
+            {parentRow.description ? ` · ${parentRow.description}` : ""}
+          </p>
+        )}
+
         {isStaff ? (
           <AssetForm
             organizations={formOrganizations}
@@ -293,6 +319,36 @@ export default async function EditAssetPage({
             ) : (
               <p className="text-sm text-slate-500">No custodian has been recorded for this item yet.</p>
             )}
+          </div>
+        )}
+
+        {partRows && partRows.length > 0 && (
+          <div className="mt-6 rounded-xl border border-hairline bg-surface p-6">
+            <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-ink-soft">
+              Parts of this item <span className="font-normal text-slate-500">({partRows.length})</span>
+            </h2>
+            <p className="mb-3 text-xs text-slate-500">
+              This is an assembly record that groups its parts. Each part is counted as its own item.
+            </p>
+            <ul className="divide-y divide-hairline text-sm">
+              {partRows.map((p) => (
+                <li key={p.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2">
+                  <span>
+                    <Link href={`/assets/${p.id}`} className="font-medium text-ink hover:underline">
+                      {p.asset_tag}
+                    </Link>
+                    <span className="text-ink-soft">
+                      {" · "}
+                      {p.description || [p.brand, p.model].filter(Boolean).join(" ") || "—"}
+                    </span>
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    {[p.brand, p.model].filter(Boolean).join(" ")}
+                    {p.serial_number ? ` · SN ${p.serial_number}` : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 

@@ -5,6 +5,7 @@ import { getInternalOrgIds } from "@/lib/internal-org";
 import { AppShell } from "@/components/app-shell";
 import { SEGMENTS, UNASSIGNED, excludeRetired, internalAssetsHref, labelFor } from "@/lib/internal-equipment";
 import { summariseCustodians, type CustodyRow } from "@/lib/custodians";
+import { loadAssemblyIds, withoutAssemblies } from "@/lib/assemblies";
 import { loadCustodianProfiles } from "./profiles";
 
 // Custodians: who holds what in the company equipment register. Built from
@@ -29,7 +30,8 @@ export default async function CustodiansPage({ searchParams }: { searchParams: {
       .in("organization_id", orgIds);
     query = excludeRetired(query);
     const { data, error } = await query;
-    rows = (data ?? []) as CustodyRow[];
+    // An assembly is not something a person holds; its parts are.
+    rows = withoutAssemblies((data ?? []) as CustodyRow[], await loadAssemblyIds(supabase, orgIds));
     loadError = error?.message ?? null;
     unassigned = rows.filter((r) => !r.custodian?.trim()).length;
   }

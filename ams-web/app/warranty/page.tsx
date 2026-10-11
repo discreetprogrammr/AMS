@@ -5,6 +5,7 @@ import { getInternalOrgIds } from "@/lib/internal-org";
 import { AppShell } from "@/components/app-shell";
 import { excludeRetired, internalAssetsHref, manilaDate } from "@/lib/internal-equipment";
 import { bucketWarranties, daysLabel, WARRANTY_BUCKETS, type WarrantyRow } from "@/lib/warranty";
+import { loadAssemblyIds, withoutAssemblies } from "@/lib/assemblies";
 import { emailIsConfigured, WARRANTY_SELECT } from "@/lib/warranty-reminders";
 import { sendTestWarrantyEmail } from "./actions";
 
@@ -32,7 +33,8 @@ export default async function WarrantyPage({ searchParams }: { searchParams: { m
     let query = supabase.from("assets").select(WARRANTY_SELECT).in("organization_id", orgIds);
     query = excludeRetired(query);
     const { data, error } = await query;
-    rows = (data ?? []) as WarrantyRow[];
+    // An assembly has no warranty of its own; its parts do.
+    rows = withoutAssemblies((data ?? []) as WarrantyRow[], await loadAssemblyIds(supabase, orgIds));
     loadError = error?.message ?? null;
   }
   const b = bucketWarranties(rows, today);

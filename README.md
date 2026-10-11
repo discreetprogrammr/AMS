@@ -2366,3 +2366,25 @@ The internal Assets table had 11 columns, so the Asset Tag wrapped at its hyphen
 - Sorting, filters, bulk edit and exports are unchanged. The client table is untouched.
 
 **Not checked in a browser.** `npx tsc --noEmit` and `npm run lint` pass.
+
+## Follow-up — Internal equipment register: assemblies (a record that groups parts)
+
+Some company equipment is a set of separate items, for example the desktop in the TFD office: ten parts (graphics card, power supply, memory, SSD, keyboard, monitor, CPU, motherboard, cooler, case), each with its own tag, serial, supplier, cost and warranty, grouped under one record, `PHT-EQ-0089` "Desktop PC (TFD Office)". HR's spreadsheet has only the ten parts. **No database change**: it uses `assets.parent_asset_id` (`schema_step46.sql`).
+
+An **assembly** is any internal asset that another asset points to as its parent. It is not a flagged column, so nothing can fall out of step: while something points to it, it is an assembly.
+
+**What's here**
+- **Assets list**: an assembly row is labelled **Assembly**; each part shows "Part of PHT-EQ-0089" on its second line. A note under the summary tiles says the totals leave assemblies out.
+- **Asset page**: an assembly shows a **Parts of this item** list (tag, description, brand / model, serial), each linking to the part. A part shows a **Part of PHT-EQ-0089** banner with a link to the assembly.
+- **Totals leave assemblies out**, so the register's numbers match HR's file (88 rows, not 89): the Assets summary tiles, the equipment Dashboard (counts, breakdowns, recent list), the Custodians list and person pages (an assembly is not something a person holds), the stocktake snapshot (it is not a thing on a shelf; its parts are counted), and the Warranty & Renewals tab and weekly email (an assembly has no warranty of its own).
+- **Still included**: the assembly appears in the Assets list itself, in the CSV export (a row with no cost, so a re-import round trip still reproduces it), and the HR & Admin delete check still refuses to delete an assembly that has parts.
+- Parts are not counted twice: the assembly carries no cost.
+
+**Not verified signed in.** `npx tsc --noEmit`, `npm run lint` and `npm run build` pass.
+
+## Setup steps
+
+1. Assets (Pacific Horizon Tek): the Total tile is 88 (it was 89) and a line under the tiles says it leaves out 1 assembly record. The list still has 89 rows: `PHT-EQ-0089` carries an **Assembly** label, and the ten desktop parts say "Part of PHT-EQ-0089".
+2. Open `PHT-EQ-0089`: a **Parts of this item (10)** list. Click a part: a **Part of PHT-EQ-0089** banner.
+3. Dashboard total is 88, with 48 for Pacific Horizon Tek and 40 for Team Fridays Digital.
+4. Custodians: "TFD Office" counts the parts it holds, not the assembly. A new stocktake does not list the assembly.

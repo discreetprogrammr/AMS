@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { isHrAdminPreset } from "@/lib/hr-admin-preset";
+import { loadAssemblyIds } from "@/lib/assemblies";
 import { AppShell } from "@/components/app-shell";
 import { SearchBar } from "@/components/search-bar";
 import {
@@ -58,7 +59,7 @@ export default async function AssetsPage({
   let query = supabase
     .from("assets")
     .select(
-      "id, asset_tag, serial_number, equipment_type, brand, model, status, segment, asset_category, description, custodian, department, assignment_status, condition, warranty_end_date, sites(address), organizations(name)",
+      "id, asset_tag, serial_number, equipment_type, brand, model, status, segment, asset_category, description, custodian, department, assignment_status, condition, warranty_end_date, parent_asset_id, sites(address), organizations(name)",
     )
     .order("created_at", { ascending: false });
 
@@ -79,13 +80,19 @@ export default async function AssetsPage({
   // other filters) and the distinct values behind the dropdowns.
   let summary: InternalSummary | null = null;
   let options: InternalOptions | null = null;
+  // Assemblies (a record that other items are "part of", such as the Desktop
+  // PC) are shown in the list but left out of the totals (lib/assemblies.ts).
+  const assemblyIds =
+    internalView && selectedOrg ? await loadAssemblyIds(supabase, [selectedOrg.id]) : new Set<string>();
+
   if (internalView && selectedOrg) {
     const today = manilaDate();
     const count = async (extra: Partial<typeof filters>) => {
-      const base = supabase
+      let base = supabase
         .from("assets")
         .select("id", { count: "exact", head: true })
         .eq("organization_id", selectedOrg.id);
+      if (assemblyIds.size > 0) base = base.not("id", "in", `(${Array.from(assemblyIds).join(",")})`);
       // Typed as a plain promise: PostgREST's builder generics are too deep
       // for tsc once they pass through the shared helper.
       const result = (await applyInternalFilters(
@@ -131,6 +138,21 @@ export default async function AssetsPage({
     };
   }
 
+  // Tag of each part's assembly, for the "Part of ..." line. The assembly is
+  // usually in the list already; the filters can hide it, so look up the rest.
+  const tagById = new Map<string, string>((assets ?? []).map((a: { id: string; asset_tag: string }) => [a.id, a.asset_tag]));
+  const missingParents = Array.from(
+    new Set(
+      (assets ?? [])
+        .map((a: { parent_asset_id: string | null }) => a.parent_asset_id)
+        .filter((id: string | null): id is string => !!id && !tagById.has(id)),
+    ),
+  );
+  if (missingParents.length > 0) {
+    const { data: parents } = await supabase.from("assets").select("id, asset_tag").in("id", missingParents);
+    for (const p of parents ?? []) tagById.set(p.id, p.asset_tag);
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rows: AssetRow[] = (assets ?? []).map((a: any) => ({
     id: a.id,
@@ -150,6 +172,8 @@ export default async function AssetsPage({
     assignment_status: a.assignment_status,
     condition: a.condition,
     warranty_end_date: a.warranty_end_date,
+    is_assembly: assemblyIds.has(a.id),
+    parent_tag: a.parent_asset_id ? (tagById.get(a.parent_asset_id) ?? null) : null,
   }));
 
   // The internal export applies the same active filters (and q).
@@ -281,7 +305,7 @@ export default async function AssetsPage({
           hideOrganization={hrAdminPreset}
         />
       )}
-      {summary && <InternalSummaryTiles summary={summary} />}
+      {summary && <InternalSummaryTiles summary={summary} assemblies={assemblyIds.size} />}
 
       <AssetsTable
         assets={rows}

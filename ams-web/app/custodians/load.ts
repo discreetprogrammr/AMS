@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getInternalOrgIds } from "@/lib/internal-org";
 import { excludeRetired } from "@/lib/internal-equipment";
 import { custodianKey, type CustodyRow } from "@/lib/custodians";
+import { loadAssemblyIds, withoutAssemblies } from "@/lib/assemblies";
 
 // One person's active internal items, matched the same way the Custodians
 // list groups them (trimmed, ignoring capital letters). Internal equipment
@@ -27,7 +28,10 @@ export async function loadCustodianItems(name: string): Promise<{
   const { data, error } = await query;
 
   const key = custodianKey(name);
-  const rows = ((data ?? []) as CustodyRow[]).filter((r) => custodianKey(r.custodian) === key);
+  const assemblies = await loadAssemblyIds(supabase, orgIds);
+  const rows = withoutAssemblies((data ?? []) as CustodyRow[], assemblies).filter(
+    (r) => custodianKey(r.custodian) === key,
+  );
 
   // The most common spelling, so links into the Assets list match exactly.
   const counts = new Map<string, number>();
@@ -56,5 +60,6 @@ export async function loadAllHeld(supabase?: Awaited<ReturnType<typeof createCli
     .not("custodian", "is", null);
   query = excludeRetired(query);
   const { data, error } = await query;
-  return { rows: (data ?? []) as CustodyRow[], error: error?.message ?? null };
+  const assemblies = await loadAssemblyIds(client, orgIds);
+  return { rows: withoutAssemblies((data ?? []) as CustodyRow[], assemblies), error: error?.message ?? null };
 }

@@ -40,6 +40,7 @@ type Row = {
   acquisition_cost: number | null;
   date_acquired: string | null;
   updated_at: string | null;
+  parent_asset_id: string | null;
 };
 
 type Counted = { key: string; label: string; count: number };
@@ -91,7 +92,7 @@ export default async function EquipmentDashboardPage({
     const { data, error } = await supabase
       .from("assets")
       .select(
-        "id, asset_tag, description, brand, model, segment, asset_category, department, custodian, assignment_status, condition, acquisition_cost, date_acquired, updated_at",
+        "id, asset_tag, description, brand, model, segment, asset_category, department, custodian, assignment_status, condition, acquisition_cost, date_acquired, updated_at, parent_asset_id",
       )
       .in("organization_id", internalOrgIds)
       .order("updated_at", { ascending: false });
@@ -99,8 +100,12 @@ export default async function EquipmentDashboardPage({
     loadError = error?.message ?? null;
   }
 
-  const active = rows.filter((r) => !isRetiredRow(r));
-  const retiredCount = rows.length - active.length;
+  // An assembly (the record its parts point to, such as the Desktop PC) is
+  // left out of every figure here, so the totals match HR's spreadsheet.
+  const assemblyIds = new Set(rows.map((r) => r.parent_asset_id).filter((id): id is string => !!id));
+  const counted = rows.filter((r) => !assemblyIds.has(r.id));
+  const active = counted.filter((r) => !isRetiredRow(r));
+  const retiredCount = counted.length - active.length;
   const href = (f: Partial<InternalFilters>) => internalAssetsHref({ org: orgId }, f);
 
   const bySegment = (value: string) => active.filter((r) => r.segment === value).length;
@@ -135,7 +140,7 @@ export default async function EquipmentDashboardPage({
     },
   ];
 
-  const recent = rows.slice(0, 10);
+  const recent = counted.slice(0, 10);
 
   return (
     <AppShell

@@ -11,6 +11,15 @@ import { isInlineImage } from "@/lib/documents";
 // gate — a client hitting this for a document outside their own org just
 // gets a 404 from the first query, same as every other RLS-scoped lookup
 // in this app. Mirrors app/api/reports/service-records/[id]/pdf/route.ts.
+// A header value must be plain ASCII without quotes or line breaks, but file
+// names are whatever the uploader's computer called the file ("page.com%2F
+// (1).png", names with accents or emoji). Send an ASCII fallback plus the
+// real name in the RFC 5987 form; browsers prefer the latter.
+function contentDisposition(kind: "inline" | "attachment", fileName: string): string {
+  const fallback = fileName.replace(/[^\x20-\x7e]|["\\%]/g, "_");
+  return `${kind}; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+}
+
 export async function GET(
   request: Request,
   { params }: { params: { id: string } },
@@ -58,7 +67,7 @@ export async function GET(
   return new NextResponse(buffer, {
     headers: {
       "Content-Type": doc.mime_type || "application/octet-stream",
-      "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${doc.file_name}"`,
+      "Content-Disposition": contentDisposition(inline ? "inline" : "attachment", doc.file_name),
       "X-Content-Type-Options": "nosniff",
       "Cache-Control": "private, no-store",
     },

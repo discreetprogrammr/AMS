@@ -3,6 +3,11 @@
 
 export const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024; // 25MB — manuals/datasheets can run larger than a typical chat photo.
 
+// What the upload form and action accept: Server Actions are capped at 4mb
+// in next.config.mjs and Vercel caps a request body at 4.5 MB, so 25 MB can
+// never work in production.
+export const MAX_UPLOAD_BYTES = 4_000_000;
+
 export const DOCUMENT_CATEGORIES = [
   { value: "manual", label: "Manual" },
   { value: "datasheet", label: "Datasheet" },
@@ -41,13 +46,24 @@ function randomId(): string {
   return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
 }
 
-// Storage object path convention: {assetId}/{random}-{safe filename} — the
-// asset id as the first path segment is what schema_step35.sql's storage
-// RLS policies key off of via storage.foldername(name), same convention as
-// chat-attachments' {ticketId}/... (lib/attachments.ts).
+// Storage object path convention: {assetId}/{random id}{.ext} — the asset id
+// as the first path segment is what schema_step35.sql's storage RLS
+// policies key off of via storage.foldername(name), same convention as
+// chat-attachments' {ticketId}/... (lib/attachments.ts). The path never
+// contains any part of the uploaded file's name except a short, lowercase,
+// alphanumeric extension: names like "page.com%2F (1).png" (percent signs,
+// spaces, brackets, non-ASCII) are exactly what makes object keys
+// unreliable. The original name is kept for display in asset_documents.
 export function makeDocumentPath(assetId: string, fileName: string): string {
-  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100);
-  return `${assetId}/${randomId()}-${safeName}`;
+  const ext = /\.([a-zA-Z0-9]{1,8})$/.exec(fileName.trim())?.[1]?.toLowerCase();
+  return `${assetId}/${randomId()}${ext ? `.${ext}` : ""}`;
+}
+
+/** The name to show and store: control characters and path separators out, length capped. */
+export function displayFileName(fileName: string): string {
+  // eslint-disable-next-line no-control-regex
+  const cleaned = fileName.replace(/[\u0000-\u001f\u007f/\\]+/g, " ").replace(/\s+/g, " ").trim();
+  return (cleaned || "file").slice(-150);
 }
 
 export function formatFileSize(bytes: number | null | undefined): string {

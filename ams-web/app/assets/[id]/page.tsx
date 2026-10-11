@@ -207,7 +207,7 @@ export default async function EditAssetPage({
                     Print label →
                   </Link>
                 )}
-                {!presetUser && (
+                {!isInternalAsset && (
                   <>
                     <Link
                       href={`/reports/preventive-checklist?asset_id=${asset.id}`}
@@ -291,7 +291,7 @@ export default async function EditAssetPage({
           <InternalDocumentsCard assetId={params.id} documents={documents ?? []} canEdit />
         )}
 
-        {!presetUser && (
+        {!isInternalAsset && (
           <>
         <div className="mt-6 rounded-xl border border-hairline bg-surface p-6">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-soft">
@@ -319,7 +319,6 @@ export default async function EditAssetPage({
           )}
         </div>
 
-        {!isInternalAsset && (
         <div className="mt-6 rounded-xl border border-hairline bg-surface p-6">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-soft">
@@ -368,8 +367,6 @@ export default async function EditAssetPage({
             </p>
           )}
         </div>
-
-        )}
 
         <div className="mt-6 rounded-xl border border-hairline bg-surface p-6">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-soft">

@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 import type { Profile } from "@/lib/supabase/profile";
 import { isStaffRole, isSuperAdminRole } from "@/lib/supabase/roles";
 import { NAV_MODULES, ALWAYS_ACCESSIBLE_HREFS } from "@/lib/nav-items";
-import { EQUIPMENT_DASHBOARD_HREF, isHrAdminPreset } from "@/lib/hr-admin-preset";
+import { EQUIPMENT_DASHBOARD_HREF, HR_ADMIN_NAV, isHrAdminPreset } from "@/lib/hr-admin-preset";
 import { logout } from "@/app/login/actions";
 import { useMobileNav } from "./mobile-nav";
 import { MessagesUnreadDot } from "./messages-unread-dot";
@@ -102,6 +102,14 @@ const ICON_BY_HREF: Record<string, keyof typeof ICONS> = {
   "/error-logs": "errorLogs",
 };
 
+// Icons for the HR & Admin preset's extra tabs (HR_ADMIN_NAV).
+const HR_ADMIN_ICONS: Record<string, keyof typeof ICONS> = {
+  "/custodians": "clients",
+  "/assets/stocktake": "inspections",
+  "/warranty": "calendar",
+  "/activity": "audit",
+};
+
 function buildNav(): NavItem[] {
   return [
     // Dashboard and User Access are both deliberately NOT in
@@ -144,9 +152,24 @@ export function Sidebar({ profile }: { profile: Profile | null }) {
   // points at their own internal-equipment dashboard, and Assets. Allow-list
   // rather than hidden_modules, so a module added later stays hidden.
   const hrAdminPreset = !isSuperAdmin && isHrAdminPreset(hiddenModules);
-  const nav = buildNav()
+  // Only a preset user gets the HR & Admin tabs; the filter below drops them
+  // for everyone else.
+  const allItems: NavItem[] = [
+    ...buildNav(),
+    ...HR_ADMIN_NAV.map((t) => ({
+      href: t.href,
+      label: t.label,
+      icon: <Icon d={ICONS[HR_ADMIN_ICONS[t.href] ?? "assets"]} />,
+    })),
+  ];
+  const nav = allItems
     .filter((item) => {
-      if (hrAdminPreset) return item.href === "/dashboard" || item.href === "/assets";
+      if (hrAdminPreset) {
+        if (item.href === "/dashboard" || item.href === "/assets") return true;
+        // An HR & Admin tab, if it needs a permission only when this user has it.
+        return HR_ADMIN_NAV.some((t) => t.href === item.href && (!t.requires || hiddenModules.includes(t.requires)));
+      }
+      if (HR_ADMIN_NAV.some((t) => t.href === item.href)) return false;
       if (item.superAdminOnly && !isSuperAdmin) return false;
       if (item.staffOnly && !isStaff) return false;
       if (!ALWAYS_ACCESSIBLE_HREFS.includes(item.href) && hiddenModules.includes(item.href)) return false;

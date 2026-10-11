@@ -52,7 +52,7 @@ Layout inside `ams-web/`:
 - `app/*/actions.ts` server actions. Mutations live here, not in API
   routes, unless something external has to call them.
 - `app/api/` route handlers for exports, imports, PDF generation, client
-  error logging, TURN credentials, and the five `app/api/cron/*` jobs.
+  error logging, TURN credentials, and the six `app/api/cron/*` jobs.
 - `components/` 18 shared components. Check here before creating one.
 - `lib/` domain logic: `sla.ts`, `sla-escalation.ts`, `pm-automation.ts`,
   `compliance-alerts.ts`, `low-stock-alerts.ts`, `notify.ts`, `push.ts`,
@@ -91,6 +91,7 @@ change: state the exact SQL and say it must be run first.
 | 05:00 daily | `compliance-check` | Warn on expiring certificates and warranties |
 | 07:00 daily | `low-stock-check` | Warn on parts below reorder level |
 | 08:00 Mondays | `weekly-digest` | Weekly summary email |
+| 00:30 Mondays | `warranty-reminders` | Warranty & Renewals email to the HR & Admin preset users |
 
 **GitHub Actions** (`.github/workflows/sla-check.yml`) calls the same
 `sla-check` endpoint **hourly**. This exists because the Vercel account is

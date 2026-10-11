@@ -22,6 +22,8 @@ import {
 import { deleteDocument } from "./documents-actions";
 import { UploadDocumentButton } from "./upload-document-button";
 import { InternalDocumentsCard } from "./internal-documents-card";
+import { loadInternalActivity } from "@/lib/activity";
+import { canViewActivity } from "@/lib/hr-admin-preset";
 
 const EQUIPMENT_LABEL: Record<string, string> = {
   xray_screening: "X-ray Screening",
@@ -112,6 +114,13 @@ export default async function EditAssetPage({
           .eq("asset_id", params.id)
           .order("started_at", { ascending: false })
       : { data: null, error: null };
+  // The audit trail itself is Super Admin only, so an admin's own History card
+  // came back empty. For internal equipment it is read through the Activity
+  // loader, which is limited to internal equipment.
+  const internalHistory =
+    isStaff && isInternalAsset && canViewActivity(profile?.role, profile?.hidden_modules)
+      ? await loadInternalActivity({ assetId: params.id, limit: 50 })
+      : null;
   const formOrganizations = (organizations ?? []).filter((o) =>
     isInternalAsset ? o.id === asset.organization_id : !o.is_internal,
   );
@@ -506,7 +515,35 @@ export default async function EditAssetPage({
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-soft">
               History
             </h2>
-            {history?.length ? (
+            {internalHistory ? (
+              internalHistory.entries.length ? (
+                <ul className="divide-y divide-hairline text-sm">
+                  {internalHistory.entries.map((e) => (
+                    <li key={e.id} className="py-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium capitalize text-ink">
+                          {e.kind === "file" ? "file" : e.kind}
+                        </span>
+                        <span className="text-xs text-slate-500">{dateTimeLabel(e.at)}</span>
+                      </div>
+                      <p className="text-slate-500">
+                        {e.who}
+                        {e.kind === "file" ? `: ${e.lines[0]?.toLowerCase()} (${e.item})` : ""}
+                      </p>
+                      {e.lines.length > 0 && e.kind !== "file" && (
+                        <ul className="mt-0.5 space-y-0.5 text-xs text-ink-soft">
+                          {e.lines.map((l, i) => (
+                            <li key={i}>{l}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-slate-500">No history recorded yet.</p>
+              )
+            ) : history?.length ? (
               <ul className="divide-y divide-hairline text-sm">
                 {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                 {history.map((h: any) => (

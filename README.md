@@ -2237,3 +2237,132 @@ Follows photos and documents above. **No new database change.** If `schema_step5
 3. **Add Photo / Document** on an internal asset: there is no Title field. Upload a PNG named like `page.com%2F (1).png`, a normal PNG, and a PDF just under 4 MB: each appears, titled with its file name. Open one: it downloads with its real name.
 4. Upload a file over 4 MB: a clear message, nothing uploaded.
 5. If an upload ever fails, the dialog says why; `node check-errors.mjs asset-documents` shows the technical detail.
+
+## Follow-up — Internal equipment register: HR & Admin sidebar tabs
+
+The HR & Admin preset's sidebar was only Dashboard and Assets. This section grows one tab at a time; each tab is its own commit. **No database change in this part** unless a tab says so below.
+
+**How the tabs work**: `HR_ADMIN_NAV` in `lib/hr-admin-preset.ts` lists the extra tabs (href and label); `components/sidebar.tsx` owns the icons. Only a preset user sees them (the other roles' sidebars are unchanged), and each href must also be open to the preset in the middleware (`ALLOWED_PREFIXES`, same file). Every page still checks its own access.
+
+**Tab 1: Stocktake** (`/assets/stocktake`, built earlier): now a sidebar tab for HR & Admin, no longer only a button on the Assets list. The button stays. No new page and no database change; the tab highlights on the stocktake pages and Assets does not.
+
+**Tab 2: Custodians** (`/custodians`): who holds which company equipment. Built from the custodian typed on each internal item, so there is nothing extra to maintain and **no database change**. Active items only (retired / lost left out), internal equipment only, staff only.
+- **List**: people with their departments, segments, number of items and how many need repair; search by name or department; tiles for people holding equipment, items held, and items with no custodian (links to the Assets list filtered to those).
+- **Person** (`/custodians/view?name=`): their items with status, issue date and a **Handover form** link per item; **Open in Assets** (the Assets list filtered to them, where Bulk edit can reassign everything) and **Print clearance form**.
+- **Clearance form** (`/custodians/clearance?name=`): a printable white page listing every item the person holds with a "Returned" tick-box and remarks, and signature lines for the employee, the person receiving, and HR / Admin. Printing changes nothing.
+- Names are grouped ignoring capital letters and extra spaces, so "Lourence", "lourence " and "LOURENCE" are one person, shown with the most common spelling. A genuinely different spelling (a nickname) is a separate person until the items are corrected with Bulk edit.
+- Uses a query string (`?name=`) rather than a path segment so names with spaces, `%` or `/` need no decoding.
+
+## Setup steps
+
+1. Sign in as HR & Admin: the sidebar shows Dashboard, Assets, Custodians, Stocktake.
+2. Click **Stocktake**: the stocktake list opens and only Stocktake is highlighted. Open a stocktake: still highlighted. Click **Assets**: Assets is highlighted.
+3. Sign in as Super Admin or any other admin: no Stocktake tab in the sidebar (the Assets toolbar button is still there).
+4. **Custodians**: the list shows people and counts that match the Assets list (filter Custodian = one person: same item count). Search a name. Click a person: their items; **Handover form** opens for an item; **Open in Assets** shows the same items; **Print clearance form** opens a white page with a "Returned" box per item and three signature lines.
+5. Retire a test item of a person in Assets: it leaves their Custodians list and count.
+
+## Follow-up — Internal equipment register: editing custodian details
+
+Extends the Custodians tab above. HR & Admin can now edit a person's details from their page.
+
+## Database change, run this first
+
+Run `schema_step51.sql` in the Supabase SQL editor (after `schema_step48.sql`, whose trigger it extends). It is idempotent. It adds:
+- **`equipment_custodians`**: optional details per person (job title, work email, phone, employee number, status `active` / `left`, notes), matched to items by `name_key` (the lower-cased, trimmed name). Staff-manage RLS.
+- **`rename_custodian(old, new, department)`**: renames the person on every internal item they hold **and in their custodian history**, optionally sets the department on those items, and moves their details to the new name, in one transaction. If the new name is someone who already exists the two are merged (the existing person's details win; blanks are filled in). It refuses non-staff and touches internal equipment only.
+- **`log_asset_custodian_change()`** redefined to stand aside while a rename runs, so a rename is not recorded as a handover (same person, new spelling). Otherwise identical to step 48.
+
+The app works before the SQL is run: the page opens, the form says saving is not set up, and a save shows the same message.
+
+**What's here**
+- **Custodian details** form on a person's page: Name, Job title, Department, Work email, Phone, Employee number, Status (Active / Left the company), Notes. Changing the **name** asks first (and says "merge" when the name already belongs to someone); filling **Department** sets it on all of their items (blank keeps each item's own).
+- **Left the company** with items still held: an amber banner on their page ("print the clearance form"), a "Left" badge and job title in the list, and a tile counting items still held by people who left.
+- The list search also matches job title.
+- `saveCustodian` (`app/custodians/actions.ts`) validates the fields (name required, email shape, status), calls the function only when the name or department changes, then upserts the details.
+
+**Not verified signed in, and the SQL has not been run.** `npx tsc --noEmit` and `npm run lint` pass; no Postgres was available here to syntax-check the SQL.
+
+## Setup steps
+
+1. Run `schema_step51.sql`.
+2. As HR & Admin, open a **test** person's page. Fill Job title and Work email, Save: "Saved." and the list shows the job title.
+3. Rename them (for example add a surname). Confirm: all their items show the new name in Assets, and each item's Custodian History shows the new name on its rows with **no** new handover row.
+4. Rename a second test person to exactly the first person's name: the confirm says merge; afterwards one person holds all items and the other is gone.
+5. Fill Department and Save: every item they hold has that department.
+6. Set Status = Left the company: amber banner on their page, "Left" in the list, the tile counts their items. Set it back to Active.
+
+## Follow-up — Internal equipment register: Warranty & Renewals tab
+
+Tab 3 of the HR & Admin sidebar. **No database change.** Uses `assets.warranty_end_date` and the existing email and cron setup.
+
+**What's here**
+- **`/warranty`** (sidebar tab "Warranty & Renewals", staff, internal equipment only, retired / lost items left out): tiles for **Expired**, **Within 30 days**, **31 to 60 days**, **61 to 90 days** and **No warranty date** (links to the Assets list filtered to those), then a table per bucket with the asset, item, custodian, department, warranty end date and "N days left" / "expired N days ago". A warranty ending today counts as still in force today. Dates use Manila time. Software licences and subscriptions join this page later (tab 6).
+- **Weekly reminder email**: `app/api/cron/warranty-reminders`, scheduled Mondays 00:30 UTC (8:30 AM Manila) in `vercel.json`, same CRON_SECRET / Super Admin auth as the other cron routes. It goes to everyone who has the HR & Admin preset (found from `profiles.hidden_modules`, no address to configure) and is **skipped on a week when nothing has lapsed or ends within 90 days**. Sections are capped at 25 rows with "and N more". Email is a soft channel (`lib/email.ts`): if Resend is not configured it returns a message and nothing breaks.
+- **Diagnostic breadcrumb**: the tab says whether email is set up (`RESEND_API_KEY` and `RESEND_FROM_EMAIL`), and **Email me this list now** sends the same email to the signed-in person only, even on a quiet week, so the setup can be checked without waiting for Monday. The route returns `{ sent, recipients, skipped, failures }`; failures are logged as `cron:warranty-reminders`.
+- `CLAUDE.md`'s cron table and "five jobs" now say six.
+- Hobby plan note: this is a sixth Vercel cron, weekly. If Vercel ever refuses to deploy it, the schedule can move to a GitHub Action like `sla-check.yml`.
+
+**Not verified signed in; no email was sent.** `npx tsc --noEmit` and `npm run lint` pass. The bucket boundaries (today, 30, 31, 60, 61, 90, 91 days, retired items, no date) were checked in isolation.
+
+## Setup steps
+
+1. HR & Admin sidebar: Dashboard, Assets, Custodians, Stocktake, Warranty & Renewals.
+2. Open **Warranty & Renewals**. Pick a **test** item, set its warranty end to a date within the next 30 days: it appears under "Within 30 days" with the days left, and the tile goes up. Set it to yesterday: "Expired". Set it more than 90 days away: it leaves the page. Clear the date: "No warranty date" goes up.
+3. **Email me this list now**: a green message names your address (or a red one says why not, for example that email is not set up). Check your inbox for the list.
+4. As Super Admin, open `/api/cron/warranty-reminders` while signed in: JSON with `sent` and `recipients` (this sends the real weekly email to the preset users; do it only when that is fine).
+
+## Follow-up — Internal equipment register: Activity tab
+
+Tab 4 of the HR & Admin sidebar. **No database change.**
+
+**Why it reads the audit trail the way it does.** Every change to an asset or an asset document is already written to `audit_log` by the `log_audit` trigger. That table's RLS shows it to **Super Admin only** (`schema_step22b.sql`) and it holds every record in the system, so an admin's own History card on an asset page came back empty. The Activity tab (and that History card, for internal assets) therefore reads `audit_log` with the **service-role client** from `lib/activity.ts`, narrowed to internal equipment and nothing else. It must only be called after a staff check (both callers do `requireStaff()` / are staff-gated). This is a deliberate, narrow bypass of the Super Admin-only policy; the Audit Log page itself is unchanged.
+
+**What's here**
+- **`/activity`** (sidebar tab "Activity", staff): who added, changed or deleted company equipment, and when, as sentences: `Changed PHT-EQ-0007 · Laptop · Ana, 10 Oct 2026, 9:00 AM` with `Custodian: Lourence → Ben` and `Condition: Good → For Repair` underneath. Filters: Everything / Added / Changed / Deleted / Files, Last 7 / 30 / 90 days / All time (default 30), and a search over item, person and change. Up to 200 shown. Changes made from the SQL editor or a load script show as "System".
+- **Scope**: asset rows are filtered by organization in the query (`new_data->>organization_id` or `old_data->>organization_id` in the internal organizations), so deleted internal items still appear and client assets never do. File (photo / document) rows are kept only if the asset is an internal one. Client records are never returned.
+- **Wording**: only fields a person recognises are reported, in the words the app uses (status, condition, ownership and segment as their labels). The derived operating status, timestamps and ids are not; an edit that touched only those is dropped as noise.
+- **Asset page History card**: for an internal asset it now shows the same readable entries (it was empty for non-Super-Admin staff). Client asset pages are unchanged.
+- File entries for an item that has since been deleted are not shown (its audit rows are still there for the Super Admin's Audit Log).
+
+**Not verified signed in.** `npx tsc --noEmit` and `npm run lint` pass. The change-to-sentence logic was checked on sample rows (custodian and condition change, status-only change dropped, add, delete, file, unknown person).
+
+## Setup steps
+
+1. HR & Admin sidebar: Dashboard, Assets, Custodians, Stocktake, Warranty & Renewals, Activity.
+2. On a **test** item, change the custodian and condition, then open **Activity**: a "Changed" entry with `Custodian: A → B` and `Condition: Good → For Repair`, your name and the time.
+3. Add a test item (an "Added" entry), upload a photo to it ("File"), delete the test item (a "Deleted" entry, no link).
+4. Filters: Changed shows only changes; Last 7 days narrows; search a tag or a person.
+5. Open the test item: its **History** card now lists the same entries (it used to say "No history recorded yet" for HR).
+6. Edit a **client** asset: it never appears on Activity.
+
+## Follow-up — Internal equipment register: Activity tab only for named people
+
+Narrows the Activity tab above. **No database change.** The change history is the audit trail of the register, so it is given to named HR & Admin users instead of every one of them.
+
+**What's here**
+- **A per-user permission**, `perm:activity`, stored in `profiles.hidden_modules` next to the preset marker (`HR_ADMIN_ACTIVITY_MARKER` in `lib/hr-admin-preset.ts`). **Off by default**: a new HR & Admin user does not see Activity until a Super Admin ticks it.
+- **User Access**: an HR & Admin user's panel has a **Can see the Activity tab** checkbox that saves immediately (`setHrAdminActivityAccess`, Super Admin only, refuses anyone without the HR & Admin preset). Re-applying the preset or ticking other boxes keeps it; **Remove HR & Admin preset** clears it.
+- **Enforced in four places**: the sidebar hides the tab without the permission; the middleware redirects `/activity` to the equipment dashboard (`hrAdminMayVisit` now takes the user's `hidden_modules`); the page itself redirects anyone who fails `canViewActivity()`; and the History card on an internal asset page only loads the change history for people who pass the same check (without it the card says "No history recorded yet"). `canViewActivity()` is true for a Super Admin, and for a preset user with the permission, and nothing else: a regular admin, or a forged marker on a non-preset account, is refused.
+- To give it to one person: **User Access → Staff → that person → Edit Access → tick "Can see the Activity tab"**. Nothing has been switched on by this change.
+
+**Not verified signed in.** `npx tsc --noEmit` and `npm run lint` pass; the permission logic was checked in isolation (page access with and without the permission, Super Admin, plain admin, forged marker).
+
+## Setup steps
+
+1. As Super Admin, **User Access** → two HR & Admin users. Neither shows Activity yet. Sign in as each: the sidebar has no Activity tab, `/activity` goes to the dashboard, and an internal asset's History card says "No history recorded yet".
+2. Tick **Can see the Activity tab** on one of them. Sign in as that person (or reload): the tab appears and works; the other user still has nothing.
+3. Untick it: the tab disappears for that person.
+4. Re-apply the preset to the person who has it: the permission stays. **Remove HR & Admin preset**, then apply again: it is off.
+
+## Follow-up — Internal equipment register: tidier equipment table
+
+The internal Assets table had 11 columns, so the Asset Tag wrapped at its hyphens (`PHT-EQ-` / `0001`) and the page scrolled sideways. **No database change.**
+
+- **Asset Tag stays on one line**, in a monospace weight, and is **pinned to the left** (after the checkbox) so it stays visible when the table scrolls sideways. The Actions column stays pinned to the right.
+- **Fewer, fuller columns** (9 instead of 11): **Item** shows the description in bold with brand, model and serial number as a small line underneath (long text is cut to two lines); **Custodian** shows the person with their department underneath. Category, Segment, Status and Warranty keep their own columns.
+- **Segment** is a short tag, `PHT` or `TFD`, with the full name as the tooltip.
+- **Warranty End** is red once lapsed and amber within 60 days.
+- Rows align to the top, so a two-line item does not push the other cells down. Hover still highlights the whole row, including the pinned cells.
+- Sorting, filters, bulk edit and exports are unchanged. The client table is untouched.
+
+**Not checked in a browser.** `npx tsc --noEmit` and `npm run lint` pass.

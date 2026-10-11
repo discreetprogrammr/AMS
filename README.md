@@ -2388,3 +2388,21 @@ An **assembly** is any internal asset that another asset points to as its parent
 2. Open `PHT-EQ-0089`: a **Parts of this item (10)** list. Click a part: a **Part of PHT-EQ-0089** banner.
 3. Dashboard total is 88, with 48 for Pacific Horizon Tek and 40 for Team Fridays Digital.
 4. Custodians: "TFD Office" counts the parts it holds, not the assembly. A new stocktake does not list the assembly.
+
+## Follow-up — Internal equipment register: sortable columns
+
+The internal Assets list can be sorted by clicking a column heading. **No database change.**
+
+- **Sortable columns**: Asset Tag, Item, Category, Custodian, Segment, Status and Warranty End. Click a heading: ascending (▲); click again: descending (▼); a third click returns to the default order (newest first). The active heading is highlighted and an arrow appears on hover for the others.
+- **Natural order for tags**: `PHT-EQ-0009` sorts before `PHT-EQ-0010`, and `0100` after both. Text ignores capital letters. Empty values (no custodian, no warranty date) sort **last in either direction**. Status sorts by status, then condition. Ties fall back to the asset tag, so the order is stable.
+- **Done in the browser** on the rows already loaded, so it is instant and works on whatever the filters narrowed the list to. The choice is kept in the URL (`?sort=tag&dir=asc`), so reloading the page, or coming back after a bulk edit, keeps the order. Changing a filter or pill starts again from the default order.
+- The client asset table is unchanged. The logic is in `lib/asset-sort.ts` and was checked on sample rows (tags, text, blanks last, dates, status, click cycle).
+
+**Not verified signed in.** `npx tsc --noEmit`, `npm run lint` and `npm run build` pass.
+
+## Setup steps
+
+1. Assets (Pacific Horizon Tek): click **Asset Tag**: `PHT-EQ-0001, 0002, … 0089`. Click again: descending. A third click: back to the default order.
+2. Click **Custodian**: names A to Z, items with no custodian at the bottom; again for Z to A, still blanks at the bottom.
+3. Click **Warranty End**: soonest first, blank dates last. Click **Status**, **Segment**, **Category** and **Item** in turn.
+4. Reload the page: the order and the arrow stay. Pick a pill such as In Stock: the list resets to the default order.

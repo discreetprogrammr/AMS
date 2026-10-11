@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { StatusBadge } from "@/components/status-badge";
 import {
@@ -15,6 +15,7 @@ import {
 import { AssetRowActions } from "./asset-row-actions";
 import { InternalStatusBadges } from "./internal-badges";
 import { BulkEditBar } from "./bulk-edit-bar";
+import { nextSort, parseSort, sortRows, type SortKey, type SortState } from "@/lib/asset-sort";
 import { daysUntil } from "@/lib/warranty";
 
 // Short segment names for the table; the full name is the tooltip.
@@ -104,10 +105,29 @@ export function AssetsTable({
   const bulkEnabled = internalView && isStaff;
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
+  // Column sorting (internal list). Kept in the URL (?sort=tag&dir=asc) so a
+  // reload, or the page coming back after a bulk edit, keeps the order.
+  const searchParams = useSearchParams();
+  const [sort, setSort] = useState<SortState>(() => parseSort(searchParams.get("sort"), searchParams.get("dir")));
+  function clickSort(key: SortKey) {
+    const next = nextSort(sort, key);
+    setSort(next);
+    const url = new URL(window.location.href);
+    if (next) {
+      url.searchParams.set("sort", next.key);
+      url.searchParams.set("dir", next.dir);
+    } else {
+      url.searchParams.delete("sort");
+      url.searchParams.delete("dir");
+    }
+    window.history.replaceState(window.history.state, "", url.pathname + url.search);
+  }
+
   const rows = useMemo(() => {
-    if (internalView || filter === "all") return assets;
+    if (internalView) return sortRows(assets, sort);
+    if (filter === "all") return assets;
     return assets.filter((a) => a.status === filter);
-  }, [assets, filter, internalView]);
+  }, [assets, filter, internalView, sort]);
 
   // Only rows still on screen count, so a changed filter cannot leave
   // invisible ticks behind.
@@ -182,15 +202,19 @@ export function AssetsTable({
                     />
                   </th>
                 )}
-                <th className={`sticky z-[1] whitespace-nowrap bg-surface-2 px-4 py-3 ${bulkEnabled ? "left-10" : "left-0"}`}>
-                  Asset Tag
-                </th>
-                <th className="px-4 py-3">Item</th>
-                <th className="whitespace-nowrap px-4 py-3">Category</th>
-                <th className="px-4 py-3">Custodian</th>
-                <th className="px-4 py-3">Segment</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="whitespace-nowrap px-4 py-3">Warranty End</th>
+                <SortTh
+                  label="Asset Tag"
+                  sortKey="tag"
+                  sort={sort}
+                  onSort={clickSort}
+                  className={`sticky z-[1] whitespace-nowrap bg-surface-2 ${bulkEnabled ? "left-10" : "left-0"}`}
+                />
+                <SortTh label="Item" sortKey="item" sort={sort} onSort={clickSort} />
+                <SortTh label="Category" sortKey="category" sort={sort} onSort={clickSort} className="whitespace-nowrap" />
+                <SortTh label="Custodian" sortKey="custodian" sort={sort} onSort={clickSort} />
+                <SortTh label="Segment" sortKey="segment" sort={sort} onSort={clickSort} />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={clickSort} />
+                <SortTh label="Warranty End" sortKey="warranty" sort={sort} onSort={clickSort} className="whitespace-nowrap" />
                 {isStaff && <th className="sticky right-0 z-[1] bg-surface-2 px-4 py-3 text-right">Actions</th>}
               </tr>
             ) : (
@@ -325,5 +349,41 @@ export function AssetsTable({
         </table>
       </div>
     </div>
+  );
+}
+
+// A column header that sorts the internal list when clicked: ascending, then
+// descending, then back to the default order. The arrow shows the state.
+function SortTh({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  className = "",
+}: {
+  label: string;
+  sortKey: SortKey;
+  sort: SortState;
+  onSort: (key: SortKey) => void;
+  className?: string;
+}) {
+  const active = sort?.key === sortKey ? sort.dir : null;
+  return (
+    <th
+      className={`px-4 py-3 ${className}`}
+      aria-sort={active === "asc" ? "ascending" : active === "desc" ? "descending" : "none"}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        title={`Sort by ${label}`}
+        className={`group inline-flex items-center gap-1 uppercase tracking-wide hover:text-ink ${active ? "text-ink" : ""}`}
+      >
+        {label}
+        <span aria-hidden className={`text-[10px] ${active ? "text-blue-400" : "text-slate-500 opacity-0 group-hover:opacity-100"}`}>
+          {active === "desc" ? "▼" : "▲"}
+        </span>
+      </button>
+    </th>
   );
 }

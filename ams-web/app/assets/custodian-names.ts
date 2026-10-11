@@ -11,6 +11,7 @@ export async function loadCustodianNames(
   supabase: SupabaseClient,
   orgIds: string[],
   current?: string | null,
+  includeLeft = false,
 ): Promise<string[]> {
   if (orgIds.length === 0) return [];
 
@@ -43,7 +44,7 @@ export async function loadCustodianNames(
   const keepKey = custodianKey(current);
   const names: string[] = [];
   for (const [key, counts] of spellings) {
-    if (left.has(key) && key !== keepKey) continue;
+    if (!includeLeft && left.has(key) && key !== keepKey) continue;
     names.push(Array.from(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0]);
   }
   return names.sort((a, b) => a.localeCompare(b));

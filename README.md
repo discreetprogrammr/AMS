@@ -2433,3 +2433,30 @@ Run `schema_step52.sql` in the Supabase SQL editor **before** using the new form
 3. Edit an item: Asset No. is shown, not editable. Change its Custodian to "Someone new…", type a name, save: the name appears, and next time it is in the list.
 4. Set Assignment Status to **For Repair**: an orange badge, the item is under the **Needs Repair** pill, and its operating status is Down.
 5. Export CSV: the Unit column is filled.
+
+## Follow-up — Internal equipment register: Reports tab
+
+Tab 5 of the HR & Admin sidebar (Custodians, Stocktake, Warranty & Renewals, Reports, Activity). **No database change.** It is a new route, `/equipment-reports`, because `/reports` is the client reports module, which stays hidden from the preset.
+
+**What's here: the equipment register report**
+- **`/equipment-reports`** (sidebar tab "Reports", staff, internal equipment only): choose **Segment**, **Department**, **Category**, **Status** (Active items, Assigned, In Stock, Needs Repair, Returned, Retired / Lost, or Everything) and **Group by** (none, department, category, custodian or segment), then **Show report**. The filters use the same rules as the Assets list (`applyInternalFilters`), so a report and the list agree.
+- **Costs are included** (a choice made for this tab): each row shows its acquisition cost, each group has a count and a cost subtotal, and the report ends with the grand total. Items with no cost count as zero. Anyone who can open Reports sees the figures.
+- **Assemblies are left out** (`lib/assemblies.ts`), so counts and the cost total match the spreadsheet; each part is its own row.
+- **Print / Save as PDF** (`/equipment-reports/print`): a white A4 landscape page with the letterhead, the filter description and the grouped table; the browser's Print dialog saves it as a PDF.
+- **Download CSV** (`/api/assets/export/register`): the same rows, filters and grouping as one row per item, with the group in the first column and the cost as a number, UTF-8 for Excel. Staff only; not blocked for the HR & Admin preset.
+- Reached from the screen with the current choices in the URL, so a filtered report can be bookmarked or shared.
+
+Other reports considered (by custodian sign-off sheet, by department summary, needs repair and retired) are covered by the grouping and the Status choices, or by the Custodians tab's clearance form. Only the register report was asked for.
+
+**Not verified signed in.** `npx tsc --noEmit`, `npm run lint` and `npm run build` pass; grouping, cost totals (including text-typed numbers, blanks and nulls), money formatting and filter parsing were checked on sample rows.
+
+## Setup steps
+
+1. HR & Admin sidebar: Dashboard, Assets, Custodians, Stocktake, Warranty & Renewals, **Reports**.
+2. Reports with no changes: Items 88 (the total of the register, the Desktop PC assembly left out) and a total cost.
+3. Group by **Department**: a heading row per department with its count and cost; the headings add up to the total. Group by **Custodian**: items with no custodian come last.
+4. Set Segment to Team Fridays Digital and Status to **Everything**: the item count changes accordingly, and the filter line above the table says what it covers.
+5. **Print / Save as PDF**: a clean white landscape page; save it as a PDF and check the totals and group headings.
+6. **Download CSV** and open it in Excel: one row per item, a Group column, costs as numbers.
+
+**Reports: Custodian filter.** The report also filters by **Custodian**: **Everyone**, **No custodian** (items nobody holds), or one person from a drop-down of everyone who holds or has held internal equipment, including people marked as having left (a report about an old handover must still find them). The filter ignores capitals and spacing, so "Lourence", "lourence " and "LOURENCE" are one person, as on the Custodians tab (the Assets list's own custodian filter is an exact match). It carries into **Print / Save as PDF** and **Download CSV**, and the line above the table says which custodian it covers. Combine it with Group by Department or Category to see one person's equipment by type. No database change. Check: pick a person: the item count matches that person's page on the Custodians tab; **No custodian** shows the unassigned items.

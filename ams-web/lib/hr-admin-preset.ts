@@ -31,6 +31,7 @@ export const HR_ADMIN_NAV: { href: string; label: string; requires?: string }[] 
   { href: "/custodians", label: "Custodians" },
   { href: "/assets/stocktake", label: "Stocktake" },
   { href: "/warranty", label: "Warranty & Renewals" },
+  { href: "/equipment-reports", label: "Reports" },
   { href: "/activity", label: "Activity", requires: HR_ADMIN_ACTIVITY_MARKER },
 ];
 
@@ -53,7 +54,7 @@ export function hrAdminHiddenModules(): string[] {
 // module added to the app later is blocked for them without anyone having
 // to remember to hide it. /profile is the account page; /login is signing
 // out and in.
-const ALLOWED_PREFIXES = ["/assets", EQUIPMENT_DASHBOARD_HREF, "/custodians", "/warranty", "/activity", "/profile", "/login"];
+const ALLOWED_PREFIXES = ["/assets", EQUIPMENT_DASHBOARD_HREF, "/custodians", "/warranty", "/equipment-reports", "/activity", "/profile", "/login"];
 // Under /assets but client-only: the CSV importer and the QR scanner.
 const DENIED_PREFIXES = ["/assets/import", "/assets/scan"];
 

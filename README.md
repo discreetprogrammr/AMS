@@ -2406,3 +2406,30 @@ The internal Assets list can be sorted by clicking a column heading. **No databa
 2. Click **Custodian**: names A to Z, items with no custodian at the bottom; again for Z to A, still blanks at the bottom.
 3. Click **Warranty End**: soonest first, blank dates last. Click **Status**, **Segment**, **Category** and **Item** in turn.
 4. Reload the page: the order and the arrow stay. Pick a pill such as In Stock: the list resets to the default order.
+
+## Follow-up — Internal equipment register: form pick-lists, automatic Asset No., Unit and For Repair
+
+Changes to the **Add / Edit internal equipment** form, from HR's workbook ("Reference Lists" sheet).
+
+## Database change, run this first
+
+Run `schema_step52.sql` in the Supabase SQL editor **before** using the new form. It is idempotent. It adds `assets.unit` (check: `pc`, `set`, `unit`, `pair`, `lot`) and widens the `assignment_status` check to include `for_repair` (the old inline constraint is found by what it checks). Existing internal items are set to Unit `pc`, which is what HR's spreadsheet has for every row. Until it is run, saving an internal item fails with a message that says to run it, and the internal CSV export errors (it now reads `unit`).
+
+**What's here**
+- **Asset No. is never typed.** A new item shows the next number and gets it automatically when saved (if another save takes the same number first, the app takes the next free one). An existing item shows its number read-only and keeps it: the update no longer sends the tag at all. The internal CSV importer can still carry a typed Asset No. (it is how a list is loaded in bulk).
+- **Equipment Category** is a drop-down: Laptop / Computer, Monitor, Mobile Phone, Tablet, Printer / Scanner, Network Equipment, Office Equipment, Tools / Technical Equipment, Furniture, Other.
+- **Department** is a drop-down: Management, HR & Admin, Finance, Accounting, Sales & Marketing, Technical / Service, Operations, Other.
+- **Unit** is a new drop-down next to Qty (pc, set, unit, pair, lot), default `pc`, and fills the Unit column of the internal CSV export. The importer reads a Unit column and rejects a value that is not on the list.
+- **Custodian** is a drop-down of everyone who holds or has held internal equipment, plus the people on the Custodians tab (those marked as having left are not offered, except the item's current holder), with **No custodian** and **Someone new…** (type a name). Names that differ only by capitals or spacing are one person.
+- **Assignment Status** gains **For Repair**. It counts as "Needs repair" (the pill, the dashboard's Needs attention, Custodians' needs-repair count), shows an orange badge, and sets the operating status to Down, like the condition For Repair does.
+- **A value an older item already has that is not on a list** (a category or department typed before) is kept when that item is edited, so editing does not force a change; a new value must come from the list. The CSV importer still accepts free text for category and department.
+
+**Not verified signed in.** `npx tsc --noEmit`, `npm run lint` and `npm run build` pass. `schema_step52.sql` was run twice on a scratch copy of the register (89 items): the second run changed nothing, all 89 got Unit `pc`, `for_repair` and the units are accepted and anything else is refused.
+
+## Setup steps
+
+1. Run `schema_step52.sql`.
+2. **+ Add Internal Equipment**: Asset No. shows the next number but is not a field. Category, Unit, Custodian, Department and Assignment Status are drop-downs; save and check the new item got that number.
+3. Edit an item: Asset No. is shown, not editable. Change its Custodian to "Someone new…", type a name, save: the name appears, and next time it is in the list.
+4. Set Assignment Status to **For Repair**: an orange badge, the item is under the **Needs Repair** pill, and its operating status is Down.
+5. Export CSV: the Unit column is filled.

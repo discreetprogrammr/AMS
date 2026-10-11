@@ -56,7 +56,7 @@ export async function GET(request: Request) {
   let query = supabase
     .from("assets")
     .select(
-      "asset_tag, asset_category, description, brand, model, serial_number, quantity, ownership, date_acquired, acquisition_cost, supplier, custodian, department, date_issued, assignment_status, condition, warranty_end_date, return_disposal_date, remarks, segment, sites(address)",
+      "asset_tag, asset_category, description, brand, model, serial_number, quantity, unit, ownership, date_acquired, acquisition_cost, supplier, custodian, department, date_issued, assignment_status, condition, warranty_end_date, return_disposal_date, remarks, segment, sites(address)",
     )
     .in("organization_id", orgIds)
     .order("asset_tag", { ascending: true });
@@ -83,7 +83,7 @@ export async function GET(request: Request) {
     a.model ?? "",
     a.serial_number ?? "",
     a.quantity ?? "",
-    "", // Unit: no database column
+    a.unit ?? "",
     label(OWNERSHIPS, a.ownership),
     a.date_acquired ?? "",
     a.acquisition_cost ?? "",

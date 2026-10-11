@@ -17,6 +17,7 @@ type Tone = keyof typeof TONE;
 const ASSIGNMENT_TONE: Record<string, Tone> = {
   assigned: "blue",
   in_stock: "green",
+  for_repair: "orange",
   returned: "slate",
   retired_disposed: "slate",
   lost: "red",

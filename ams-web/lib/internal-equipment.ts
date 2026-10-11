@@ -17,9 +17,45 @@ export const OWNERSHIPS = [
 export const ASSIGNMENT_STATUSES = [
   { value: "assigned", label: "Assigned" },
   { value: "in_stock", label: "In Stock" },
+  { value: "for_repair", label: "For Repair" },
   { value: "returned", label: "Returned" },
   { value: "retired_disposed", label: "Retired / Disposed" },
   { value: "lost", label: "Lost" },
+] as const;
+
+// The pick-lists on the internal asset form: HR's own lists (the "Reference
+// Lists" sheet of their equipment workbook). A value an older item already has
+// that is not on a list is kept when that item is edited.
+export const INTERNAL_CATEGORIES = [
+  "Laptop / Computer",
+  "Monitor",
+  "Mobile Phone",
+  "Tablet",
+  "Printer / Scanner",
+  "Network Equipment",
+  "Office Equipment",
+  "Tools / Technical Equipment",
+  "Furniture",
+  "Other",
+] as const;
+
+export const INTERNAL_DEPARTMENTS = [
+  "Management",
+  "HR & Admin",
+  "Finance",
+  "Accounting",
+  "Sales & Marketing",
+  "Technical / Service",
+  "Operations",
+  "Other",
+] as const;
+
+export const UNITS = [
+  { value: "pc", label: "pc" },
+  { value: "set", label: "set" },
+  { value: "unit", label: "unit" },
+  { value: "pair", label: "pair" },
+  { value: "lot", label: "lot" },
 ] as const;
 
 export const CONDITIONS = [
@@ -71,7 +107,7 @@ export function deriveInternalStatus(
 ): AssetStatus {
   if (assignmentStatus === "retired_disposed" || assignmentStatus === "lost") return "unserviceable";
   if (condition === "lost") return "unserviceable";
-  if (condition === "for_repair") return "down";
+  if (condition === "for_repair" || assignmentStatus === "for_repair") return "down";
   if (condition === "damaged") return "attention";
   return "operational";
 }
@@ -95,8 +131,8 @@ export function nextInternalTagFrom(tags: (string | null)[]): string {
 }
 
 // Header row of the internal export (spec 7.4): the spreadsheet's Equipment
-// List columns in their order, plus Segment. "Unit" has no database column
-// and is exported blank; "Current Location" is the site's address.
+// List columns in their order, plus Segment. "Unit" is assets.unit
+// (schema_step52.sql); "Current Location" is the site's address.
 export const INTERNAL_EXPORT_HEADER = [
   "Asset No.",
   "Equipment Category",
@@ -273,7 +309,7 @@ export function applyInternalFilters<Q extends Filterable>(query: Q, f: Internal
       q = excludeRetired(q).eq("assignment_status", "returned");
       break;
     case "repair":
-      q = excludeRetired(q).or("condition.in.(for_repair,damaged)");
+      q = excludeRetired(q).or("condition.in.(for_repair,damaged),assignment_status.eq.for_repair");
       break;
     case "retired":
       q = q.or(RETIRED_OR);

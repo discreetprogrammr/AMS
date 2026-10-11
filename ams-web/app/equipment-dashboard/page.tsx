@@ -109,7 +109,7 @@ export default async function EquipmentDashboardPage({
   const href = (f: Partial<InternalFilters>) => internalAssetsHref({ org: orgId }, f);
 
   const bySegment = (value: string) => active.filter((r) => r.segment === value).length;
-  const needsAttention = active.filter((r) => r.condition === "for_repair" || r.condition === "damaged").length;
+  const needsAttention = active.filter((r) => r.condition === "for_repair" || r.condition === "damaged" || r.assignment_status === "for_repair").length;
 
   const tiles = [
     { label: "Total company assets", value: active.length, to: href({}) },

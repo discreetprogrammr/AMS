@@ -2,9 +2,13 @@ import Link from "next/link";
 import {
   ASSIGNMENT_STATUSES,
   CONDITIONS,
+  INTERNAL_CATEGORIES,
+  INTERNAL_DEPARTMENTS,
   OWNERSHIPS,
   SEGMENTS,
+  UNITS,
 } from "@/lib/internal-equipment";
+import { CustodianSelect } from "./custodian-select";
 
 type Organization = { id: string; name: string };
 
@@ -38,6 +42,7 @@ type AssetFormValues = {
   condition?: string | null;
   return_disposal_date?: string | null;
   remarks?: string | null;
+  unit?: string | null;
 };
 
 const inputClass =
@@ -56,6 +61,7 @@ export function AssetForm({
   cancelHref = "/assets",
   mode = "client",
   suggestedTag,
+  custodianNames = [],
 }: {
   organizations: Organization[];
   action: (formData: FormData) => void;
@@ -68,6 +74,8 @@ export function AssetForm({
   mode?: "client" | "internal";
   // Internal new-asset form only: the next free PHT-EQ number, prefilled.
   suggestedTag?: string;
+  // Internal form: the names offered in the Custodian drop-down.
+  custodianNames?: string[];
 }) {
   // A defaultValues object with no asset_tag means this is the "New Asset"
   // form — the Asset ID is auto-generated server-side in createAsset()
@@ -85,7 +93,6 @@ export function AssetForm({
         className="space-y-5 rounded-xl border border-hairline bg-surface p-6"
       >
         <input type="hidden" name="organization_id" value={org?.id ?? ""} />
-        {suggestedTag && <input type="hidden" name="suggested_tag" value={suggestedTag} />}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
@@ -117,25 +124,30 @@ export function AssetForm({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label className={labelClass}>Asset No.</label>
-            <input
-              name="asset_tag"
-              required
-              defaultValue={d?.asset_tag ?? suggestedTag ?? ""}
-              placeholder="PHT-EQ-0001"
-              className={inputClass}
-            />
+            {/* Never typed: the number is given by the system when the item
+                is saved, and an existing item keeps its number. */}
+            <div className={`${inputClass} flex items-center font-mono text-ink-soft`}>
+              {isEditing ? d?.asset_tag : (suggestedTag ?? "Assigned when saved")}
+            </div>
             <p className="mt-1 text-xs text-ink-soft">
-              Next free number is prefilled. Change it only if you need to.
+              {isEditing
+                ? "Assigned automatically and cannot be changed."
+                : "The next number is assigned automatically when you save."}
             </p>
           </div>
           <div>
             <label className={labelClass}>Equipment Category</label>
-            <input
-              name="asset_category"
-              defaultValue={d?.asset_category ?? ""}
-              placeholder="e.g. Laptop, Mobile Phone, Monitor"
-              className={inputClass}
-            />
+            <select name="asset_category" defaultValue={d?.asset_category ?? ""} className={inputClass}>
+              <option value="">—</option>
+              {d?.asset_category && !(INTERNAL_CATEGORIES as readonly string[]).includes(d.asset_category) && (
+                <option value={d.asset_category}>{d.asset_category}</option>
+              )}
+              {INTERNAL_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -148,7 +160,7 @@ export function AssetForm({
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
           <div>
             <label className={labelClass}>Brand</label>
             <input name="brand" defaultValue={d?.brand ?? ""} className={inputClass} />
@@ -167,6 +179,16 @@ export function AssetForm({
               defaultValue={d?.quantity ?? 1}
               className={inputClass}
             />
+          </div>
+          <div>
+            <label className={labelClass}>Unit</label>
+            <select name="unit" defaultValue={d?.unit ?? "pc"} className={inputClass}>
+              {UNITS.map((u) => (
+                <option key={u.value} value={u.value}>
+                  {u.label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -233,11 +255,21 @@ export function AssetForm({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
             <label className={labelClass}>Assigned To / Custodian</label>
-            <input name="custodian" defaultValue={d?.custodian ?? ""} className={inputClass} />
+            <CustodianSelect names={custodianNames} defaultValue={d?.custodian ?? null} className={inputClass} />
           </div>
           <div>
             <label className={labelClass}>Department</label>
-            <input name="department" defaultValue={d?.department ?? ""} className={inputClass} />
+            <select name="department" defaultValue={d?.department ?? ""} className={inputClass}>
+              <option value="">—</option>
+              {d?.department && !(INTERNAL_DEPARTMENTS as readonly string[]).includes(d.department) && (
+                <option value={d.department}>{d.department}</option>
+              )}
+              {INTERNAL_DEPARTMENTS.map((x) => (
+                <option key={x} value={x}>
+                  {x}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className={labelClass}>Date Issued</label>

@@ -53,7 +53,9 @@ export function summariseCustodians(rows: CustodyRow[]): CustodianSummary[] {
     items: g.rows.length,
     departments: Array.from(new Set(g.rows.map((r) => r.department?.trim()).filter((d): d is string => !!d))).sort(),
     segments: Array.from(new Set(g.rows.map((r) => r.segment).filter((s): s is string => !!s))).sort(),
-    needsRepair: g.rows.filter((r) => r.condition === "for_repair" || r.condition === "damaged").length,
+    needsRepair: g.rows.filter(
+      (r) => r.condition === "for_repair" || r.condition === "damaged" || r.assignment_status === "for_repair",
+    ).length,
   })).sort((a, b) => a.name.localeCompare(b.name));
 }
 

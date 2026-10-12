@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile, requireStaff } from "@/lib/supabase/profile";
+import { getProfile, requireStaffOrViewer } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { WorkOrdersTable, type WorkOrderRow } from "./work-orders-table";
 
@@ -9,7 +9,7 @@ export default async function WorkOrdersPage({
 }: {
   searchParams: { created?: string; error?: string };
 }) {
-  await requireStaff();
+  await requireStaffOrViewer();
   const profile = await getProfile();
 
   const supabase = await createClient();

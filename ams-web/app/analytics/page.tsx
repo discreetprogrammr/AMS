@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile, isStaffRole } from "@/lib/supabase/profile";
+import { getProfile, isStaffViewRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { getSlaPolicyMap, resolveSlaTargets } from "@/lib/sla";
 import {
@@ -49,7 +49,7 @@ function csatTextTone(avg: number): string {
 
 export default async function AnalyticsPage() {
   const profile = await getProfile();
-  const isStaff = isStaffRole(profile?.role);
+  const isStaff = isStaffViewRole(profile?.role);
   const { months, totals } = await getAnalytics();
 
   // Same viewer-aware resolution as the dashboard (app/dashboard/page.tsx)

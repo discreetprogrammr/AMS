@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { excludeInternal, getInternalOrgIds } from "@/lib/internal-org";
-import { getProfile, requireStaff } from "@/lib/supabase/profile";
+import { getProfile, requireStaffOrViewer } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { InstallationForm } from "./installation-form";
 
@@ -9,7 +9,7 @@ export default async function InstallationReportPage({
 }: {
   searchParams: { error?: string; asset_id?: string };
 }) {
-  await requireStaff("/reports");
+  await requireStaffOrViewer("/reports");
   const profile = await getProfile();
 
   const supabase = await createClient();

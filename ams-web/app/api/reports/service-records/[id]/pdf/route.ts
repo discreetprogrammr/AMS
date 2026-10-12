@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { reportRef } from "@/lib/format";
 import { reportKindOf, REPORT_KIND_REF_PREFIX } from "@/lib/report-types";
 import { forbidHrAdminPreset } from "@/lib/hr-admin-guard";
+import { forbidViewer } from "@/lib/viewer-guard";
 
 // Streams the stored PDF (schema_step20.sql / lib/pdf/generate-and-store.ts)
 // back as a real file download. Falls back to the live-rendered report
@@ -13,6 +14,10 @@ export async function GET(
   request: Request,
   { params }: { params: { id: string } },
 ) {
+  // A read-only viewer account gets no downloads and no writes (lib/viewer-guard.ts).
+  const viewerBlocked = await forbidViewer();
+  if (viewerBlocked) return viewerBlocked;
+
   // HR & Admin preset users get nothing from client-facing routes.
   const forbidden = await forbidHrAdminPreset();
   if (forbidden) return forbidden;

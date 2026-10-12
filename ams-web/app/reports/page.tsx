@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile, isStaffRole } from "@/lib/supabase/profile";
+import { getProfile, isStaffViewRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { StatusBadge } from "@/components/status-badge";
 import { excludeInternal, getInternalOrgIds, touchesInternalOrg } from "@/lib/internal-org";
@@ -13,9 +13,9 @@ export default async function ReportsPage({
 }) {
   const supabase = await createClient();
   const profile = await getProfile();
-  const isStaff = isStaffRole(profile?.role);
+  const isStaff = isStaffViewRole(profile?.role);
 
-  // No requireStaff() gate — Reports is client-visible in the reference
+  // No requireStaffOrViewer() gate — Reports is client-visible in the reference
   // too (it's not in the reference's clientHidden nav list, same check I
   // did before building Calendar). RLS on assets/service_tickets/
   // service_records already scopes a client_viewer to their own org.

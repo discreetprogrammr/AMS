@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { excludeInternal, getInternalOrgIds } from "@/lib/internal-org";
-import { requireStaff } from "@/lib/supabase/profile";
+import { requireStaffOrViewer } from "@/lib/supabase/profile";
 import { isSuperAdminRole } from "@/lib/supabase/roles";
 import { AppShell } from "@/components/app-shell";
 import { updateGlobalSlaPolicy, upsertOrgSlaPolicy, deleteOrgSlaPolicy } from "./actions";
@@ -15,7 +15,7 @@ export default async function SlaSettingsPage({
 }: {
   searchParams: { error?: string; updated?: string };
 }) {
-  const profile = await requireStaff();
+  const profile = await requireStaffOrViewer();
   const canEdit = isSuperAdminRole(profile.role);
 
   const supabase = await createClient();

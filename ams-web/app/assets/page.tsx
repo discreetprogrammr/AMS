@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile, isStaffRole } from "@/lib/supabase/profile";
+import { getProfile, isStaffViewRole } from "@/lib/supabase/profile";
 import { isHrAdminPreset } from "@/lib/hr-admin-preset";
 import { loadAssemblyIds } from "@/lib/assemblies";
 import { AppShell } from "@/components/app-shell";
@@ -27,7 +27,7 @@ export default async function AssetsPage({
 }) {
   const supabase = await createClient();
   const profile = await getProfile();
-  const isStaff = isStaffRole(profile?.role);
+  const isStaff = isStaffViewRole(profile?.role);
 
   // Powers the search bar on the dashboard (and this page's own search
   // box) — a plain ?q= query string, no client JS needed. Matches against

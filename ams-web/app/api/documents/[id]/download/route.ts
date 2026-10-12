@@ -4,6 +4,7 @@ import { getProfile } from "@/lib/supabase/profile";
 import { getInternalOrgIds } from "@/lib/internal-org";
 import { isHrAdminPreset } from "@/lib/hr-admin-preset";
 import { isInlineImage } from "@/lib/documents";
+import { forbidViewer } from "@/lib/viewer-guard";
 
 // Streams a stored asset document back as a real file download. Uses the
 // signed-in user's own session (not service-role) for both the catalog
@@ -24,6 +25,10 @@ export async function GET(
   request: Request,
   { params }: { params: { id: string } },
 ) {
+  // A read-only viewer account gets no downloads and no writes (lib/viewer-guard.ts).
+  const viewerBlocked = await forbidViewer();
+  if (viewerBlocked) return viewerBlocked;
+
   const supabase = await createClient();
 
   const { data: doc } = await supabase

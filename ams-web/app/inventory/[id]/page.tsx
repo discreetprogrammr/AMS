@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile, requireStaff } from "@/lib/supabase/profile";
+import { getProfile, requireStaffOrViewer } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { verifyItem, unverifyItem, completeCycle } from "../actions";
 
@@ -10,7 +10,7 @@ export default async function InventoryCycleDetailPage({
 }: {
   params: { id: string };
 }) {
-  await requireStaff();
+  await requireStaffOrViewer();
   const profile = await getProfile();
 
   const supabase = await createClient();

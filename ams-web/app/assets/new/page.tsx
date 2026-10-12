@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import { getProfile, requireStaff } from "@/lib/supabase/profile";
+import { getProfile, requireStaffOrViewer } from "@/lib/supabase/profile";
 import { isHrAdminPreset } from "@/lib/hr-admin-preset";
 import { AppShell } from "@/components/app-shell";
 import { AssetForm } from "../asset-form";
@@ -13,7 +13,7 @@ export default async function NewAssetPage({
 }: {
   searchParams: { error?: string; internal?: string };
 }) {
-  await requireStaff();
+  await requireStaffOrViewer();
   const profile = await getProfile();
 
   // HR & Admin preset: internal equipment only, so the client form is

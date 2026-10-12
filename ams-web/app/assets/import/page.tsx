@@ -1,4 +1,4 @@
-import { getProfile, requireStaff } from "@/lib/supabase/profile";
+import { getProfile, requireStaffOrViewer } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { ImportAssetsForm } from "./import-assets-form";
 
@@ -6,7 +6,7 @@ import { ImportAssetsForm } from "./import-assets-form";
 // adding assets one at a time through /assets/new. Staff-only, same
 // reasoning as every other write path on Assets.
 export default async function ImportAssetsPage() {
-  await requireStaff();
+  await requireStaffOrViewer();
   const profile = await getProfile();
 
   return (

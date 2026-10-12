@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { assertNotViewer } from "@/lib/viewer-guard";
 
 export type WidgetSize = "sm" | "md" | "lg";
 export type LayoutItem = { i: string; x: number; y: number; size: WidgetSize };
@@ -14,6 +15,7 @@ export type LayoutItem = { i: string; x: number; y: number; size: WidgetSize };
 // clears it, which the page treats as "use the default layout for my
 // role" — the Reset action.
 export async function saveDashboardLayout(layout: LayoutItem[] | null) {
+  await assertNotViewer();
   const supabase = await createClient();
   const {
     data: { user },

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { UserAvatar } from "./user-avatar";
 import { uploadAvatar, removeAvatar } from "@/app/profile/avatar-actions";
 import { MAX_AVATAR_BYTES } from "@/lib/avatar";
+import { useViewOnly } from "@/components/view-only";
 
 // Interactive avatar picker for My Profile (app/profile/page.tsx) — click
 // the circle (or the camera badge) to pick an image, uploads immediately on
@@ -19,6 +20,7 @@ export function AvatarUpload({
   fullName: string | null;
   avatarUrl: string | null;
 }) {
+  const viewOnly = useViewOnly();
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -71,7 +73,7 @@ export function AvatarUpload({
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          disabled={busy}
+          disabled={busy || viewOnly}
           title="Change profile picture"
           className="block rounded-full ring-2 ring-transparent transition hover:ring-blue-500/50 disabled:opacity-50"
         >
@@ -102,7 +104,7 @@ export function AvatarUpload({
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            disabled={busy}
+            disabled={busy || viewOnly}
             className="text-blue-400 hover:underline disabled:opacity-50"
           >
             Upload new
@@ -111,7 +113,7 @@ export function AvatarUpload({
             <button
               type="button"
               onClick={handleRemove}
-              disabled={busy}
+              disabled={busy || viewOnly}
               className="text-ink-soft hover:underline disabled:opacity-50"
             >
               Remove

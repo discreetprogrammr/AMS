@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { getProfile, isStaffRole } from "@/lib/supabase/profile";
+import { getProfile, isStaffViewRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { computeUnreadTicketIds } from "@/lib/messages/unread";
 import { MessagesList } from "./messages-list";
@@ -11,7 +11,7 @@ import { MessagesList } from "./messages-list";
 export default async function MessagesPage() {
   const supabase = await createClient();
   const profile = await getProfile();
-  const isStaff = isStaffRole(profile?.role);
+  const isStaff = isStaffViewRole(profile?.role);
 
   const { data: tickets } = await supabase
     .from("service_tickets")

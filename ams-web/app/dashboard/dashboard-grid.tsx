@@ -14,6 +14,7 @@ import {
 import GridLayout, { type Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import { saveDashboardLayout, type LayoutItem, type WidgetSize } from "./actions";
+import { useViewOnly } from "@/components/view-only";
 
 const COLS = 12;
 const ROW_HEIGHT = 30;
@@ -139,6 +140,7 @@ export function DashboardGrid({
   // reliable public API to read back out.
   children: ReactNode;
 }) {
+  const viewOnly = useViewOnly();
   const contentById = useMemo(() => {
     const childArray = Children.toArray(children) as ReactElement[];
     return new Map(widgets.map((w, i) => [w.id, childArray[i]]));
@@ -257,8 +259,9 @@ export function DashboardGrid({
           <button
             type="button"
             onClick={() => setEditMode(true)}
-            title="Edit Layout"
-            className="rounded-md p-1.5 text-slate-500 hover:bg-surface-2 hover:text-ink"
+            disabled={viewOnly}
+            title={viewOnly ? "View-only account" : "Edit Layout"}
+            className="rounded-md p-1.5 text-slate-500 hover:bg-surface-2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
           >
             <PencilIcon />
           </button>

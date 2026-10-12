@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/supabase/profile";
-import { isSuperAdminRole, isStaffRole } from "@/lib/supabase/roles";
+import { isSuperAdminRole, isStaffViewRole, isViewerRole } from "@/lib/supabase/roles";
 import { AppShell } from "@/components/app-shell";
 import { AvatarUpload } from "@/components/avatar-upload";
 import { updateDisplayName, updatePassword } from "./actions";
@@ -26,7 +26,9 @@ export default async function ProfilePage({
 
   const roleLabel = isSuperAdminRole(profile?.role)
     ? "Super Admin"
-    : isStaffRole(profile?.role)
+    : isViewerRole(profile?.role)
+      ? "Viewer (view-only)"
+      : isStaffViewRole(profile?.role)
       ? "Admin"
       : "Client";
 

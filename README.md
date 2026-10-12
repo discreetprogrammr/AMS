@@ -2460,3 +2460,54 @@ Other reports considered (by custodian sign-off sheet, by department summary, ne
 6. **Download CSV** and open it in Excel: one row per item, a Group column, costs as numbers.
 
 **Reports: Custodian filter.** The report also filters by **Custodian**: **Everyone**, **No custodian** (items nobody holds), or one person from a drop-down of everyone who holds or has held internal equipment, including people marked as having left (a report about an old handover must still find them). The filter ignores capitals and spacing, so "Lourence", "lourence " and "LOURENCE" are one person, as on the Custodians tab (the Assets list's own custodian filter is an exact match). It carries into **Print / Save as PDF** and **Download CSV**, and the line above the table says which custodian it covers. Combine it with Group by Department or Category to see one person's equipment by type. No database change. Check: pick a person: the item count matches that person's page on the Custodians tab; **No custodian** shows the unassigned items.
+
+## Follow-up — Read-only "viewer" account, for the demo deployment
+
+A person who will build a mockup of HorizonCare360 needs to see the look and feel of every tab without being able to change anything. The decision: the viewer lives in the **separate demo deployment** (Vercel project `horizoncare360-demo`) with **its own Supabase project and sample data**, so no real client or PHtek data is reachable. The code is the same repo and is merged to `main` for both deployments; the role only exists where the database has it (`schema_step53.sql`), so production is unaffected: it has no `viewer` value and no viewer accounts.
+
+## Database change, run this first (DEMO Supabase project only)
+
+`schema_step53.sql`. It **refuses to run** unless the database has been marked as a demo database, because viewers can read tables that are not organization-scoped (parts stock, system alerts), which would be a leak in a database with real data. In the demo project only, run once:
+
+```sql
+create table if not exists app_environment (key text primary key, value text not null);
+alter table app_environment enable row level security;
+insert into app_environment (key, value) values ('demo_database', 'true')
+  on conflict (key) do update set value = excluded.value;
+```
+
+Then run `schema_step53.sql` (idempotent). It adds the role value `viewer`; `is_viewer()` and scoping helpers; **SELECT-only policies** for viewers on the tables behind every tab they can open, limited to non-internal organizations; and **RESTRICTIVE policies that refuse every insert, update and delete by a viewer on every table in `public` and on `storage.objects`**, which win over any other rule (including "own row" rules for a profile's name, read state, push subscriptions and avatars). Viewers get **no** access to `audit_log`, `error_logs`, `compliance_escalations`, the `equipment_*` tables or `asset_custodian_history`.
+
+**What a viewer can and cannot do**
+- Sees: Dashboard, Assets, Scan Asset, Fleet Map, Clients, Work Orders, Tickets, Inspections, Asset Verification, Inventory, HorizonCare360 Assist, Calendar, Reports, Analytics, Alerts, SLA Policy. Does **not** see User Access, Audit Log or Error Logs, nor the internal-equipment (HR & Admin) tabs.
+- UI: a "View-only account" banner; every add / edit / delete / upload / import / start-PM / start-CM / send / approve control stays visible (so the look is real) but does nothing: a writing form shows "View-only account: this can't be changed." (`components/view-only.tsx`), and the few controls that call an action from a click (alerts, calendar, ticket and work-order status, dashboard layout, chat, avatar) are disabled. The profile page's name and password forms are inert too.
+- Server: all 70 server actions and 16 non-cron API routes refuse a viewer (`requireStaff` / `requireSuperAdmin` / `assertNotViewer`; `forbidViewer` on routes). That includes every export, template, PDF and document download, `log-client-error` and `turn-credentials`. `node check-viewer-guards.mjs` lists anything unguarded (currently none).
+- Database: the restrictive policies above, the real barrier, which holds even for a direct API call with a viewer's token.
+- Pages: they use `requireStaffOrViewer`, which a viewer passes; actions keep `requireStaff`, which a viewer fails. A viewer is **not** staff (`isStaffRole` is false); `isStaffViewRole` means "may look".
+
+## Setting up the demo deployment (runbook)
+
+1. **Create a new Supabase project** for the demo. Do not reuse production.
+2. **Run the schema in order** in its SQL editor, each file as its own run: `schema.sql`, then `schema_step5.sql` … `schema_step52.sql` in numeric order (`ls schema_step*.sql | sort -V`; run `schema_step22.sql` to completion before `schema_step22b.sql`). The whole chain was applied to a fresh scratch Postgres in that order with no errors (with stand-ins for `auth`, `storage` and the realtime publication that a real Supabase project already has).
+3. **Seed sample data**: `seed_ppa_demo_1.sql` (the Philippine Ports Authority demo: 5 sites, 10 assets, certificates, 2 tickets). Use `_1`: the older `seed_ppa_demo.sql` fails on the current `asset_status` values. For the "Bureau of Customs (Demo)" organization, add it by hand as the first README steps describe. Step 46 also creates the company's own internal organization; the viewer cannot see it.
+4. **Mark it as demo and run `schema_step53.sql`** (above).
+5. **Create the viewer**: Supabase Authentication → Users → Add user (Auto Confirm User), then
+   ```sql
+   insert into profiles (id, full_name, role)
+   values ('<AUTH_USER_ID>', '<FULL NAME>', 'viewer')
+   on conflict (id) do update set full_name = excluded.full_name, role = excluded.role;
+   ```
+   Leave `organization_id` empty. Create a Super Admin the same way (role `super_admin`) to manage the demo.
+6. **Point the `horizoncare360-demo` Vercel project at the demo Supabase project**: Settings → Environment Variables: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` from the **demo** Supabase project, plus `CRON_SECRET`. Check that none of them is a production value. Leave the Resend, VAPID and Metered variables unset (those features skip quietly).
+
+**Known limit**: a viewer who signs in has a normal Supabase session, and the Auth service itself (not the database) lets any signed-in user change their own password or email by calling it directly. The app's forms and actions refuse it and the profile page is inert, but that one path cannot be closed from the app or with RLS. Give the viewer a password you can rotate, and rotate it when he is done.
+
+**Verified**: `npx tsc --noEmit`, `npm run lint`, `npm run build`. The DB layer was tested in a scratch Postgres seeded with the PPA data plus a fake internal item, as a viewer, an admin and a client: the viewer sees the PPA data and **not** the internal organization, its asset or a ticket on it, `audit_log`, `error_logs`, system alerts or the `equipment_*` tables; the admin and client see what they always did; for every table with rows, a viewer's update and delete affect 0 rows and an insert is refused by RLS, including promoting themselves to admin, changing their name, uploading to storage, raising a ticket or posting a message; step 53 applied twice produced identical policies and refuses to run on an unmarked database. **Not verified**: the screens as a viewer (no demo deployment or viewer login exists yet).
+
+## Setup steps (after the demo project is ready)
+
+1. Sign in to the demo deployment as the viewer: banner at the top, sidebar with all tabs except User Access (and no Audit Log, Error Logs or HR tabs); the Dashboard and tabs show the PPA sample data.
+2. Open Assets → **Add Asset**: the form shows. Fill it and Save: "View-only account: this can't be changed." and nothing is created. Try the same on Clients, Work Orders, Parts, an Inspection, a Report (PM and CM checklists), SLA Policy, the ticket chat, Profile (name and password).
+3. Try the status controls (ticket, work order), **Mark Completed**, alerts **Mark read**, Dashboard **Edit Layout**: all disabled.
+4. Try Export CSV, a service-record PDF and a document download: 403.
+5. As the Super Admin on the same deployment, confirm everything still works normally.

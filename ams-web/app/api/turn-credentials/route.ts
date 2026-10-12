@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { forbidHrAdminPreset } from "@/lib/hr-admin-guard";
+import { forbidViewer } from "@/lib/viewer-guard";
 
 // Short-lived ICE server list (STUN + TURN) for the calling feature's
 // RTCPeerConnection — fetched server-side so the Metered API key never
@@ -14,6 +15,10 @@ import { forbidHrAdminPreset } from "@/lib/hr-admin-guard";
 // same wifi/network, but won't reliably work over mobile data or behind
 // strict firewalls, which is exactly what a TURN relay fixes.
 export async function GET() {
+  // A read-only viewer account gets no downloads and no writes (lib/viewer-guard.ts).
+  const viewerBlocked = await forbidViewer();
+  if (viewerBlocked) return viewerBlocked;
+
   // HR & Admin preset users get nothing from client-facing routes.
   const forbidden = await forbidHrAdminPreset();
   if (forbidden) return forbidden;

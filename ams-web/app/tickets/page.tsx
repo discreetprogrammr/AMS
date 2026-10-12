@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile, isStaffRole } from "@/lib/supabase/profile";
+import { getProfile, isStaffViewRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { TicketsTable, type TicketRow } from "./tickets-table";
 
@@ -20,7 +20,7 @@ export default async function TicketsPage({
   searchParams: { created?: string; ticket?: string };
 }) {
   const profile = await getProfile();
-  const isStaff = isStaffRole(profile?.role);
+  const isStaff = isStaffViewRole(profile?.role);
 
   const supabase = await createClient();
 

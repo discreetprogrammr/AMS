@@ -1,7 +1,7 @@
 import { Fragment, type ReactElement } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile, isStaffRole } from "@/lib/supabase/profile";
+import { getProfile, isStaffViewRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { NotificationBell } from "@/components/notification-bell";
 import { SearchBar } from "@/components/search-bar";
@@ -59,7 +59,7 @@ export default async function DashboardPage({
 }) {
   const supabase = await createClient();
   const profile = await timed("dashboard.getProfile", getProfile());
-  const isStaff = isStaffRole(profile?.role);
+  const isStaff = isStaffViewRole(profile?.role);
 
   // Editable/movable/resizable widgets (schema_step45.sql). Fetched
   // separately from getProfile()'s own select rather than widening the

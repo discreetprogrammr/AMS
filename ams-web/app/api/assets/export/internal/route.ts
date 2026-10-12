@@ -13,6 +13,7 @@ import {
   manilaDate,
   parseInternalFilters,
 } from "@/lib/internal-equipment";
+import { forbidViewer } from "@/lib/viewer-guard";
 
 function csvEscape(value: unknown): string {
   const str = String(value ?? "");
@@ -32,6 +33,10 @@ const label = (options: Parameters<typeof labelFor>[0], value: string | null) =>
 // /assets list (view, segment, custodian, department, category, warranty,
 // and q) so "Export" gives what is on screen.
 export async function GET(request: Request) {
+  // A read-only viewer account gets no downloads and no writes (lib/viewer-guard.ts).
+  const viewerBlocked = await forbidViewer();
+  if (viewerBlocked) return viewerBlocked;
+
   const profile = await getProfile();
   if (!isStaffRole(profile?.role)) {
     return new Response("Forbidden", { status: 403 });

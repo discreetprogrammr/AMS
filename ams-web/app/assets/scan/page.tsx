@@ -1,9 +1,9 @@
-import { getProfile, requireStaff } from "@/lib/supabase/profile";
+import { getProfile, requireStaffOrViewer } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { AssetScanner } from "./asset-scanner";
 
 export default async function ScanAssetPage() {
-  await requireStaff("/assets");
+  await requireStaffOrViewer("/assets");
   const profile = await getProfile();
 
   return (

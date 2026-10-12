@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile, isStaffRole } from "@/lib/supabase/profile";
+import { getProfile, isStaffViewRole } from "@/lib/supabase/profile";
 import { changedFields } from "@/lib/audit";
 import { woRef, dateTimeLabel } from "@/lib/format";
 import { generateQrDataUrl } from "@/lib/qr";
@@ -44,7 +44,7 @@ export default async function EditAssetPage({
 }) {
   const supabase = await createClient();
   const profile = await getProfile();
-  const isStaff = isStaffRole(profile?.role);
+  const isStaff = isStaffViewRole(profile?.role);
 
   const [
     { data: asset },

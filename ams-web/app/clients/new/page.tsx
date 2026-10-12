@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getProfile, requireStaff } from "@/lib/supabase/profile";
+import { getProfile, requireStaffOrViewer } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { createOrganization } from "../actions";
 
@@ -12,7 +12,7 @@ export default async function NewClientPage({
 }: {
   searchParams: { error?: string };
 }) {
-  await requireStaff("/clients");
+  await requireStaffOrViewer("/clients");
   const profile = await getProfile();
 
   return (

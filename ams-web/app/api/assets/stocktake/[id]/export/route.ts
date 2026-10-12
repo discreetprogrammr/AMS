@@ -3,6 +3,7 @@ import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { manilaDate } from "@/lib/internal-equipment";
 import { dateTimeLabel } from "@/lib/format";
 import { stocktakeResultLabel } from "@/lib/stocktake";
+import { forbidViewer } from "@/lib/viewer-guard";
 
 function csvEscape(value: unknown): string {
   const str = String(value ?? "");
@@ -17,6 +18,10 @@ function csvEscape(value: unknown): string {
 // the stocktake tables hold). Not blocked for the HR & Admin preset, who
 // need it.
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
+  // A read-only viewer account gets no downloads and no writes (lib/viewer-guard.ts).
+  const viewerBlocked = await forbidViewer();
+  if (viewerBlocked) return viewerBlocked;
+
   const profile = await getProfile();
   if (!isStaffRole(profile?.role)) {
     return new Response("Forbidden", { status: 403 });

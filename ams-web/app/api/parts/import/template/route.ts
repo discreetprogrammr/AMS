@@ -1,4 +1,5 @@
 import { forbidHrAdminPreset } from "@/lib/hr-admin-guard";
+import { forbidViewer } from "@/lib/viewer-guard";
 
 // Downloadable starter CSV for bulk parts import (app/parts/import/). Same
 // hand-rolled CSV building as app/api/assets/import/template/route.ts —
@@ -16,6 +17,10 @@ const HEADER = ["Name", "SKU", "Category", "Unit", "Quantity On Hand", "Reorder 
 const EXAMPLE_ROW = ["X-ray Detector Board", "RSP-DET-620", "Electronics", "pcs", "5", "2", "8500.00", ""];
 
 export async function GET() {
+  // A read-only viewer account gets no downloads and no writes (lib/viewer-guard.ts).
+  const viewerBlocked = await forbidViewer();
+  if (viewerBlocked) return viewerBlocked;
+
   // HR & Admin preset users get nothing from client-facing routes.
   const forbidden = await forbidHrAdminPreset();
   if (forbidden) return forbidden;

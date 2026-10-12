@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 import type { Profile } from "@/lib/supabase/profile";
-import { isStaffRole, isSuperAdminRole } from "@/lib/supabase/roles";
+import { isStaffViewRole, isSuperAdminRole } from "@/lib/supabase/roles";
 import { NAV_MODULES, ALWAYS_ACCESSIBLE_HREFS } from "@/lib/nav-items";
 import { EQUIPMENT_DASHBOARD_HREF, HR_ADMIN_NAV, isHrAdminPreset } from "@/lib/hr-admin-preset";
 import { logout } from "@/app/login/actions";
@@ -140,7 +140,9 @@ function buildNav(): NavItem[] {
 export function Sidebar({ profile }: { profile: Profile | null }) {
   const pathname = usePathname();
   const { open, setOpen } = useMobileNav();
-  const isStaff = isStaffRole(profile?.role);
+  // A read-only viewer sees every staff tab (not User Access, Audit Log or Error
+  // Logs, which are Super Admin only). It is not staff for anything that writes.
+  const isStaff = isStaffViewRole(profile?.role);
   const isSuperAdmin = isSuperAdminRole(profile?.role);
   // hidden_modules (schema_step44.sql, "User Access") is checked AFTER the
   // role gate, never instead of it — it can only take away a module a

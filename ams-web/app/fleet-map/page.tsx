@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { getProfile, isStaffRole } from "@/lib/supabase/profile";
+import { getProfile, isStaffViewRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { backfillMissingSiteLocations } from "@/lib/site-location";
 import { excludeInternal, getInternalOrgIds } from "@/lib/internal-org";
@@ -10,7 +10,7 @@ export default async function FleetMapPage() {
   const supabase = await createClient();
   const profile = await getProfile();
 
-  // No requireStaff() gate — Fleet Map is client-visible in the reference
+  // No requireStaffOrViewer() gate — Fleet Map is client-visible in the reference
   // (not in its clientHidden nav list, same check done before Calendar and
   // Reports). RLS on sites/assets already scopes a client_viewer to their
   // own org's data.
@@ -20,7 +20,7 @@ export default async function FleetMapPage() {
   // there's never a standing "N sites missing coordinates" notice to act
   // on — it just quietly catches up. Staff-only (RLS would block a
   // client_viewer's UPDATE anyway; this just skips the wasted attempt).
-  if (isStaffRole(profile?.role)) {
+  if (isStaffViewRole(profile?.role)) {
     await backfillMissingSiteLocations(supabase);
   }
 

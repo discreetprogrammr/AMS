@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile, isStaffRole } from "@/lib/supabase/profile";
+import { getProfile, isStaffViewRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { CalendarView, type CalendarEventRow } from "./calendar-view";
 
@@ -11,9 +11,9 @@ export default async function CalendarPage({
 }) {
   const supabase = await createClient();
   const profile = await getProfile();
-  const isStaff = isStaffRole(profile?.role);
+  const isStaff = isStaffViewRole(profile?.role);
 
-  // No requireStaff() gate here — unlike Work Orders/Alerts/Inspections,
+  // No requireStaffOrViewer() gate here — unlike Work Orders/Alerts/Inspections,
   // Calendar is client-visible (see schema_step12.sql). RLS scopes a
   // client_viewer down to events on their own organization's assets.
   // work_orders(...) is a forward embed via calendar_events.work_order_id

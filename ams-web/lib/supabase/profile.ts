@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "./server";
-import { isStaffRole, isSuperAdminRole, type Role } from "./roles";
+import { isStaffRole, isStaffViewRole, isSuperAdminRole, isViewerRole, type Role } from "./roles";
 import { timed } from "./timed";
 
 export type Profile = {
@@ -19,7 +19,7 @@ export type Profile = {
 // Re-exported so existing server-side imports (`from "@/lib/supabase/profile"`)
 // keep working unchanged. Client components should import these two directly
 // from "./roles" instead — see the comment in roles.ts for why.
-export { isStaffRole, isSuperAdminRole };
+export { isStaffRole, isStaffViewRole, isSuperAdminRole, isViewerRole };
 
 // Fetches the signed-in user's profile row, which carries their role and
 // (for client viewers) the organization they're scoped to. Pages use this
@@ -56,6 +56,17 @@ export async function getProfile(): Promise<Profile | null> {
 export async function requireStaff(redirectTo = "/assets"): Promise<Profile> {
   const profile = await getProfile();
   if (!isStaffRole(profile?.role)) {
+    redirect(redirectTo);
+  }
+  return profile as Profile;
+}
+
+// For pages that a read-only viewer may open as well as staff: the same
+// redirect as requireStaff(), but a "viewer" passes. Pages only; every action
+// that writes keeps requireStaff(), which a viewer fails.
+export async function requireStaffOrViewer(redirectTo = "/assets"): Promise<Profile> {
+  const profile = await getProfile();
+  if (!isStaffViewRole(profile?.role)) {
     redirect(redirectTo);
   }
   return profile as Profile;

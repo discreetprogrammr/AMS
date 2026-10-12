@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { makeAvatarPath, MAX_AVATAR_BYTES } from "@/lib/avatar";
+import { assertNotViewer } from "@/lib/viewer-guard";
 
 // Client-invoked (throw-on-error), same reasoning as uploadDocument
 // (app/assets/[id]/documents-actions.ts): a raw File can't be passed as a
@@ -12,6 +13,7 @@ import { makeAvatarPath, MAX_AVATAR_BYTES } from "@/lib/avatar";
 // actually enforce "only your own avatar_url, only your own storage
 // folder", not this action's own logic.
 export async function uploadAvatar(formData: FormData): Promise<void> {
+  await assertNotViewer();
   const supabase = await createClient();
   const {
     data: { user },
@@ -78,6 +80,7 @@ export async function uploadAvatar(formData: FormData): Promise<void> {
 }
 
 export async function removeAvatar(): Promise<void> {
+  await assertNotViewer();
   const supabase = await createClient();
   const {
     data: { user },

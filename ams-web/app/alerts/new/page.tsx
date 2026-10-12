@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile, requireStaff } from "@/lib/supabase/profile";
+import { getProfile, requireStaffOrViewer } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { createAlert } from "../actions";
 
@@ -13,7 +13,7 @@ export default async function NewAlertPage({
 }: {
   searchParams: { error?: string };
 }) {
-  await requireStaff("/alerts");
+  await requireStaffOrViewer("/alerts");
   const profile = await getProfile();
 
   const supabase = await createClient();

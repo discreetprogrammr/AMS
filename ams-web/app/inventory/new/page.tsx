@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile, requireStaff } from "@/lib/supabase/profile";
+import { getProfile, requireStaffOrViewer } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { createInventoryCycle } from "../actions";
 
@@ -9,7 +9,7 @@ export default async function NewInventoryCyclePage({
 }: {
   searchParams: { error?: string };
 }) {
-  await requireStaff();
+  await requireStaffOrViewer();
   const profile = await getProfile();
 
   const supabase = await createClient();

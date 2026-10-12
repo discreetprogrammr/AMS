@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile, requireStaff } from "@/lib/supabase/profile";
+import { getProfile, requireStaffOrViewer } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { StatusBadge } from "@/components/status-badge";
 import { assetLabel } from "@/lib/format";
@@ -18,7 +18,7 @@ export default async function ClientDetailPage({
   params: { id: string };
   searchParams: { error?: string; saved?: string };
 }) {
-  await requireStaff("/clients");
+  await requireStaffOrViewer("/clients");
   const profile = await getProfile();
 
   const supabase = await createClient();

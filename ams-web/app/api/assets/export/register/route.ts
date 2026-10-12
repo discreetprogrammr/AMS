@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { manilaDate, SEGMENTS, labelFor } from "@/lib/internal-equipment";
 import { cost, loadEquipmentReport, statusText } from "@/lib/equipment-report";
+import { forbidViewer } from "@/lib/viewer-guard";
 
 function csvEscape(value: unknown): string {
   const str = String(value ?? "");
@@ -16,6 +17,10 @@ function csvEscape(value: unknown): string {
 // column), including acquisition costs. Staff only; internal equipment only.
 // Not blocked for the HR & Admin preset, who need it.
 export async function GET(request: Request) {
+  // A read-only viewer account gets no downloads and no writes (lib/viewer-guard.ts).
+  const viewerBlocked = await forbidViewer();
+  if (viewerBlocked) return viewerBlocked;
+
   const profile = await getProfile();
   if (!isStaffRole(profile?.role)) {
     return new Response("Forbidden", { status: 403 });

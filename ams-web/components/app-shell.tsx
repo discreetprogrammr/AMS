@@ -4,6 +4,8 @@ import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 import { MobileNavProvider } from "./mobile-nav";
 import { isHrAdminPreset } from "@/lib/hr-admin-preset";
+import { isViewerRole } from "@/lib/supabase/roles";
+import { ViewOnlyGuard, ViewOnlyProvider } from "./view-only";
 
 // Shared page shell: sidebar + topbar around a scrollable content area.
 // Every page wraps its content in this instead of hand-rolling its own nav
@@ -24,7 +26,11 @@ export function AppShell({
   actions?: ReactNode;
   children: ReactNode;
 }) {
-  return (
+  // A read-only viewer (schema_step53.sql): everything is shown, nothing can be
+  // changed. The banner says so, the guard stops writing forms, and the provider
+  // lets controls that call an action from a click disable themselves.
+  const viewer = isViewerRole(profile?.role);
+  const content = (
     <MobileNavProvider>
       <div className="flex min-h-screen">
         <Sidebar profile={profile} />
@@ -37,11 +43,25 @@ export function AppShell({
             title={title}
             subtitle={subtitle}
             actions={actions}
-            hidePush={profile?.role !== "super_admin" && isHrAdminPreset(profile?.hidden_modules)}
+            hidePush={viewer || (profile?.role !== "super_admin" && isHrAdminPreset(profile?.hidden_modules))}
           />
+          {viewer && (
+            <div className="border-b border-blue-500/30 bg-blue-500/10 px-4 py-2 text-center text-xs font-medium text-blue-400 sm:px-6 lg:px-8">
+              View-only account: you can look around, but nothing can be added, edited, deleted or sent.
+            </div>
+          )}
           <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
         </div>
       </div>
     </MobileNavProvider>
+  );
+
+  return viewer ? (
+    <ViewOnlyProvider>
+      <ViewOnlyGuard />
+      {content}
+    </ViewOnlyProvider>
+  ) : (
+    content
   );
 }

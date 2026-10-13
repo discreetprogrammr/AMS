@@ -6,6 +6,7 @@ import { AppShell } from "@/components/app-shell";
 import { SEGMENTS, UNASSIGNED, excludeRetired, internalAssetsHref, labelFor } from "@/lib/internal-equipment";
 import { summariseCustodians, type CustodyRow } from "@/lib/custodians";
 import { loadAssemblyIds, withoutAssemblies } from "@/lib/assemblies";
+import { AddCustodianButton } from "./add-custodian-button";
 import { loadCustodianProfiles } from "./profiles";
 
 // Custodians: who holds what in the company equipment register. Built from
@@ -37,15 +38,21 @@ export default async function CustodiansPage({ searchParams }: { searchParams: {
   }
 
   const { byKey: profiles } = await loadCustodianProfiles(supabase);
-  const people = summariseCustodians(rows);
-  const leftButHolding = people.filter((p) => profiles.get(p.key)?.status === "left");
+  const holders = summariseCustodians(rows);
+  // People added on this tab who hold nothing yet are listed too (0 items).
+  const holderKeys = new Set(holders.map((p) => p.key));
+  const noItems = Array.from(profiles.values())
+    .filter((p) => p.status !== "left" && !holderKeys.has(p.name_key))
+    .map((p) => ({ key: p.name_key, name: p.name, items: 0, departments: [], segments: [], needsRepair: 0 }));
+  const people = [...holders, ...noItems].sort((a, b) => a.name.localeCompare(b.name));
+  const leftButHolding = holders.filter((p) => profiles.get(p.key)?.status === "left");
   const q = (searchParams?.q ?? "").trim().toLowerCase();
   const shown = q
     ? people.filter((p) =>
         [p.name, ...p.departments, profiles.get(p.key)?.job_title ?? ""].some((v) => v.toLowerCase().includes(q)),
       )
     : people;
-  const totalHeld = people.reduce((n, p) => n + p.items, 0);
+  const totalHeld = holders.reduce((n, p) => n + p.items, 0);
   const unassignedHref = internalAssetsHref({ org: orgIds[0] ?? "" }, { custodian: UNASSIGNED });
 
   const inputClass =
@@ -56,6 +63,7 @@ export default async function CustodiansPage({ searchParams }: { searchParams: {
       profile={profile}
       title="Custodians"
       subtitle="Who holds which company equipment."
+      actions={<AddCustodianButton />}
     >
       {loadError && (
         <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
@@ -65,7 +73,7 @@ export default async function CustodiansPage({ searchParams }: { searchParams: {
 
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
-          { label: "People holding equipment", value: people.length, to: null },
+          { label: "People holding equipment", value: holders.length, to: null },
           { label: "Items held", value: totalHeld, to: null },
           {
             label: "Left the company, still holding",

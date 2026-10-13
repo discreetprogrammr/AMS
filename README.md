@@ -2478,3 +2478,5 @@ Other reports considered (by custodian sign-off sheet, by department summary, ne
 3. Open another new internal asset: the name is in the list. Add it again in a different case: no duplicate.
 4. Edit an item whose custodian is not on the list: the value is kept.
 5. Assets page Custodian filter lists the new name. A client asset form looks as before.
+
+**Add custodian on the Custodians tab.** The tab has a **+ Add custodian** button (name only, same `addInternalCustodian` action and rules), then opens the person's page for details. People added this way who hold nothing yet are listed with 0 items; the "People holding equipment" tile still counts holders only. The Department field on a custodian's page is now a pick-list (same list as the asset form).

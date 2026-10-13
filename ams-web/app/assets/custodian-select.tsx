@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { addInternalCustodian } from "./custodian-actions";
 
 // Custodian combobox for the internal asset form: type to search the list,
@@ -119,7 +120,7 @@ export function CustodianSelect({
         </div>
       )}
 
-      {adding && (
+      {adding && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-base/70 p-4" role="dialog" aria-modal="true" aria-label="Add new custodian">
           <div className="w-full max-w-sm rounded-xl border border-hairline-strong bg-surface p-5 shadow-xl">
             <h3 className="mb-3 text-sm font-semibold text-ink">Add new custodian</h3>
@@ -159,7 +160,8 @@ export function CustodianSelect({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

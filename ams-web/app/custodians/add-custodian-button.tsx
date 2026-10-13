@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { addInternalCustodian } from "@/app/assets/custodian-actions";
 
@@ -34,7 +35,7 @@ export function AddCustodianButton() {
       >
         + Add custodian
       </button>
-      {open && (
+      {open && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-base/70 p-4" role="dialog" aria-modal="true" aria-label="Add custodian">
           <div className="w-full max-w-sm rounded-xl border border-hairline-strong bg-surface p-5 shadow-xl">
             <h3 className="mb-3 text-sm font-semibold text-ink">Add custodian</h3>
@@ -71,7 +72,8 @@ export function AddCustodianButton() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );

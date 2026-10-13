@@ -2460,3 +2460,25 @@ Other reports considered (by custodian sign-off sheet, by department summary, ne
 6. **Download CSV** and open it in Excel: one row per item, a Group column, costs as numbers.
 
 **Reports: Custodian filter.** The report also filters by **Custodian**: **Everyone**, **No custodian** (items nobody holds), or one person from a drop-down of everyone who holds or has held internal equipment, including people marked as having left (a report about an old handover must still find them). The filter ignores capitals and spacing, so "Lourence", "lourence " and "LOURENCE" are one person, as on the Custodians tab (the Assets list's own custodian filter is an exact match). It carries into **Print / Save as PDF** and **Download CSV**, and the line above the table says which custodian it covers. Combine it with Group by Department or Category to see one person's equipment by type. No database change. Check: pick a person: the item count matches that person's page on the Custodians tab; **No custodian** shows the unassigned items.
+
+## Follow-up — Internal equipment: Custodian combobox and Add new custodian
+
+**No database change.** The custodian list already exists: `equipment_custodians` (`schema_step51.sql`, the Custodians tab) plus every name already on an internal item. This step only changes how the internal asset form uses it. Client assets and the client form are untouched.
+
+**What's here**
+- The Custodian field on the internal asset form is now a **searchable combobox** (A to Z) instead of a plain select with "Someone new…".
+- **+ Add new custodian** opens a small dialog (name only). It saves through `addInternalCustodian` (`app/assets/custodian-actions.ts`), closes, and selects the name at once. The name is trimmed, runs of spaces collapse, empty or over 100 characters is refused, and a name that matches an existing one in any capitalisation returns the existing spelling instead of a duplicate. A person marked as having **left** is refused with a pointer to the Custodians tab.
+- Once added, the name is in the dropdown for every later internal asset (it is a Custodians-tab profile) and in the Assets page Custodian filter, which now lists the profile names plus any name already on an item, de-duplicated. Client filters are unchanged.
+- **Server check:** `createInternalAsset` and `updateInternalAsset` refuse a custodian that is not on the list. When editing, the name the item already has is always accepted and shown, so legacy values are never blanked. Empty custodian is still allowed.
+- No audit trigger on `equipment_custodians`, on purpose: `log_audit` would put these rows in the client-facing Audit Log (see step 49).
+
+**Setup steps**
+1. Nothing to run; `schema_step51.sql` must already be applied.
+2. Internal asset form: Custodian, + Add new custodian, type a name, Add: it is selected. Save.
+3. Open another new internal asset: the name is in the list. Add it again in a different case: no duplicate.
+4. Edit an item whose custodian is not on the list: the value is kept.
+5. Assets page Custodian filter lists the new name. A client asset form looks as before.
+
+**Add custodian on the Custodians tab.** The tab has a **+ Add custodian** button (name only, same `addInternalCustodian` action and rules), then opens the person's page for details. People added this way who hold nothing yet are listed with 0 items; the "People holding equipment" tile still counts holders only. The Department field on a custodian's page is now a pick-list (same list as the asset form).
+
+**Delete custodian.** A custodian's page has a **Delete custodian** button (with a confirm) when they have a profile and hold no active items. The server also refuses if any internal item, retired ones included, still names them, and says to reassign those first. It removes only their `equipment_custodians` row; past custodian history is untouched.

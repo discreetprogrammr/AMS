@@ -2480,3 +2480,5 @@ Other reports considered (by custodian sign-off sheet, by department summary, ne
 5. Assets page Custodian filter lists the new name. A client asset form looks as before.
 
 **Add custodian on the Custodians tab.** The tab has a **+ Add custodian** button (name only, same `addInternalCustodian` action and rules), then opens the person's page for details. People added this way who hold nothing yet are listed with 0 items; the "People holding equipment" tile still counts holders only. The Department field on a custodian's page is now a pick-list (same list as the asset form).
+
+**Delete custodian.** A custodian's page has a **Delete custodian** button (with a confirm) when they have a profile and hold no active items. The server also refuses if any internal item, retired ones included, still names them, and says to reassign those first. It removes only their `equipment_custodians` row; past custodian history is untouched.

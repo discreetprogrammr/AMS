@@ -8,6 +8,7 @@ import { internalAssetsHref } from "@/lib/internal-equipment";
 import { InternalStatusBadges } from "@/app/assets/internal-badges";
 import { loadAllHeld, loadCustodianItems } from "../load";
 import { loadCustodianProfiles } from "../profiles";
+import { DeleteCustodianButton } from "../delete-custodian-button";
 import { CustodianForm } from "../custodian-form";
 import { custodianKey, summariseCustodians } from "@/lib/custodians";
 
@@ -89,6 +90,8 @@ export default async function CustodianPage({
         otherNames={everyone}
         ready={ready}
       />
+
+      {rows.length === 0 && profile_ && <DeleteCustodianButton name={profile_.name} />}
 
       {rows.length === 0 ? (
         <p className="rounded-xl border border-hairline bg-surface p-6 text-sm text-slate-500">

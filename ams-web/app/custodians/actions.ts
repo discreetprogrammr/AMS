@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { INTERNAL_DEPARTMENTS } from "@/lib/internal-equipment";
 import { requireStaff } from "@/lib/supabase/profile";
+import { getInternalOrgIds } from "@/lib/internal-org";
 import { custodianKey } from "@/lib/custodians";
 import { isMissingTableError } from "@/lib/stocktake";
 
@@ -91,4 +92,42 @@ export async function saveCustodian(originalName: string, formData: FormData) {
   revalidatePath("/custodians");
   revalidatePath("/assets");
   redirect(here({ saved: `Saved.${touched}` }, name));
+}
+
+// Removes a person from the custodian list. Only someone who holds, or has
+// ever held on an internal item, nothing: a name still on any internal item
+// (retired ones included) would just reappear from that item, and removing
+// it would hide who had the equipment. Reassign those items first. Past
+// custodian history rows are left alone.
+export async function deleteCustodian(name: string) {
+  await requireStaff();
+  const back = (error: string) => redirect(`/custodians/view?${new URLSearchParams({ name, error })}`);
+
+  const supabase = await createClient();
+  const key = custodianKey(name);
+  if (!key) return back("That custodian does not exist.");
+
+  const orgIds = await getInternalOrgIds(supabase);
+  if (orgIds.length > 0) {
+    const { data, error } = await supabase
+      .from("assets")
+      .select("custodian")
+      .in("organization_id", orgIds)
+      .not("custodian", "is", null);
+    if (error) return back(error.message);
+    const onItems = (data ?? []).filter((r) => custodianKey((r as { custodian: string | null }).custodian) === key).length;
+    if (onItems > 0) {
+      return back(
+        `${name} is still the custodian of ${onItems} item${onItems === 1 ? "" : "s"}. Reassign ${onItems === 1 ? "it" : "them"} first, then delete.`,
+      );
+    }
+  }
+
+  const { data: removed, error } = await supabase.from("equipment_custodians").delete().eq("name_key", key).select("name_key");
+  if (error) return back(isMissingTableError(error) ? SETUP_HINT : `Could not delete: ${error.message}`);
+  if (!removed || removed.length === 0) return back("Nothing was deleted. You may not have permission, or they were already removed.");
+
+  revalidatePath("/custodians");
+  revalidatePath("/assets");
+  redirect("/custodians");
 }

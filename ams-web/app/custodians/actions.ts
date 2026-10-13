@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { INTERNAL_DEPARTMENTS } from "@/lib/internal-equipment";
 import { requireStaff } from "@/lib/supabase/profile";
 import { custodianKey } from "@/lib/custodians";
 import { isMissingTableError } from "@/lib/stocktake";
@@ -33,6 +34,9 @@ export async function saveCustodian(originalName: string, formData: FormData) {
   const name = text(formData.get("name"), 120);
   if (!name) return fail("A name is required.");
   const department = text(formData.get("department"), 120);
+  if (department && !(INTERNAL_DEPARTMENTS as readonly string[]).includes(department)) {
+    return fail("Department must be one of the choices in the list.");
+  }
   const email = text(formData.get("email"), 200);
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail("That email address does not look right.");
   const status = String(formData.get("status") ?? "active");

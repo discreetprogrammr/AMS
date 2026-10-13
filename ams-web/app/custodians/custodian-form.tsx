@@ -1,5 +1,6 @@
 "use client";
 
+import { INTERNAL_DEPARTMENTS } from "@/lib/internal-equipment";
 import { saveCustodian } from "./actions";
 import { CUSTODIAN_STATUSES, type CustodianProfile } from "@/lib/custodians";
 
@@ -57,7 +58,14 @@ export function CustodianForm({
         </label>
         <label className={labelClass}>
           Department
-          <input name="department" placeholder="Leave blank to keep each item's" maxLength={120} className={inputClass} />
+          <select name="department" defaultValue="" className={inputClass}>
+            <option value="">Keep each item&apos;s department</option>
+            {INTERNAL_DEPARTMENTS.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
           <span className="mt-1 block normal-case tracking-normal text-slate-500">
             Filling this sets it on all {itemCount} item{itemCount === 1 ? "" : "s"}.
           </span>

@@ -125,13 +125,22 @@ export default async function AssetsPage({
           .select("custodian, department, asset_category")
           .eq("organization_id", selectedOrg.id),
       ]);
+    const { data: listed } = await supabase.from("equipment_custodians").select("name, status");
+    const listedCustodians = ((listed ?? []) as { name: string; status: string }[])
+      .filter((p) => p.status !== "left")
+      .map((p) => p.name);
     summary = { total, assigned, inStock, needsRepair, warrantyExpiring };
     const distinct = (pick: (r: { custodian: string | null; department: string | null; asset_category: string | null }) => string | null) =>
       Array.from(
         new Set((facets ?? []).map((r) => pick(r)?.trim() ?? "").filter(Boolean)),
       ).sort((a, b) => a.localeCompare(b));
     options = {
-      custodians: distinct((r) => r.custodian),
+      // The custodian list plus anyone already on an item, de-duplicated.
+      custodians: Array.from(
+        new Map(
+          [...distinct((r) => r.custodian), ...listedCustodians].map((n) => [n.trim().toLowerCase(), n] as const),
+        ).values(),
+      ).sort((a, b) => a.localeCompare(b)),
       hasUnassigned: (facets ?? []).some((r) => !r.custodian?.trim()),
       departments: distinct((r) => r.department),
       categories: distinct((r) => r.asset_category),

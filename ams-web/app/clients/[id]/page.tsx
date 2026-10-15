@@ -5,7 +5,7 @@ import { getProfile, requireStaff } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { StatusBadge } from "@/components/status-badge";
 import { assetLabel } from "@/lib/format";
-import { updateOrganization, createSite, updateSiteLocation } from "../actions";
+import { updateOrganization, createSite, updateSiteLocation, updateSiteName } from "../actions";
 
 const inputClass =
   "mt-1 w-full rounded-lg border border-hairline bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
@@ -32,7 +32,7 @@ export default async function ClientDetailPage({
         .single(),
       supabase
         .from("sites")
-        .select("id, address, site_contact, latitude, longitude")
+        .select("id, name, address, site_contact, latitude, longitude")
         .eq("organization_id", params.id)
         .order("address"),
       supabase
@@ -143,13 +143,23 @@ export default async function ClientDetailPage({
                   params.id,
                   site.id,
                 );
+                const boundUpdateName = updateSiteName.bind(
+                  null,
+                  params.id,
+                  site.id,
+                );
                 const hasCoords =
                   site.latitude != null && site.longitude != null;
                 return (
                   <li key={site.id} className="py-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
-                        <p className="font-medium text-ink">{site.address}</p>
+                        <p className="font-medium text-ink">
+                          {site.name || site.address}
+                        </p>
+                        {site.name && (
+                          <p className="text-xs text-slate-500">{site.address}</p>
+                        )}
                         {site.site_contact && (
                           <p className="text-xs text-slate-500">
                             Contact: {site.site_contact}
@@ -164,6 +174,29 @@ export default async function ClientDetailPage({
                           : "Not on Fleet Map yet"}
                       </span>
                     </div>
+                    <form
+                      action={boundUpdateName}
+                      className="mt-2 flex flex-wrap items-end gap-2"
+                    >
+                      <div>
+                        <label className="block text-xs text-slate-500">
+                          Site name (shown in the mobile app)
+                        </label>
+                        <input
+                          name="name"
+                          maxLength={100}
+                          defaultValue={site.name ?? ""}
+                          placeholder="e.g. North Gate Inspection Bay"
+                          className="mt-0.5 w-64 rounded-lg border border-hairline bg-surface-2 px-2 py-1 text-xs text-ink placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        className="rounded-lg border border-hairline px-3 py-1 text-xs text-ink-soft hover:bg-surface-2"
+                      >
+                        Save Name
+                      </button>
+                    </form>
                     <form
                       action={boundUpdateLocation}
                       className="mt-2 flex flex-wrap items-end gap-2"
@@ -216,7 +249,11 @@ export default async function ClientDetailPage({
             className="flex flex-wrap items-end gap-3 border-t border-hairline pt-4"
           >
             <div className="flex-1">
-              <label className={labelClass}>Add Site — Address</label>
+              <label className={labelClass}>Add Site — Name (optional)</label>
+              <input name="name" maxLength={100} className={inputClass} />
+            </div>
+            <div className="flex-1">
+              <label className={labelClass}>Address</label>
               <input name="address" required className={inputClass} />
             </div>
             <div className="flex-1">

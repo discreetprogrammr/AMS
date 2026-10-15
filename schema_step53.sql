@@ -1,0 +1,22 @@
+-- Step 53: a display name for a site [idempotent].
+--
+-- sites only had an address, site_contact and coordinates, so a screen that
+-- lists units by place could only show a street address. The HorizonCare360
+-- Assist mobile app (a separate repo that reads this same database) shows
+-- "North Gate Inspection Bay" where the web app shows an address, so sites
+-- gain an optional name.
+--
+-- - Nullable and unconstrained on purpose: every existing site keeps working
+--   untouched, and the app falls back to the address when name is empty.
+--   Nothing is backfilled.
+-- - No RLS or grant change. The existing policies (schema.sql) already let a
+--   client read their own organisation's sites and let staff manage them, and
+--   they cover a new column. sites_audit (schema_step8.sql) records changes to
+--   it in audit_log without any edit.
+-- - The web app does not read or write the column yet. Names are set by SQL
+--   or, later, by a Name field on the site form (app/clients/actions.ts).
+--
+-- Run this once in the Supabase SQL editor (after schema_step52.sql). Safe to
+-- run more than once.
+
+alter table sites add column if not exists name text;

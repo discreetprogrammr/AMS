@@ -2482,3 +2482,27 @@ Other reports considered (by custodian sign-off sheet, by department summary, ne
 **Add custodian on the Custodians tab.** The tab has a **+ Add custodian** button (name only, same `addInternalCustodian` action and rules), then opens the person's page for details. People added this way who hold nothing yet are listed with 0 items; the "People holding equipment" tile still counts holders only. The Department field on a custodian's page is now a pick-list (same list as the asset form).
 
 **Delete custodian.** A custodian's page has a **Delete custodian** button (with a confirm) when they have a profile and hold no active items. The server also refuses if any internal item, retired ones included, still names them, and says to reassign those first. It removes only their `equipment_custodians` row; past custodian history is untouched.
+
+## Follow-up — HorizonCare360 Assist mobile app: site name and TURN credentials for the app
+
+HorizonCare360 Assist is a separate React Native client app (own repo, `discreetprogrammr/horizoncare360-assist`) that signs in with the same accounts and reads and writes this database under the same RLS. It does not replace the PWA. Two small changes here so it can work with the web app. Both were tested against a **separate test Supabase project**, never production.
+
+## Database change, run this first
+
+Run `schema_step53.sql` in the Supabase SQL editor. It is idempotent. It adds `sites.name` (text, nullable). Nothing is backfilled and no policy or grant changes: existing rows keep a null name, and a client already reads their own organisation's sites under the existing policy. **Run it before deploying this version of the web app.** The Clients page now reads `sites.name`, so its sites list does not load until the column exists. The mobile app's unit screens need it too.
+
+**What's here**
+- **`sites.name`**: an optional display name for a site. The mobile app shows it, and falls back to the address when it is empty. On a client's page the site list shows the name as the heading with the address under it. **Add Site** has an optional **Name** field (100 characters at most), and each site row has a **Site name** field with **Save Name** (`updateSiteName` in `app/clients/actions.ts`, staff only; saving it empty clears the name).
+- **`/api/turn-credentials` accepts a bearer token.** The route used to read only the web session cookie, so the mobile app, which has no cookie, got a 401 and fell back to STUN only, and calls could not connect across networks. It now accepts `Authorization: Bearer <Supabase access token>` as well. The token is verified with `supabase.auth.getUser(token)` (checked against Supabase, not just decoded). The HR & Admin preset refusal still applies, using the same profile read under that token. A request with no bearer header behaves exactly as before.
+- Unchanged: the response (a JSON array of ICE servers), the `X-Ice-Mode` header, the STUN fallbacks, the Metered variables, and the middleware (`/api/*` stays outside its matcher). No service-role key is used.
+
+**Not verified signed in.** `npx tsc --noEmit` and `npm run lint` pass. Not run against Supabase or Metered. See the setup steps for the checks that matter.
+
+## Setup steps
+
+1. Run `schema_step53.sql`.
+2. Open a client's page. A site with no name looks as before. Type a name in its **Site name** field and **Save Name**: the name becomes the heading with the address under it. Clear it and save: the address heading returns. **Add Site** with a Name filled in: the new site shows it. A name over 100 characters is refused with a message.
+3. Cookie path unchanged: signed in on the web, open `/api/turn-credentials`. You get the same JSON and an `X-Ice-Mode` header.
+4. Bearer path: sign in on the web, copy the access token, then `curl -i -H "Authorization: Bearer <token>" https://<host>/api/turn-credentials` with no cookie. You get 200, the ICE servers and `X-Ice-Mode`.
+5. `curl -i https://<host>/api/turn-credentials` with neither: 401 `{"error":"Not signed in."}`. With `Authorization: Bearer not-a-token`: also 401.
+6. A user with the HR & Admin preset gets 403 on both paths.

@@ -2506,3 +2506,26 @@ Run `schema_step53.sql` in the Supabase SQL editor. It is idempotent. It adds `s
 4. Bearer path: sign in on the web, copy the access token, then `curl -i -H "Authorization: Bearer <token>" https://<host>/api/turn-credentials` with no cookie. You get 200, the ICE servers and `X-Ice-Mode`.
 5. `curl -i https://<host>/api/turn-credentials` with neither: 401 `{"error":"Not signed in."}`. With `Authorization: Bearer not-a-token`: also 401.
 6. A user with the HR & Admin preset gets 403 on both paths.
+
+## Follow-up — HorizonCare360 Assist: incoming calls reach staff anywhere
+
+**No database change.** Two changes, both for calls from the HorizonCare360 Assist mobile app.
+
+A call is only heard by the **ticket page that is open** (`lib/webrtc/use-call.ts` listens on `call:${ticketId}`), and engineers are rarely sitting on one ticket. So the app now also tells the server, and keeps ringing for a while.
+
+**What's here**
+- **`POST /api/call-notify`** (`app/api/call-notify/route.ts`). The app calls it with `Authorization: Bearer <access token>` when a client starts a call (`event: "started"`) and again if nobody answers (`event: "missed"`). The ticket is read with the caller's own token, so RLS decides: a client can only raise it for a ticket on their own organisation's assets, and anything else is a 404. "Started" sends a Web Push to every subscribed staff device ("Incoming video call, TKT-…"), opening `/messages/<ticket>`. "Missed" sends a push and an email to `STAFF_NOTIFICATION_EMAIL`. A repeat for the same user, ticket and event within 15 seconds is dropped. That limit is best effort: it lives in one server instance's memory, so it slows a client hammering the route but is not a guarantee. A durable limit would need a small table. No service-role key is used in the route; `sendPushToStaff` uses its own, as it already does.
+- **`invite-retry`** in the call hook. The mobile app repeats its invite every 3 seconds for up to 45 seconds while it rings, under the type `invite-retry`. A page opened after the call began now rings from the next repeat. A page already ringing, in a call, or that already handled this call (answered, declined, ended) ignores it, so a declined call does not ring again.
+- **Stops ringing when the caller gives up.** Before, a page that was ringing kept ringing after the caller hung up, because the hangup was ignored when no call was active yet. It now clears the incoming call.
+- Unchanged: the invite, answer, ICE and decline messages, and the web-to-web calls.
+
+**Not verified.** `npx tsc --noEmit` and `npm run lint` pass. Not run against Supabase or a real browser subscription.
+
+## Setup steps
+
+1. Nothing to run in Supabase. The push keys (`NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`) must already be set, and each engineer must switch on push with the subscribe button in the top bar. Email also needs `RESEND_*` and `STAFF_NOTIFICATION_EMAIL`.
+2. Staff test user: subscribe to push in the browser. Keep the web app on the **Dashboard**, not a ticket.
+3. From the mobile app, start a call on a ticket. A push "Incoming video call" arrives. Click it: the ticket opens and rings from the next repeat. Accept: the call connects.
+4. Start a call and let it ring out (45 seconds): a "Missed video call" push, and an email if configured.
+5. `curl -i -X POST -H "Authorization: Bearer not-a-token" https://<host>/api/call-notify`: 401. With a valid client token and a ticket of another organisation: 404.
+6. Decline a call, then watch the page for a few seconds: it does not ring again.

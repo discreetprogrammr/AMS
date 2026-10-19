@@ -52,7 +52,18 @@ type SignalMessage =
   | { type: "answer"; callId: string; fromId: string; sdp: RTCSessionDescriptionInit }
   | { type: "ice-candidate"; callId: string; fromId: string; candidate: RTCIceCandidateInit }
   | { type: "decline"; callId: string; fromId: string }
-  | { type: "hangup"; callId: string; fromId: string };
+  | { type: "hangup"; callId: string; fromId: string }
+  // Sent by the HorizonCare360 Assist mobile app every few seconds while its call
+  // rings: the same fields as `invite`, under its own type so a page that is already
+  // ringing is not told "busy". It lets a page opened AFTER the call began still ring.
+  | {
+      type: "invite-retry";
+      callId: string;
+      kind: CallKind;
+      fromId: string;
+      fromName: string;
+      sdp: RTCSessionDescriptionInit;
+    };
 
 // RTCIceCandidateInit (what arrives over the wire) has no `.type` field —
 // only a constructed RTCIceCandidate does, and only after the browser
@@ -138,6 +149,15 @@ export function useCall({
     statusRef.current = status;
   }, [status]);
 
+  // The ringing call, readable from handleSignal without it re-subscribing.
+  const incomingRef = useRef<IncomingCall | null>(null);
+  useEffect(() => {
+    incomingRef.current = incoming;
+  }, [incoming]);
+  // Calls this page has already rung for, so a repeated invite for a call that was
+  // declined or ended does not ring again.
+  const seenCallIdsRef = useRef<Set<string>>(new Set());
+
   const supabase = useRef(createClient()).current;
 
   const clearRingTimeout = useCallback(() => {
@@ -187,6 +207,22 @@ export function useCall({
             send({ type: "decline", callId: msg.callId, fromId: userId });
             return;
           }
+          seenCallIdsRef.current.add(msg.callId);
+          setIncoming({
+            callId: msg.callId,
+            kind: msg.kind,
+            fromId: msg.fromId,
+            fromName: msg.fromName,
+            offer: msg.sdp,
+          });
+          setStatus("ringing");
+          break;
+        }
+        case "invite-retry": {
+          // Already on a call, already ringing, or this call was already handled
+          // (answered, declined or ended): nothing to do, and no "busy" reply.
+          if (statusRef.current !== "idle" || seenCallIdsRef.current.has(msg.callId)) return;
+          seenCallIdsRef.current.add(msg.callId);
           setIncoming({
             callId: msg.callId,
             kind: msg.kind,
@@ -231,6 +267,12 @@ export function useCall({
           break;
         }
         case "hangup": {
+          // The caller gave up while this page was still ringing: stop ringing.
+          if (incomingRef.current && msg.callId === incomingRef.current.callId && statusRef.current === "ringing") {
+            setIncoming(null);
+            setStatus("idle");
+            return;
+          }
           if (msg.callId !== callIdRef.current) return;
           const wasConnected = statusRef.current === "active";
           const k = kindRef.current ?? "audio";

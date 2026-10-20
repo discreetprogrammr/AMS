@@ -2529,3 +2529,24 @@ A call is only heard by the **ticket page that is open** (`lib/webrtc/use-call.t
 4. Start a call and let it ring out (45 seconds): a "Missed video call" push, and an email if configured.
 5. `curl -i -X POST -H "Authorization: Bearer not-a-token" https://<host>/api/call-notify`: 401. With a valid client token and a ticket of another organisation: 404.
 6. Decline a call, then watch the page for a few seconds: it does not ring again.
+
+## Follow-up — Tickets and Messages update live when something new arrives
+
+**No database change.** The Tickets table only listened for status **updates** (`schema_step28.sql` puts `service_tickets` in the realtime publication, but nothing handled INSERT), and the Messages inbox listened for nothing, so a ticket or message created elsewhere, such as from the HorizonCare360 Assist mobile app, only appeared after a manual reload.
+
+**What's here**
+- **`components/live-refresh.tsx`**: a client component that renders nothing. It listens for INSERTs on `service_tickets` and/or `messages` and calls `router.refresh()`, debounced by 0.5 second, so a ticket plus its photos is one refresh. It refreshes the server data instead of patching rows in place because both lists are built on the server with joins (site, organisation, latest message, unread flag) that a realtime payload does not carry. `router.refresh()` keeps client state such as filters and an open detail window.
+- **Tickets page** (`app/tickets/page.tsx`): refreshes on a new ticket.
+- **Messages page** (`app/messages/page.tsx`): refreshes on a new ticket or message, so new calls, texts and the unread dot appear.
+- Realtime applies RLS, so a client's page only hears about their own organisation's rows.
+- Not handled: DELETE, and a browser that is closed (that is what push is for).
+
+**Not verified signed in beyond one manual check.** `npx tsc --noEmit` and `npm run lint` pass. A ticket created from the mobile app appeared on the open Tickets page without a reload.
+
+## Setup steps
+
+1. Nothing to run in Supabase. `schema_step25.sql` and `schema_step28.sql` must already be applied, so `messages` and `service_tickets` are in the realtime publication.
+2. Staff: open **Tickets** and **Messages** in two tabs and leave them open.
+3. Create a ticket as a client (web or mobile): it appears in both within about a second, with no reload.
+4. Send a message or place a call on a ticket as the client: the Messages row moves to the top and shows the unread dot. Filters you had set are unchanged.
+5. Sign in as a client in a second browser: their pages show only their own organisation's new rows.

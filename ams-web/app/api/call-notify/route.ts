@@ -32,6 +32,23 @@ function bearerToken(request: Request): string | null {
   return match ? match[1] : null;
 }
 
+// The client's name is something they can edit themselves (schema_step37.sql
+// lets a user update their own full_name), so it is untrusted text. It goes
+// into an HTML email below, so it is escaped there; and it is cut short so a
+// very long name cannot stretch a push notification.
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function clip(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Body = { ticketId?: unknown; callId?: unknown; kind?: unknown; event?: unknown };
@@ -109,7 +126,7 @@ export async function POST(request: Request) {
   const sites = Array.isArray(assetRow?.sites) ? assetRow.sites[0] : assetRow?.sites;
   const where = assetLabel(assetRow ? { ...assetRow, sites } : null);
 
-  const who = profile.full_name?.trim() || "A client";
+  const who = clip(profile.full_name?.trim() || "A client", 80);
   const what = kind === "video" ? "video" : "voice";
   const ref = ticketRef(ticketId);
   const url = `/messages/${ticketId}`;
@@ -135,7 +152,7 @@ export async function POST(request: Request) {
           subject: `[HorizonCare360] Missed ${what} call, ${ref}`,
           html: wrapEmail(
             `Missed ${what} call`,
-            `<p>${who} called about ${ref} (${where}) and no one answered. Please call back.</p>`,
+            `<p>${escapeHtml(who)} called about ${escapeHtml(ref)} (${escapeHtml(where)}) and no one answered. Please call back.</p>`,
           ),
         });
       }

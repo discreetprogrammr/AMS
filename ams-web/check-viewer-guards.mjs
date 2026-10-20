@@ -2,7 +2,7 @@
 // (lib/viewer-guard.ts, schema_step54.sql). From ams-web/:  node check-viewer-guards.mjs
 // An action is covered if its first lines call requireStaff(), requireSuperAdmin()
 // or assertNotViewer(): a viewer fails all three. A route is covered if it calls
-// forbidViewer(), or is a cron route (protected by CRON_SECRET, never a viewer).
+// forbidViewer() (or, for a bearer-token route that cannot use the cookie, checks the caller's own role with isViewerRole()), or is a cron route (protected by CRON_SECRET, never a viewer).
 import { readFileSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 
@@ -34,7 +34,7 @@ for (const f of [...walk("app"), ...walk("lib")]) {
   }
   if (f.endsWith("route.ts") && f.includes("app/api/") && !f.includes("/cron/")) {
     routes++;
-    if (!s.includes("forbidViewer(")) missing.push(`route ${f}`);
+    if (!s.includes("forbidViewer(") && !s.includes("isViewerRole(")) missing.push(`route ${f}`);
   }
 }
 

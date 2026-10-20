@@ -3,7 +3,7 @@
 // All UI sounds are synthesized with the Web Audio API (a few oscillator
 // beeps) rather than shipped as audio files — zero new dependencies, zero
 // asset weight, and nothing to license. Covers: a short "pop" when you
-// send a message, a repeating ringtone for an incoming call, and a
+// send a message, a repeating chime for an incoming call, and a
 // repeating ringback tone for the caller while waiting for an answer.
 
 let ctx: AudioContext | null = null;
@@ -82,25 +82,57 @@ export function playReceivedTone() {
 let ringtoneTimer: ReturnType<typeof setInterval> | null = null;
 let ringbackTimer: ReturnType<typeof setInterval> | null = null;
 
+// A chime note: a quick attack and a long exponential fade, like a struck
+// bell, so each note rings out instead of cutting off like beep() does.
+function chime(freq: number, startAt: number, duration: number, volume: number) {
+  const c = getContext();
+  if (!c) return;
+  const osc = c.createOscillator();
+  const gain = c.createGain();
+  osc.type = "sine";
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0, startAt);
+  gain.gain.linearRampToValueAtTime(volume, startAt + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0008, startAt + duration);
+  osc.connect(gain);
+  gain.connect(c.destination);
+  osc.start(startAt);
+  osc.stop(startAt + duration + 0.05);
+}
+
+// Peak volume of the incoming-call chime (0 to 1). The previous two-beep
+// ring peaked at 0.18; this is a little louder because engineers are often
+// away from the screen. Raise or lower it here.
+const RING_VOLUME = 0.21;
+const RING_REPEAT_MS = 2600;
+
+// Rising three-note chime (E5, G5, C6), each note with a quiet octave above
+// it for brightness. Friendlier than the old harsh beeps over a long shift,
+// but still hard to ignore.
 function playRingPulse() {
   const c = getContext();
   if (!c) return;
   const now = c.currentTime;
-  // Classic two-tone "ring-ring" pulse, twice per cycle.
-  beep(480, now, 0.35, 0.18);
-  beep(620, now, 0.35, 0.14);
-  beep(480, now + 0.45, 0.35, 0.18);
-  beep(620, now + 0.45, 0.35, 0.14);
+  const notes: [number, number][] = [
+    [659.25, 0],
+    [783.99, 0.18],
+    [1046.5, 0.36],
+  ];
+  for (const [freq, delay] of notes) {
+    chime(freq, now + delay, 1.1, RING_VOLUME);
+    chime(freq * 2, now + delay, 0.7, RING_VOLUME * 0.23);
+  }
 }
 
 // Incoming-call ring — repeats until stopped (accept/decline/caller
-// hangs up/times out). Safe to call while already running.
+// hangs up/times out). Safe to call while already running. The chime is
+// about 1.5 seconds long, so it repeats every RING_REPEAT_MS.
 export function startRingtone() {
   if (ringtoneTimer) return;
   const c = getContext();
   if (c?.state === "suspended") c.resume().catch(() => {});
   playRingPulse();
-  ringtoneTimer = setInterval(playRingPulse, 2000);
+  ringtoneTimer = setInterval(playRingPulse, RING_REPEAT_MS);
 }
 
 export function stopRingtone() {

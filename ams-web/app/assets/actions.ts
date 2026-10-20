@@ -6,6 +6,9 @@ import { createClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/supabase/profile";
 import { isHrAdminPreset } from "@/lib/hr-admin-preset";
 import { assetDeleteBlocker } from "@/lib/hr-admin-guard";
+import { custodianKey } from "@/lib/custodians";
+import { getInternalOrgIds } from "@/lib/internal-org";
+import { loadCustodianNames } from "./custodian-names";
 import { resolveSiteCoordinates } from "@/lib/site-location";
 import {
   ASSIGNMENT_STATUSES,
@@ -198,11 +201,9 @@ function parseInternalAssetForm(formData: FormData, existing?: { asset_category:
   const unit = emptyToNull(formData.get("unit")) ?? "pc";
   if (!UNITS.some((u) => u.value === unit)) return fail("Unit must be one of the choices in the list.");
 
-  // Custodian: a name from the drop-down, "Someone new…" with a typed name, or none.
-  const picked = emptyToNull(formData.get("custodian_select"));
-  const custodian =
-    picked === "__new" ? emptyToNull(formData.get("custodian_new")) : picked;
-  if (picked === "__new" && !custodian) return fail("Type the new person's name, or choose someone from the list.");
+  // Custodian: a name from the combobox, or none. Whether the name is on the
+  // list is checked by assertKnownCustodian once there is a database client.
+  const custodian = emptyToNull(formData.get("custodian"));
 
   const segment = emptyToNull(formData.get("segment"));
   if (!isOneOf(SEGMENTS, segment)) return fail("Segment is required for internal equipment.");
@@ -252,12 +253,26 @@ function parseInternalAssetForm(formData: FormData, existing?: { asset_category:
   };
 }
 
+// The custodian must be someone on the internal list (or, when editing, the
+// name the item already has). Returns an error message, or null when fine.
+async function assertKnownCustodian(supabase: Supabase, custodian: string | null, current?: string | null) {
+  if (!custodian) return null;
+  const key = custodianKey(custodian);
+  if (key === custodianKey(current)) return null;
+  const names = await loadCustodianNames(supabase, await getInternalOrgIds(supabase), current);
+  return names.some((n) => custodianKey(n) === key)
+    ? null
+    : "Custodian must be someone on the list. Use + Add new custodian to add them first.";
+}
+
 async function createInternalAsset(supabase: Supabase, formData: FormData) {
   const back = (error: string) =>
     redirect(`/assets/new?internal=1&error=${encodeURIComponent(error)}`);
 
   const parsed = parseInternalAssetForm(formData);
   if ("error" in parsed) return back(parsed.error);
+  const unknownCustodian = await assertKnownCustodian(supabase, parsed.values.custodian);
+  if (unknownCustodian) return back(unknownCustodian);
 
   const site_id = await resolveSiteId(supabase, parsed.values.organization_id, formData.get("site_address"));
 
@@ -284,13 +299,15 @@ async function updateInternalAsset(supabase: Supabase, assetId: string, formData
   // pick-list but is already its own can be saved unchanged.
   const { data: current } = await supabase
     .from("assets")
-    .select("asset_tag, asset_category, department")
+    .select("asset_tag, asset_category, department, custodian")
     .eq("id", assetId)
     .maybeSingle();
   if (!current) return back("That asset no longer exists.");
 
   const parsed = parseInternalAssetForm(formData, current);
   if ("error" in parsed) return back(parsed.error);
+  const unknownCustodian = await assertKnownCustodian(supabase, parsed.values.custodian, current.custodian);
+  if (unknownCustodian) return back(unknownCustodian);
 
   const site_id = await resolveSiteId(supabase, parsed.values.organization_id, formData.get("site_address"));
   const { error } = await supabase

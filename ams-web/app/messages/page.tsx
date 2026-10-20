@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
+import { LiveRefresh } from "@/components/live-refresh";
 import { computeUnreadTicketIds } from "@/lib/messages/unread";
 import { MessagesList } from "./messages-list";
 
@@ -74,6 +75,7 @@ export default async function MessagesPage() {
           : "Chat and calls with support about your tickets."
       }
     >
+      <LiveRefresh tables={["service_tickets", "messages"]} />
       <MessagesList rows={rows} />
     </AppShell>
   );

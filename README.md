@@ -2482,3 +2482,88 @@ Other reports considered (by custodian sign-off sheet, by department summary, ne
 **Add custodian on the Custodians tab.** The tab has a **+ Add custodian** button (name only, same `addInternalCustodian` action and rules), then opens the person's page for details. People added this way who hold nothing yet are listed with 0 items; the "People holding equipment" tile still counts holders only. The Department field on a custodian's page is now a pick-list (same list as the asset form).
 
 **Delete custodian.** A custodian's page has a **Delete custodian** button (with a confirm) when they have a profile and hold no active items. The server also refuses if any internal item, retired ones included, still names them, and says to reassign those first. It removes only their `equipment_custodians` row; past custodian history is untouched.
+
+## Follow-up — HorizonCare360 Assist mobile app: site name and TURN credentials for the app
+
+HorizonCare360 Assist is a separate React Native client app (own repo, `discreetprogrammr/horizoncare360-assist`) that signs in with the same accounts and reads and writes this database under the same RLS. It does not replace the PWA. Two small changes here so it can work with the web app. Both were tested against a **separate test Supabase project**, never production.
+
+## Database change, run this first
+
+Run `schema_step53.sql` in the Supabase SQL editor. It is idempotent. It adds `sites.name` (text, nullable). Nothing is backfilled and no policy or grant changes: existing rows keep a null name, and a client already reads their own organisation's sites under the existing policy. **Run it before deploying this version of the web app.** The Clients page now reads `sites.name`, so its sites list does not load until the column exists. The mobile app's unit screens need it too.
+
+**What's here**
+- **`sites.name`**: an optional display name for a site. The mobile app shows it, and falls back to the address when it is empty. On a client's page the site list shows the name as the heading with the address under it. **Add Site** has an optional **Name** field (100 characters at most), and each site row has a **Site name** field with **Save Name** (`updateSiteName` in `app/clients/actions.ts`, staff only; saving it empty clears the name).
+- **`/api/turn-credentials` accepts a bearer token.** The route used to read only the web session cookie, so the mobile app, which has no cookie, got a 401 and fell back to STUN only, and calls could not connect across networks. It now accepts `Authorization: Bearer <Supabase access token>` as well. The token is verified with `supabase.auth.getUser(token)` (checked against Supabase, not just decoded). The HR & Admin preset refusal still applies, using the same profile read under that token. A request with no bearer header behaves exactly as before.
+- Unchanged: the response (a JSON array of ICE servers), the `X-Ice-Mode` header, the STUN fallbacks, the Metered variables, and the middleware (`/api/*` stays outside its matcher). No service-role key is used.
+
+**Not verified signed in.** `npx tsc --noEmit` and `npm run lint` pass. Not run against Supabase or Metered. See the setup steps for the checks that matter.
+
+## Setup steps
+
+1. Run `schema_step53.sql`.
+2. Open a client's page. A site with no name looks as before. Type a name in its **Site name** field and **Save Name**: the name becomes the heading with the address under it. Clear it and save: the address heading returns. **Add Site** with a Name filled in: the new site shows it. A name over 100 characters is refused with a message.
+3. Cookie path unchanged: signed in on the web, open `/api/turn-credentials`. You get the same JSON and an `X-Ice-Mode` header.
+4. Bearer path: sign in on the web, copy the access token, then `curl -i -H "Authorization: Bearer <token>" https://<host>/api/turn-credentials` with no cookie. You get 200, the ICE servers and `X-Ice-Mode`.
+5. `curl -i https://<host>/api/turn-credentials` with neither: 401 `{"error":"Not signed in."}`. With `Authorization: Bearer not-a-token`: also 401.
+6. A user with the HR & Admin preset gets 403 on both paths.
+
+## Follow-up — HorizonCare360 Assist: incoming calls reach staff anywhere
+
+**No database change.** Two changes, both for calls from the HorizonCare360 Assist mobile app.
+
+A call is only heard by the **ticket page that is open** (`lib/webrtc/use-call.ts` listens on `call:${ticketId}`), and engineers are rarely sitting on one ticket. So the app now also tells the server, and keeps ringing for a while.
+
+**What's here**
+- **`POST /api/call-notify`** (`app/api/call-notify/route.ts`). The app calls it with `Authorization: Bearer <access token>` when a client starts a call (`event: "started"`) and again if nobody answers (`event: "missed"`). The ticket is read with the caller's own token, so RLS decides: a client can only raise it for a ticket on their own organisation's assets, and anything else is a 404. "Started" sends a Web Push to every subscribed staff device ("Incoming video call, TKT-…"), opening `/messages/<ticket>`. "Missed" sends a push and an email to `STAFF_NOTIFICATION_EMAIL`. A repeat for the same user, ticket and event within 15 seconds is dropped. That limit is best effort: it lives in one server instance's memory, so it slows a client hammering the route but is not a guarantee. A durable limit would need a small table. No service-role key is used in the route; `sendPushToStaff` uses its own, as it already does.
+- **`invite-retry`** in the call hook. The mobile app repeats its invite every 3 seconds for up to 45 seconds while it rings, under the type `invite-retry`. A page opened after the call began now rings from the next repeat. A page already ringing, in a call, or that already handled this call (answered, declined, ended) ignores it, so a declined call does not ring again.
+- **Stops ringing when the caller gives up.** Before, a page that was ringing kept ringing after the caller hung up, because the hangup was ignored when no call was active yet. It now clears the incoming call.
+- Unchanged: the invite, answer, ICE and decline messages, and the web-to-web calls.
+
+**Not verified.** `npx tsc --noEmit` and `npm run lint` pass. Not run against Supabase or a real browser subscription.
+
+## Setup steps
+
+1. Nothing to run in Supabase. The push keys (`NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`) must already be set, and each engineer must switch on push with the subscribe button in the top bar. Email also needs `RESEND_*` and `STAFF_NOTIFICATION_EMAIL`.
+2. Staff test user: subscribe to push in the browser. Keep the web app on the **Dashboard**, not a ticket.
+3. From the mobile app, start a call on a ticket. A push "Incoming video call" arrives. Click it: the ticket opens and rings from the next repeat. Accept: the call connects.
+4. Start a call and let it ring out (45 seconds): a "Missed video call" push, and an email if configured.
+5. `curl -i -X POST -H "Authorization: Bearer not-a-token" https://<host>/api/call-notify`: 401. With a valid client token and a ticket of another organisation: 404.
+6. Decline a call, then watch the page for a few seconds: it does not ring again.
+
+## Follow-up — Tickets and Messages update live when something new arrives
+
+**No database change.** The Tickets table only listened for status **updates** (`schema_step28.sql` puts `service_tickets` in the realtime publication, but nothing handled INSERT), and the Messages inbox listened for nothing, so a ticket or message created elsewhere, such as from the HorizonCare360 Assist mobile app, only appeared after a manual reload.
+
+**What's here**
+- **`components/live-refresh.tsx`**: a client component that renders nothing. It listens for INSERTs on `service_tickets` and/or `messages` and calls `router.refresh()`, debounced by 0.5 second, so a ticket plus its photos is one refresh. It refreshes the server data instead of patching rows in place because both lists are built on the server with joins (site, organisation, latest message, unread flag) that a realtime payload does not carry. `router.refresh()` keeps client state such as filters and an open detail window.
+- **Tickets page** (`app/tickets/page.tsx`): refreshes on a new ticket.
+- **Messages page** (`app/messages/page.tsx`): refreshes on a new ticket or message, so new calls, texts and the unread dot appear.
+- Realtime applies RLS, so a client's page only hears about their own organisation's rows.
+- Not handled: DELETE, and a browser that is closed (that is what push is for).
+
+**Not verified signed in beyond one manual check.** `npx tsc --noEmit` and `npm run lint` pass. A ticket created from the mobile app appeared on the open Tickets page without a reload.
+
+## Setup steps
+
+1. Nothing to run in Supabase. `schema_step25.sql` and `schema_step28.sql` must already be applied, so `messages` and `service_tickets` are in the realtime publication.
+2. Staff: open **Tickets** and **Messages** in two tabs and leave them open.
+3. Create a ticket as a client (web or mobile): it appears in both within about a second, with no reload.
+4. Send a message or place a call on a ticket as the client: the Messages row moves to the top and shows the unread dot. Filters you had set are unchanged.
+5. Sign in as a client in a second browser: their pages show only their own organisation's new rows.
+
+## Follow-up — Incoming call ring is a chime
+
+**No database change.** The incoming-call ring (`startRingtone` in `lib/sounds.ts`) was two plain beeps (480 Hz and 620 Hz, twice, every 2 seconds), which was quiet and easy to miss in an office. It is now a rising three-note chime (E5, G5, C6), each note with a quiet octave above it, ringing out for about 1.1 seconds and repeating every 2.6 seconds.
+
+**What's here**
+- **`chime()`** in `lib/sounds.ts`: a quick attack and a long exponential fade, like a struck bell, so each note rings out instead of cutting off. Still synthesized with the Web Audio API, so there is still no audio file, no dependency and nothing to license.
+- **`RING_VOLUME`** (0.21, up from 0.18) and **`RING_REPEAT_MS`** (2600) at the top of the ring code. Change them there to make the ring louder, quieter or faster.
+- Unchanged: the message "pop" sounds and the caller's ringback tone. The ring still starts and stops exactly as before (accept, decline, the caller hanging up, or timing out).
+
+**Not verified in a real browser beyond a listening test.** `npx tsc --noEmit` and `npm run lint` pass. Chosen by ear from four candidates.
+
+## Setup steps
+
+1. Nothing to run. Restart the web app, or reload the page once.
+2. Open a ticket's page in the web app and click anywhere on it once (browsers only play sound after a click or keypress).
+3. Call that ticket from a client (web or mobile). The chime plays and repeats until you accept, decline, or the caller gives up.

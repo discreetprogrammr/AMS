@@ -6,6 +6,9 @@ import { createClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/supabase/profile";
 import { resolveSiteCoordinates } from "@/lib/site-location";
 
+// Longest site display name the forms accept (schema_step53.sql has no limit).
+const SITE_NAME_MAX = 100;
+
 export async function createOrganization(formData: FormData) {
   await requireStaff("/clients");
 
@@ -95,6 +98,7 @@ export async function createSite(organizationId: string, formData: FormData) {
 
   const supabase = await createClient();
 
+  const name = String(formData.get("name") ?? "").trim() || null;
   const address = String(formData.get("address") ?? "").trim() || null;
   const site_contact = String(formData.get("site_contact") ?? "").trim() || null;
   const latitudeRaw = String(formData.get("latitude") ?? "").trim();
@@ -105,6 +109,11 @@ export async function createSite(organizationId: string, formData: FormData) {
   if (!address) {
     redirect(
       `/clients/${organizationId}?error=${encodeURIComponent("Site address is required.")}`,
+    );
+  }
+  if (name && name.length > SITE_NAME_MAX) {
+    redirect(
+      `/clients/${organizationId}?error=${encodeURIComponent(`Site name must be ${SITE_NAME_MAX} characters or fewer.`)}`,
     );
   }
 
@@ -120,6 +129,7 @@ export async function createSite(organizationId: string, formData: FormData) {
 
   const { error } = await supabase.from("sites").insert({
     organization_id: organizationId,
+    name,
     address,
     site_contact,
     latitude,
@@ -163,5 +173,37 @@ export async function updateSiteLocation(
 
   revalidatePath(`/clients/${organizationId}`);
   revalidatePath("/fleet-map");
+  redirect(`/clients/${organizationId}?saved=1`);
+}
+
+// Sets or clears a site's display name (schema_step53.sql). The name is what
+// the HorizonCare360 Assist mobile app shows for a unit's site; empty clears
+// it and the app falls back to the address.
+export async function updateSiteName(
+  organizationId: string,
+  siteId: string,
+  formData: FormData,
+) {
+  await requireStaff(`/clients/${organizationId}`);
+
+  const supabase = await createClient();
+
+  const name = String(formData.get("name") ?? "").trim() || null;
+  if (name && name.length > SITE_NAME_MAX) {
+    redirect(
+      `/clients/${organizationId}?error=${encodeURIComponent(`Site name must be ${SITE_NAME_MAX} characters or fewer.`)}`,
+    );
+  }
+
+  const { error } = await supabase
+    .from("sites")
+    .update({ name })
+    .eq("id", siteId);
+
+  if (error) {
+    redirect(`/clients/${organizationId}?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath(`/clients/${organizationId}`);
   redirect(`/clients/${organizationId}?saved=1`);
 }

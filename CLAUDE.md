@@ -40,8 +40,9 @@ no Turborepo.
   and storage.
 - Deployed on Vercel, region `sin1` (Singapore).
 - Path alias: `@/*` maps to `ams-web/`.
-- Mobile is a **PWA**, not React Native: service worker, install prompt,
-  Web Push via VAPID. There is no native app.
+- Mobile web is a **PWA**, not React Native: service worker, install prompt,
+  Web Push via VAPID. This repo has no native code. The separate native
+  client app is described under "Settled decisions".
 
 Layout inside `ams-web/`:
 
@@ -222,7 +223,18 @@ equipment. Spec: `docs/HorizonCare360_Internal_Equipment_Spec_v0.1.md`.
 
 - HorizonCare360's ticketing is **separate** from the internal PHtek CRM.
   Different product, different users, different repo.
-- Mobile is the PWA. Do not propose React Native.
+- Mobile web is the PWA, and it stays. Do not convert `ams-web` to React
+  Native or add native code to this repo.
+- A separate native client app, **HorizonCare360 Assist** (Expo / React
+  Native, its own repo `discreetprogrammr/horizoncare360-assist`), is a
+  second front door to the same Supabase project and the same RLS. It is not
+  a replacement for the PWA and it does not live here. What it needs from
+  this repo arrives the normal way: schema changes as `schema_step*.sql`,
+  and route changes such as `/api/turn-credentials` accepting a bearer
+  token. Keep these contracts stable, because the app depends on them:
+  `messages` call events, the `call:${ticketId}` signalling payloads in
+  `lib/webrtc/use-call.ts`, the `chat-attachments` path convention in
+  `lib/attachments.ts`, and the `/assets/<id>` QR URL.
 - Compliance context: RA 10173 (Philippine Data Privacy Act) and EO 119.
   Anything changing where customer data is stored or processed gets
   raised, not assumed.

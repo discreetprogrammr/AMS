@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile, isStaffRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
+import { LiveRefresh } from "@/components/live-refresh";
 import { TicketsTable, type TicketRow } from "./tickets-table";
 
 // Client-visible (unlike most of app/**) — a client_viewer needs to see
@@ -75,6 +76,7 @@ export default async function TicketsPage({
         </p>
       )}
 
+      <LiveRefresh tables={["service_tickets"]} />
       <TicketsTable tickets={rows} isStaff={isStaff} initialTicketId={searchParams?.ticket ?? null} />
     </AppShell>
   );

@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, type ReactNode } from "react";
 
-// The read-only "viewer" account (schema_step53.sql). Every control that would
+// The read-only "viewer" account (schema_step54.sql). Every control that would
 // change something stays on screen, so the person building a mockup sees the
 // real look and feel, but it does nothing:
 //   - ViewOnlyProvider / useViewOnly(): the few controls that call a server

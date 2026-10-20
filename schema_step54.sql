@@ -1,4 +1,4 @@
--- Step 53: the read-only "viewer" role [idempotent]. FOR THE DEMO DATABASE ONLY.
+-- Step 54: the read-only "viewer" role [idempotent]. FOR THE DEMO DATABASE ONLY.
 --
 -- A viewer is a person who needs to see what HorizonCare360 looks like (every
 -- sidebar tab except User Access, Audit Log and Error Logs) without being able
@@ -36,10 +36,10 @@
 do $$
 begin
   if to_regclass('public.app_environment') is null then
-    raise exception 'Step 53 only runs in a database marked as the demo database, and this one is not marked. See the note at the top of this file. Nothing was changed.';
+    raise exception 'Step 54 only runs in a database marked as the demo database, and this one is not marked. See the note at the top of this file. Nothing was changed.';
   end if;
   if not exists (select 1 from public.app_environment where key = 'demo_database' and value = 'true') then
-    raise exception 'Step 53 only runs in a database marked as the demo database, and this one is not marked. See the note at the top of this file. Nothing was changed.';
+    raise exception 'Step 54 only runs in a database marked as the demo database, and this one is not marked. See the note at the top of this file. Nothing was changed.';
   end if;
 end
 $$;

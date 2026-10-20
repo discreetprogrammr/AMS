@@ -1,7 +1,7 @@
 import { getProfile } from "@/lib/supabase/profile";
 import { isViewerRole } from "@/lib/supabase/roles";
 
-// The shared guards for the read-only "viewer" account (schema_step53.sql).
+// The shared guards for the read-only "viewer" account (schema_step54.sql).
 // The database refuses every viewer write regardless (restrictive RLS
 // policies); these give a clear refusal earlier, and stop the downloads
 // (exports, PDFs, document files), which are reads the viewer must not make.

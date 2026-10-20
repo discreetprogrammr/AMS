@@ -165,7 +165,7 @@ export function TicketChat({
   serialNumber?: string | null;
   initialMessages: Message[];
 }) {
-  // A read-only viewer can read the thread but cannot write to it (schema_step53.sql).
+  // A read-only viewer can read the thread but cannot write to it (schema_step54.sql).
   const viewOnly = useViewOnly();
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [draft, setDraft] = useState("");

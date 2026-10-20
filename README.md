@@ -2463,11 +2463,11 @@ Other reports considered (by custodian sign-off sheet, by department summary, ne
 
 ## Follow-up — Read-only "viewer" account, for the demo deployment
 
-A person who will build a mockup of HorizonCare360 needs to see the look and feel of every tab without being able to change anything. The decision: the viewer lives in the **separate demo deployment** (Vercel project `horizoncare360-demo`) with **its own Supabase project and sample data**, so no real client or PHtek data is reachable. The code is the same repo and is merged to `main` for both deployments; the role only exists where the database has it (`schema_step53.sql`), so production is unaffected: it has no `viewer` value and no viewer accounts.
+A person who will build a mockup of HorizonCare360 needs to see the look and feel of every tab without being able to change anything. The decision: the viewer lives in the **separate demo deployment** (Vercel project `horizoncare360-demo`) with **its own Supabase project and sample data**, so no real client or PHtek data is reachable. The code is the same repo and is merged to `main` for both deployments; the role only exists where the database has it (`schema_step54.sql`), so production is unaffected: it has no `viewer` value and no viewer accounts.
 
 ## Database change, run this first (DEMO Supabase project only)
 
-`schema_step53.sql`. It **refuses to run** unless the database has been marked as a demo database, because viewers can read tables that are not organization-scoped (parts stock, system alerts), which would be a leak in a database with real data. In the demo project only, run once:
+`schema_step54.sql`. It **refuses to run** unless the database has been marked as a demo database, because viewers can read tables that are not organization-scoped (parts stock, system alerts), which would be a leak in a database with real data. In the demo project only, run once:
 
 ```sql
 create table if not exists app_environment (key text primary key, value text not null);
@@ -2476,7 +2476,7 @@ insert into app_environment (key, value) values ('demo_database', 'true')
   on conflict (key) do update set value = excluded.value;
 ```
 
-Then run `schema_step53.sql` (idempotent). It adds the role value `viewer`; `is_viewer()` and scoping helpers; **SELECT-only policies** for viewers on the tables behind every tab they can open, limited to non-internal organizations; and **RESTRICTIVE policies that refuse every insert, update and delete by a viewer on every table in `public` and on `storage.objects`**, which win over any other rule (including "own row" rules for a profile's name, read state, push subscriptions and avatars). Viewers get **no** access to `audit_log`, `error_logs`, `compliance_escalations`, the `equipment_*` tables or `asset_custodian_history`.
+Then run `schema_step54.sql` (idempotent). It adds the role value `viewer`; `is_viewer()` and scoping helpers; **SELECT-only policies** for viewers on the tables behind every tab they can open, limited to non-internal organizations; and **RESTRICTIVE policies that refuse every insert, update and delete by a viewer on every table in `public` and on `storage.objects`**, which win over any other rule (including "own row" rules for a profile's name, read state, push subscriptions and avatars). Viewers get **no** access to `audit_log`, `error_logs`, `compliance_escalations`, the `equipment_*` tables or `asset_custodian_history`.
 
 **What a viewer can and cannot do**
 - Sees: Dashboard, Assets, Scan Asset, Fleet Map, Clients, Work Orders, Tickets, Inspections, Asset Verification, Inventory, HorizonCare360 Assist, Calendar, Reports, Analytics, Alerts, SLA Policy. Does **not** see User Access, Audit Log or Error Logs, nor the internal-equipment (HR & Admin) tabs.
@@ -2490,7 +2490,7 @@ Then run `schema_step53.sql` (idempotent). It adds the role value `viewer`; `is_
 1. **Create a new Supabase project** for the demo. Do not reuse production.
 2. **Run the schema in order** in its SQL editor, each file as its own run: `schema.sql`, then `schema_step5.sql` … `schema_step52.sql` in numeric order (`ls schema_step*.sql | sort -V`; run `schema_step22.sql` to completion before `schema_step22b.sql`). The whole chain was applied to a fresh scratch Postgres in that order with no errors (with stand-ins for `auth`, `storage` and the realtime publication that a real Supabase project already has).
 3. **Seed sample data**: `seed_ppa_demo_1.sql` (the Philippine Ports Authority demo: 5 sites, 10 assets, certificates, 2 tickets). Use `_1`: the older `seed_ppa_demo.sql` fails on the current `asset_status` values. For the "Bureau of Customs (Demo)" organization, add it by hand as the first README steps describe. Step 46 also creates the company's own internal organization; the viewer cannot see it.
-4. **Mark it as demo and run `schema_step53.sql`** (above).
+4. **Mark it as demo and run `schema_step54.sql`** (above).
 5. **Create the viewer**: Supabase Authentication → Users → Add user (Auto Confirm User), then
    ```sql
    insert into profiles (id, full_name, role)
@@ -2502,7 +2502,7 @@ Then run `schema_step53.sql` (idempotent). It adds the role value `viewer`; `is_
 
 **Known limit**: a viewer who signs in has a normal Supabase session, and the Auth service itself (not the database) lets any signed-in user change their own password or email by calling it directly. The app's forms and actions refuse it and the profile page is inert, but that one path cannot be closed from the app or with RLS. Give the viewer a password you can rotate, and rotate it when he is done.
 
-**Verified**: `npx tsc --noEmit`, `npm run lint`, `npm run build`. The DB layer was tested in a scratch Postgres seeded with the PPA data plus a fake internal item, as a viewer, an admin and a client: the viewer sees the PPA data and **not** the internal organization, its asset or a ticket on it, `audit_log`, `error_logs`, system alerts or the `equipment_*` tables; the admin and client see what they always did; for every table with rows, a viewer's update and delete affect 0 rows and an insert is refused by RLS, including promoting themselves to admin, changing their name, uploading to storage, raising a ticket or posting a message; step 53 applied twice produced identical policies and refuses to run on an unmarked database. **Not verified**: the screens as a viewer (no demo deployment or viewer login exists yet).
+**Verified**: `npx tsc --noEmit`, `npm run lint`, `npm run build`. The DB layer was tested in a scratch Postgres seeded with the PPA data plus a fake internal item, as a viewer, an admin and a client: the viewer sees the PPA data and **not** the internal organization, its asset or a ticket on it, `audit_log`, `error_logs`, system alerts or the `equipment_*` tables; the admin and client see what they always did; for every table with rows, a viewer's update and delete affect 0 rows and an insert is refused by RLS, including promoting themselves to admin, changing their name, uploading to storage, raising a ticket or posting a message; step 54 applied twice produced identical policies and refuses to run on an unmarked database. **Not verified**: the screens as a viewer (no demo deployment or viewer login exists yet).
 
 ## Setup steps (after the demo project is ready)
 

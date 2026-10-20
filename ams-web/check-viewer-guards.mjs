@@ -1,5 +1,5 @@
 // Checks that every server action and API route refuses a read-only "viewer"
-// (lib/viewer-guard.ts, schema_step53.sql). From ams-web/:  node check-viewer-guards.mjs
+// (lib/viewer-guard.ts, schema_step54.sql). From ams-web/:  node check-viewer-guards.mjs
 // An action is covered if its first lines call requireStaff(), requireSuperAdmin()
 // or assertNotViewer(): a viewer fails all three. A route is covered if it calls
 // forbidViewer(), or is a cron route (protected by CRON_SECRET, never a viewer).

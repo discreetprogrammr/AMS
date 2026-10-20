@@ -6,7 +6,7 @@
 // error this file was split out to fix). Server components/actions can
 // still get everything from "./profile", which re-exports these.
 
-// "viewer" (schema_step53.sql, demo database only) is a read-only account that
+// "viewer" (schema_step54.sql, demo database only) is a read-only account that
 // sees every staff screen but can change nothing. It is NOT staff: isStaffRole()
 // stays false for it, so every write path that gates on staff keeps refusing it.
 export type Role = "super_admin" | "admin" | "client_viewer" | "viewer";

@@ -26,7 +26,7 @@ export function AppShell({
   actions?: ReactNode;
   children: ReactNode;
 }) {
-  // A read-only viewer (schema_step53.sql): everything is shown, nothing can be
+  // A read-only viewer (schema_step54.sql): everything is shown, nothing can be
   // changed. The banner says so, the guard stops writing forms, and the provider
   // lets controls that call an action from a click disable themselves.
   const viewer = isViewerRole(profile?.role);

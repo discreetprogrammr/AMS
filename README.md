@@ -2550,3 +2550,20 @@ A call is only heard by the **ticket page that is open** (`lib/webrtc/use-call.t
 3. Create a ticket as a client (web or mobile): it appears in both within about a second, with no reload.
 4. Send a message or place a call on a ticket as the client: the Messages row moves to the top and shows the unread dot. Filters you had set are unchanged.
 5. Sign in as a client in a second browser: their pages show only their own organisation's new rows.
+
+## Follow-up — Incoming call ring is a chime
+
+**No database change.** The incoming-call ring (`startRingtone` in `lib/sounds.ts`) was two plain beeps (480 Hz and 620 Hz, twice, every 2 seconds), which was quiet and easy to miss in an office. It is now a rising three-note chime (E5, G5, C6), each note with a quiet octave above it, ringing out for about 1.1 seconds and repeating every 2.6 seconds.
+
+**What's here**
+- **`chime()`** in `lib/sounds.ts`: a quick attack and a long exponential fade, like a struck bell, so each note rings out instead of cutting off. Still synthesized with the Web Audio API, so there is still no audio file, no dependency and nothing to license.
+- **`RING_VOLUME`** (0.21, up from 0.18) and **`RING_REPEAT_MS`** (2600) at the top of the ring code. Change them there to make the ring louder, quieter or faster.
+- Unchanged: the message "pop" sounds and the caller's ringback tone. The ring still starts and stops exactly as before (accept, decline, the caller hanging up, or timing out).
+
+**Not verified in a real browser beyond a listening test.** `npx tsc --noEmit` and `npm run lint` pass. Chosen by ear from four candidates.
+
+## Setup steps
+
+1. Nothing to run. Restart the web app, or reload the page once.
+2. Open a ticket's page in the web app and click anywhere on it once (browsers only play sound after a click or keypress).
+3. Call that ticket from a client (web or mobile). The chime plays and repeats until you accept, decline, or the caller gives up.

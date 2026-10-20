@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile, requireStaff } from "@/lib/supabase/profile";
+import { getProfile, requireStaffOrViewer } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { SearchBar } from "@/components/search-bar";
 import { excludeInternal, getInternalOrgIds } from "@/lib/internal-org";
@@ -11,7 +11,7 @@ export default async function ClientsPage({
 }: {
   searchParams: { q?: string; deleted?: string; error?: string };
 }) {
-  await requireStaff();
+  await requireStaffOrViewer();
   const profile = await getProfile();
 
   const supabase = await createClient();

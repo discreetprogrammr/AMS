@@ -3,6 +3,8 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { forbidHrAdminPreset } from "@/lib/hr-admin-guard";
 import { isHrAdminPreset } from "@/lib/hr-admin-preset";
+import { forbidViewer, VIEW_ONLY_MESSAGE } from "@/lib/viewer-guard";
+import { isViewerRole, type Role } from "@/lib/supabase/roles";
 
 // Short-lived ICE server list (STUN + TURN) for the calling feature's
 // RTCPeerConnection — fetched server-side so the Metered API key never
@@ -53,21 +55,26 @@ async function rejectUnlessAllowed(request: Request): Promise<Response | null> {
       return NextResponse.json({ error: "Not signed in." }, { status: 401 });
     }
 
-    // Same rule as forbidHrAdminPreset(): HR & Admin preset users get nothing
-    // from client-facing routes. A profile that cannot be read is treated as
-    // not allowed rather than waved through.
+    // Same two rules as the cookie path below: a read-only viewer account
+    // gets nothing from this route (lib/viewer-guard.ts), and neither do HR &
+    // Admin preset users (forbidHrAdminPreset). A profile that cannot be read
+    // is treated as not allowed rather than waved through.
     const { data: profile } = await supabase
       .from("profiles")
-      .select("hidden_modules")
+      .select("role, hidden_modules")
       .eq("id", user.id)
       .maybeSingle();
-    if (!profile || isHrAdminPreset(profile.hidden_modules)) {
-      return new Response("Forbidden", { status: 403 });
-    }
+    if (!profile) return new Response("Forbidden", { status: 403 });
+    if (isViewerRole(profile.role as Role)) return new Response(VIEW_ONLY_MESSAGE, { status: 403 });
+    if (isHrAdminPreset(profile.hidden_modules)) return new Response("Forbidden", { status: 403 });
     return null;
   }
 
-  // Cookie path, exactly as before.
+  // Cookie path, as before: a read-only viewer account gets no downloads and
+  // no writes (lib/viewer-guard.ts), then the HR & Admin preset refusal.
+  const viewerBlocked = await forbidViewer();
+  if (viewerBlocked) return viewerBlocked;
+
   const forbidden = await forbidHrAdminPreset();
   if (forbidden) return forbidden;
 

@@ -5,6 +5,8 @@ import { sendEmail } from "@/lib/email";
 import { wrapEmail } from "@/lib/notify";
 import { ticketRef, assetLabel } from "@/lib/format";
 import { isHrAdminPreset } from "@/lib/hr-admin-preset";
+import { VIEW_ONLY_MESSAGE } from "@/lib/viewer-guard";
+import { isViewerRole, type Role } from "@/lib/supabase/roles";
 
 // A client is calling (or a call went unanswered): tell staff, wherever they
 // are in the web app, so they can open the ticket and answer.
@@ -93,12 +95,15 @@ export async function POST(request: Request) {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name, hidden_modules")
+    .select("full_name, role, hidden_modules")
     .eq("id", user.id)
     .maybeSingle();
-  if (!profile || isHrAdminPreset(profile.hidden_modules)) {
-    return new Response("Forbidden", { status: 403 });
-  }
+  if (!profile) return new Response("Forbidden", { status: 403 });
+  // A read-only viewer account (schema_step54.sql, demo database) raises nothing.
+  // This route is bearer-token only, so the cookie-based forbidViewer() cannot
+  // see the caller; the role is checked on the caller's own profile instead.
+  if (isViewerRole(profile.role as Role)) return new Response(VIEW_ONLY_MESSAGE, { status: 403 });
+  if (isHrAdminPreset(profile.hidden_modules)) return new Response("Forbidden", { status: 403 });
 
   // Not found and not yours look the same on purpose.
   const { data: ticket } = await supabase

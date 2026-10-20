@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { excludeInternal, getInternalOrgIds } from "@/lib/internal-org";
-import { getProfile, requireStaff } from "@/lib/supabase/profile";
+import { getProfile, requireStaffOrViewer } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { ticketRef } from "@/lib/format";
 import { PreventiveChecklistForm } from "./preventive-form";
@@ -10,7 +10,7 @@ export default async function PreventiveChecklistPage({
 }: {
   searchParams: { error?: string; ticket_id?: string; asset_id?: string };
 }) {
-  await requireStaff("/reports");
+  await requireStaffOrViewer("/reports");
   const profile = await getProfile();
 
   const supabase = await createClient();

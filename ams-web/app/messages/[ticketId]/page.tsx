@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile, isStaffRole } from "@/lib/supabase/profile";
+import { getProfile, isStaffViewRole } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { ticketRef } from "@/lib/format";
 import { TicketChat } from "./ticket-chat";
@@ -59,7 +59,7 @@ export default async function TicketMessagesPage({
         ticketId={ticket.id}
         currentUserId={profile?.id ?? ""}
         currentUserName={profile?.full_name ?? "Me"}
-        isStaff={isStaffRole(profile?.role)}
+        isStaff={isStaffViewRole(profile?.role)}
         siteAddress={asset?.sites?.address ?? null}
         serialNumber={asset?.serial_number ?? null}
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

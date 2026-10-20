@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { assertNotViewer } from "@/lib/viewer-guard";
 
 // Self-service Edit Profile (schema_step37.sql) — both actions use the
 // signed-in user's own session client, never the service-role client, so
@@ -9,6 +10,7 @@ import { createClient } from "@/lib/supabase/server";
 // enforce "only your own row, only full_name" — this file has no special
 // privileges beyond what the signed-in user already has.
 export async function updateDisplayName(formData: FormData) {
+  await assertNotViewer();
   const supabase = await createClient();
 
   const {
@@ -43,6 +45,7 @@ export async function updateDisplayName(formData: FormData) {
 // "change your password while logged in" behavior, not full account
 // re-authentication.
 export async function updatePassword(formData: FormData) {
+  await assertNotViewer();
   const supabase = await createClient();
 
   const {

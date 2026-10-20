@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { logError } from "@/lib/error-log";
+import { forbidViewer } from "@/lib/viewer-guard";
 
 // Error Monitoring (schema_step43.sql) — the receiving end for
 // app/global-error.tsx's crash report. A root error boundary is a Client
@@ -15,6 +16,10 @@ import { logError } from "@/lib/error-log";
 // hit it. logError() itself is what's staff-only (RLS on error_logs/alerts
 // via the service-role client), not this endpoint.
 export async function POST(request: NextRequest) {
+  // A read-only viewer account gets no downloads and no writes (lib/viewer-guard.ts).
+  const viewerBlocked = await forbidViewer();
+  if (viewerBlocked) return viewerBlocked;
+
   let body: { message?: string; stack?: string | null; digest?: string | null; url?: string | null };
   try {
     body = await request.json();

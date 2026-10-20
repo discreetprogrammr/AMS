@@ -1,4 +1,4 @@
-import { getProfile, requireStaff } from "@/lib/supabase/profile";
+import { getProfile, requireStaffOrViewer } from "@/lib/supabase/profile";
 import { AppShell } from "@/components/app-shell";
 import { ImportPartsForm } from "./import-parts-form";
 
@@ -6,7 +6,7 @@ import { ImportPartsForm } from "./import-parts-form";
 // staff-only end to end (parts stock is internal ops, not part of the
 // client portal — same reasoning as every other write path on Parts).
 export default async function ImportPartsPage() {
-  await requireStaff("/parts");
+  await requireStaffOrViewer("/parts");
   const profile = await getProfile();
 
   return (

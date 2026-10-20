@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { markEventCompleted } from "./actions";
 import { assetLabel } from "@/lib/format";
 import { CalendarEventModal } from "./calendar-event-modal";
+import { useViewOnly } from "@/components/view-only";
 
 export type CalendarEventRow = {
   id: string;
@@ -69,6 +70,7 @@ export function CalendarView({
   events: CalendarEventRow[];
   isStaff: boolean;
 }) {
+  const viewOnly = useViewOnly();
   const [cursor, setCursor] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -274,9 +276,10 @@ export function CalendarView({
                       tabIndex={0}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (!busy) handleComplete(ev.id);
+                        if (!busy && !viewOnly) handleComplete(ev.id);
                       }}
-                      className="mt-1 inline-block text-xs text-blue-400 hover:underline"
+                      title={viewOnly ? "View-only account" : undefined}
+                      className={`mt-1 inline-block text-xs text-blue-400 ${viewOnly ? "cursor-not-allowed opacity-50" : "hover:underline"}`}
                     >
                       {busy ? "Marking…" : "Mark Completed"}
                     </span>

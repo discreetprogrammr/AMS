@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { assertNotViewer } from "@/lib/viewer-guard";
 
 // Called from components/push-subscribe-button.tsx right after the browser
 // hands back a PushSubscription from pushManager.subscribe(). Upsert on the
@@ -12,6 +13,7 @@ export async function subscribeToPush(subscription: {
   endpoint: string;
   keys: { p256dh: string; auth: string };
 }): Promise<void> {
+  await assertNotViewer();
   const supabase = await createClient();
   const {
     data: { user },
@@ -42,6 +44,7 @@ export async function subscribeToPush(subscription: {
 // subscriptions") already prevents removing anyone else's, so no extra
 // user_id check is needed here beyond what the policy already enforces.
 export async function unsubscribeFromPush(endpoint: string): Promise<void> {
+  await assertNotViewer();
   const supabase = await createClient();
 
   const { error } = await supabase.from("push_subscriptions").delete().eq("endpoint", endpoint);

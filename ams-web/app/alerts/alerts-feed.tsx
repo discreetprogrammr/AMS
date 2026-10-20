@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { markAlertRead, resolveAlert } from "./actions";
 import { assetLabel } from "@/lib/format";
+import { useViewOnly } from "@/components/view-only";
 
 export type AlertRow = {
   id: string;
@@ -84,6 +85,7 @@ function timeAgo(iso: string): string {
 }
 
 export function AlertsFeed({ alerts }: { alerts: AlertRow[] }) {
+  const viewOnly = useViewOnly();
   const [filter, setFilter] = useState<FilterKey>("all");
   const [isPending, startTransition] = useTransition();
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -208,7 +210,8 @@ export function AlertsFeed({ alerts }: { alerts: AlertRow[] }) {
                       {!a.is_read && (
                         <button
                           type="button"
-                          disabled={busy}
+                          disabled={busy || viewOnly}
+                          title={viewOnly ? "View-only account" : undefined}
                           onClick={() => handleMarkRead(a.id)}
                           className="rounded-lg border border-hairline px-3 py-1 text-xs text-ink-soft hover:bg-surface-2 disabled:opacity-50"
                         >
@@ -217,7 +220,8 @@ export function AlertsFeed({ alerts }: { alerts: AlertRow[] }) {
                       )}
                       <button
                         type="button"
-                        disabled={busy}
+                        disabled={busy || viewOnly}
+                        title={viewOnly ? "View-only account" : undefined}
                         onClick={() => handleResolve(a.id)}
                         className="rounded-lg border border-hairline px-3 py-1 text-xs text-ink-soft hover:bg-surface-2 disabled:opacity-50"
                       >

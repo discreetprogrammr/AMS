@@ -8,6 +8,7 @@ import { ticketRef, woRef, reportRef, dateTimeLabel } from "@/lib/format";
 import { reportKindOf, REPORT_KIND_REF_PREFIX } from "@/lib/report-types";
 import { updateTicketStatus } from "@/app/assets/tickets-actions";
 import type { TicketRow } from "./tickets-table";
+import { useViewOnly } from "@/components/view-only";
 
 type LinkedReport = {
   id: string;
@@ -44,6 +45,7 @@ export function TicketDetailModal({
   onClose: () => void;
   onStatusChange: (ticketId: string, status: string, resolvedAt: string | null) => void;
 }) {
+  const viewOnly = useViewOnly();
   const [reports, setReports] = useState<LinkedReport[] | null>(null);
   const [status, setStatus] = useState(ticket.status);
   const [saving, setSaving] = useState(false);
@@ -121,7 +123,8 @@ export function TicketDetailModal({
               {isStaff ? (
                 <select
                   value={status}
-                  disabled={saving}
+                  disabled={saving || viewOnly}
+                  title={viewOnly ? "View-only account" : undefined}
                   onChange={(e) => handleStatusChange(e.target.value)}
                   className="rounded-lg border border-hairline bg-surface-2 px-3 py-1.5 text-sm text-ink focus:border-blue-500 focus:outline-none disabled:opacity-50"
                 >

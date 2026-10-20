@@ -15,6 +15,7 @@ import {
 } from "@/lib/sounds";
 import { MAX_ATTACHMENT_BYTES, makeAttachmentPath, formatFileSize, isImageMime } from "@/lib/attachments";
 import { ticketRef } from "@/lib/format";
+import { useViewOnly } from "@/components/view-only";
 
 type Message = {
   id: string;
@@ -164,6 +165,8 @@ export function TicketChat({
   serialNumber?: string | null;
   initialMessages: Message[];
 }) {
+  // A read-only viewer can read the thread but cannot write to it (schema_step54.sql).
+  const viewOnly = useViewOnly();
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -193,6 +196,7 @@ export function TicketChat({
   // notification dot and the inbox's "New" indicator. Safe to call
   // liberally: it's just "how far I've seen", not a one-shot action.
   async function markRead() {
+    if (viewOnly) return; // read-state is a write; a viewer has none
     await supabase
       .from("message_reads")
       .upsert(
@@ -412,7 +416,7 @@ export function TicketChat({
           <button
             type="button"
             onClick={() => call.startCall("audio")}
-            disabled={call.status !== "idle"}
+            disabled={call.status !== "idle" || viewOnly}
             className="flex h-9 w-9 items-center justify-center rounded-full border border-hairline text-ink-soft hover:bg-surface-2 hover:text-ink disabled:opacity-40"
             title="Start voice call"
             aria-label="Start voice call"
@@ -422,7 +426,7 @@ export function TicketChat({
           <button
             type="button"
             onClick={() => call.startCall("video")}
-            disabled={call.status !== "idle"}
+            disabled={call.status !== "idle" || viewOnly}
             className="flex h-9 w-9 items-center justify-center rounded-full border border-hairline text-ink-soft hover:bg-surface-2 hover:text-ink disabled:opacity-40"
             title="Start video call"
             aria-label="Start video call"
@@ -539,6 +543,7 @@ export function TicketChat({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
+            disabled={viewOnly}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-hairline text-ink-soft hover:bg-surface-2 hover:text-ink"
             title="Attach a file or photo"
             aria-label="Attach a file or photo"
@@ -555,12 +560,13 @@ export function TicketChat({
               }
             }}
             rows={1}
-            placeholder="Type a message…"
+            disabled={viewOnly}
+            placeholder={viewOnly ? "View-only account" : "Type a message…"}
             className="max-h-32 flex-1 resize-none rounded-lg border border-hairline bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
           />
           <button
             type="submit"
-            disabled={(!draft.trim() && !pendingFile) || sending}
+            disabled={(!draft.trim() && !pendingFile) || sending || viewOnly}
             className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-ink hover:bg-blue-500 disabled:opacity-40"
           >
             {sending ? "Sending…" : "Send"}

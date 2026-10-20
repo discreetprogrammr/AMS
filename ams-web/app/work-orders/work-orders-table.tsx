@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { ticketRef, woRef, dateTimeLabel } from "@/lib/format";
 import { updateWorkOrderStatus } from "./actions";
 import { LogPartsModal, type PartOption } from "./log-parts-modal";
+import { useViewOnly } from "@/components/view-only";
 
 export type WorkOrderRow = {
   id: string;
@@ -52,6 +53,7 @@ export function WorkOrdersTable({
   workOrders: WorkOrderRow[];
   parts: PartOption[];
 }) {
+  const viewOnly = useViewOnly();
   const [filter, setFilter] = useState<FilterKey>("all");
   const [isPending, startTransition] = useTransition();
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -177,7 +179,8 @@ export function WorkOrdersTable({
                 <td className="px-4 py-3">
                   <select
                     value={w.status}
-                    disabled={isPending && pendingId === w.id}
+                    disabled={(isPending && pendingId === w.id) || viewOnly}
+                    title={viewOnly ? "View-only account" : undefined}
                     onChange={(e) => handleStatusChange(w.id, e.target.value)}
                     className="rounded-lg border border-hairline bg-surface-2 px-2 py-1 text-xs text-ink focus:border-blue-500 focus:outline-none disabled:opacity-50"
                   >
@@ -202,7 +205,9 @@ export function WorkOrdersTable({
                   <button
                     type="button"
                     onClick={() => setLogPartsFor(w)}
-                    className="text-xs text-blue-400 hover:underline"
+                    disabled={viewOnly}
+                    title={viewOnly ? "View-only account" : undefined}
+                    className="text-xs text-blue-400 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Log Parts
                   </button>

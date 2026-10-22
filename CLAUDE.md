@@ -232,7 +232,9 @@ equipment. Spec: `docs/HorizonCare360_Internal_Equipment_Spec_v0.1.md`.
   this repo arrives the normal way: schema changes as `schema_step*.sql`,
   and route changes such as `/api/turn-credentials` accepting a bearer
   token. Keep these contracts stable, because the app depends on them:
-  `messages` call events, the `call:${ticketId}` signalling payloads in
+  `messages` call events, the `call_alerts` rows `/api/call-notify` writes
+  (they drive the in-app incoming-call banner), the `call:${ticketId}`
+  signalling payloads in
   `lib/webrtc/use-call.ts`, the `chat-attachments` path convention in
   `lib/attachments.ts`, and the `/assets/<id>` QR URL.
 - Compliance context: RA 10173 (Philippine Data Privacy Act) and EO 119.

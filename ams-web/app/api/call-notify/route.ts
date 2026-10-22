@@ -131,6 +131,23 @@ export async function POST(request: Request) {
   const ref = ticketRef(ticketId);
   const url = `/messages/${ticketId}`;
 
+  // Feeds the in-app banner on every staff page (schema_step55.sql,
+  // components/incoming-call-banner.tsx). Written with the caller's own token, so
+  // RLS decides who may; a failure here must not stop the notifications below.
+  const { error: alertError } = await supabase.from("call_alerts").insert({
+    ticket_id: ticketId,
+    call_id: callId,
+    kind,
+    event,
+    caller_id: user.id,
+    caller_name: who,
+    label: clip(where, 200),
+  });
+  if (alertError) {
+    // eslint-disable-next-line no-console
+    console.error("[call-notify] Could not record the call alert:", alertError.message);
+  }
+
   try {
     if (event === "started") {
       await sendPushToStaff({

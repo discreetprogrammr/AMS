@@ -2567,3 +2567,40 @@ A call is only heard by the **ticket page that is open** (`lib/webrtc/use-call.t
 1. Nothing to run. Restart the web app, or reload the page once.
 2. Open a ticket's page in the web app and click anywhere on it once (browsers only play sound after a click or keypress).
 3. Call that ticket from a client (web or mobile). The chime plays and repeats until you accept, decline, or the caller gives up.
+
+## Follow-up — Incoming-call banner on every staff page
+
+## Database change, run this first
+
+Run `schema_step55.sql` in the Supabase SQL editor (after `schema_step53.sql`, or after `schema_step54.sql` where that has been applied). It is idempotent. It creates `call_alerts`, an append-only table with RLS: staff can read it, and a client can insert a row only as themselves and only for a ticket on their own organisation's assets (the same rule as sending a message). It also adds the table to the realtime publication. **Run it before deploying this version.** Until it exists, `/api/call-notify` logs "Could not record the call alert" and still sends the push and the missed-call email, so nothing breaks, but there is no banner.
+
+A call was only heard by the ticket page that was open (`lib/webrtc/use-call.ts` listens on `call:${ticketId}`), and engineers are rarely sitting on one ticket. Push covers a closed tab. This covers an engineer who has the web app open on any other page.
+
+**Why a new table.** The HorizonCare360 Assist mobile app does not write a `messages` row while a call rings. It logs "call started" only once the call connects, so nothing in the database said "a client is calling right now". `call_alerts` is that signal.
+
+**What's here**
+- **`schema_step55.sql`**: `call_alerts` (ticket, call id, kind, `started` or `missed`, caller, caller name, a short site and unit label), RLS as above, the realtime publication. Append only: the app never updates or deletes a row. Rows are tiny and matter for about a minute; they are not trimmed automatically, so if the table ever grows, delete rows older than a day.
+- **`/api/call-notify`** (`app/api/call-notify/route.ts`): writes one `call_alerts` row per event, with the caller's own token (RLS decides who may, no service-role key), before the push and email. A failed insert is logged and does not stop them.
+- **`components/incoming-call-banner.tsx`**: a banner pinned to the top of the screen with the caller, the ticket reference, the site, **Dismiss** and **Answer**, and the chime ring. **Answer** opens the ticket, where the page rings and connects from the app's repeated `invite-retry`, exactly as before. It clears on a `missed` row for that call, on any call row written to `messages` for that ticket (answered, declined, ended, missed), or after 50 seconds. It is silent on the ticket's own page, which rings by itself, and it only stops a ring it started. It re-reads the last 50 seconds on mount because `AppShell` remounts it on every page.
+- **`components/app-shell.tsx`**: mounts the banner for staff. The HR & Admin preset does not get it, the same rule as push. Clients never get it, and RLS means a client's browser would receive nothing anyway.
+- Unchanged: the call signalling, push, the missed-call email, and the mobile app. No app release is needed.
+
+**Limits.**
+- Browsers play no sound until the page has had a click or keypress, so a tab nobody has touched since load can show the banner silently. Push remains the backup.
+- A closed tab cannot show a banner. Push covers it.
+- Every engineer with the web app open sees the banner. The first to answer writes a call row, which clears the others'. A short double ring is possible.
+- The ring window is a fixed 50 seconds, a little over the app's 45-second ring.
+
+**Not verified.** `npx tsc --noEmit`, `npm run lint` and `npm run build` pass. Not run against Supabase, a real browser, or the mobile app yet.
+
+## Setup steps
+
+1. Run `schema_step55.sql` in the Supabase SQL editor of the project you are testing against.
+2. Staff: sign in to the web app and stay on the **Dashboard**. Click anywhere once so sound is allowed.
+3. From the mobile app, as a client, start a video call on a ticket. The banner appears at the top within a second, the chime rings, and it names the client and the ticket.
+4. Click **Answer**. The ticket opens, the page rings, accept connects. The banner is gone.
+5. Start another call and let it ring out (45 seconds). The banner disappears when the app marks it missed, with the missed-call push as before.
+6. Start a call and click **Dismiss**: the banner and the ring stop for that call. The call itself is unaffected.
+7. Open that ticket's own page, then call it from the app: no banner and no double ring, only the page's own prompt.
+8. Open **Tickets**, then start a call, then move to **Assets** while it rings: the banner follows you and keeps ringing.
+9. Check as a client in another browser, and as a user with the HR & Admin preset: no banner.

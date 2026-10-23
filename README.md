@@ -2604,3 +2604,46 @@ A call was only heard by the ticket page that was open (`lib/webrtc/use-call.ts`
 7. Open that ticket's own page, then call it from the app: no banner and no double ring, only the page's own prompt.
 8. Open **Tickets**, then start a call, then move to **Assets** while it rings: the banner follows you and keeps ringing.
 9. Check as a client in another browser, and as a user with the HR & Admin preset: no banner.
+
+## Follow-up — Field engineer role (for the HorizonCare360 Assist mobile app)
+
+## Database change, run this first
+
+Two files, **run as two separate runs, in this order**, in the Supabase SQL editor (after `schema_step55.sql`):
+
+1. `schema_step56.sql` adds the `field_engineer` value to `user_role`. Nothing else. It must finish before the second file, because Postgres will not let a new enum value be used in the same run that adds it (the same reason `schema_step22.sql` and `schema_step22b.sql` are two files).
+2. `schema_step57.sql` adds `work_orders.assigned_to` and the access rules below. Both are idempotent. **Run both before deploying this version.** The Work Orders page now reads `assigned_to`, so its list does not load until the column exists.
+
+**Who a field engineer is.** A technician who works from the mobile app. They are **not** `is_internal_staff()` (admin or super admin), so every existing "staff manage ..." policy keeps them out by default, and `schema_step57.sql` grants only what the CTO approved on 23 Oct 2026 (`docs/FIELD-ENGINEER-ACCESS.md` in the HorizonCare360 Assist repo):
+
+- **Tickets and chat, any ticket:** read, reply, change status, raise a ticket as themselves, send photos.
+- **Units:** read all; change only `status` and `next_service_due`.
+- **Work orders:** only the ones assigned to them (`assigned_to`); change only `status` and `closed_at`.
+- **Service records and inspections:** create only on a unit (or site) in one of their assigned work orders; read and edit only their own; a submitted inspection is locked.
+- **Reference data, read only:** sites, organisations, unit documents, staff and client names, and parts **through the view `parts_for_field_engineers`**, which leaves out `unit_cost`.
+- **Everything else:** no access (audit log, error logs, SLA, compliance, calendar, inventory, equipment register).
+
+**Changed for everyone, not only field engineers**
+- **`messages` inserts must be sent as the signed-in user** (`sender_id = auth.uid()`). Before, anyone allowed to post could set another person's id, which the chat shows as "Tech Support, <name>". Every code path that inserts a message already sent the signed-in user.
+- **Staff profiles are readable only when signed in.** `schema_step28.sql` created "anyone can read staff profiles" with no `to` clause, so a visitor with only the public key and no login could read every staff profile row (name, role, avatar). It now applies to `authenticated` only.
+
+Column limits use a before-update trigger (`field_engineer_limit_update`), not a column grant, because a grant applies to every signed-in user including admins.
+
+**What's here (web app)**
+- **`lib/supabase/roles.ts`**: the `field_engineer` role and `isFieldEngineerRole`.
+- **`/use-the-app`**: where a field engineer lands. `components/app-shell.tsx` sends them there from every page, with a Sign out button. Anyone else who opens it goes to the dashboard. Row-level security is what actually keeps them out of the data.
+- **Work orders**: an **Assigned to (field engineer)** select on the create form and in the table. One person per job; for a crew job, the team lead. Existing work orders stay unassigned, so no field engineer sees them until someone assigns one. Only a real field engineer is accepted. `lead_technician` (free text) is unchanged and can still list the crew.
+- **Chat call notes** now say who logged them ("Video call · Gary · 11:06"). A client sees staff as "Tech Support, <name>".
+- **`check_step57.sql`**: signs in as each role on a throwaway set of rows and runs 76 checks, then rolls everything back. The red error at the end is expected and carries the report.
+
+**Not verified.** `npx tsc --noEmit`, `npm run lint` and `npm run build` pass. The migrations apply cleanly, twice, in a local Postgres, and `check_step57.sql` passes 76 of 76 both there and on the separate test Supabase project. Not yet run on production or demo, not tried with a real field engineer signed in to the web app, and no mobile app change is in this version. Not covered: the `service-reports` storage bucket (a field engineer cannot upload a report PDF yet), and clients can still set `raised_by` to another person when raising a ticket.
+
+## Setup steps
+
+1. Run `schema_step56.sql`, then, as a separate run, `schema_step57.sql`.
+2. Run `check_step57.sql` on the **test** project. Expect a red error starting `FIELD ENGINEER CHECK: 76 of 76 passed`.
+3. Create a field engineer: **Authentication > Users > Add user** (tick auto confirm), then run `insert into profiles (id, full_name, role) select id, 'Name', 'field_engineer' from auth.users where email = '...' on conflict (id) do update set role = 'field_engineer';`.
+4. Sign in to the web app as that user: you land on **Please use the HorizonCare360 Assist app**, with a Sign out button. Opening `/dashboard` or `/work-orders` sends you back.
+5. As staff, open **Work Orders > Create Work Order**: the **Assigned to** list shows that user. Create one assigned to them, then change the assignment in the table.
+6. Open a ticket's chat after a call: each call note shows who logged it.
+7. As an admin, confirm nothing else changed: work orders, tickets, parts and units behave as before.

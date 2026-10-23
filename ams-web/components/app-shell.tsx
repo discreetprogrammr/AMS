@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
+import { redirect } from "next/navigation";
 import type { Profile } from "@/lib/supabase/profile";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 import { MobileNavProvider } from "./mobile-nav";
 import { IncomingCallBanner } from "./incoming-call-banner";
 import { isHrAdminPreset } from "@/lib/hr-admin-preset";
-import { isStaffRole } from "@/lib/supabase/roles";
+import { isFieldEngineerRole, isStaffRole } from "@/lib/supabase/roles";
 
 // Shared page shell: sidebar + topbar around a scrollable content area.
 // Every page wraps its content in this instead of hand-rolling its own nav
@@ -26,6 +27,11 @@ export function AppShell({
   actions?: ReactNode;
   children: ReactNode;
 }) {
+  // A field engineer works from the mobile app only, for now. Row-level
+  // security is what actually keeps them out of the data; this just gives
+  // them a clear page instead of empty ones.
+  if (isFieldEngineerRole(profile?.role)) redirect("/use-the-app");
+
   // Staff hear a client's call on any page. The HR & Admin preset gets no
   // client-facing calling, the same rule as push (hidePush below).
   const hearsCalls =

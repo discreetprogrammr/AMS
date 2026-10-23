@@ -6,7 +6,7 @@
 // error this file was split out to fix). Server components/actions can
 // still get everything from "./profile", which re-exports these.
 
-export type Role = "super_admin" | "admin" | "client_viewer";
+export type Role = "super_admin" | "admin" | "client_viewer" | "field_engineer";
 
 // "Staff" means either tier — Admin and Super Admin see the same tabs
 // everywhere in the app EXCEPT Audit Log, which is Super Admin-only (see
@@ -18,4 +18,12 @@ export function isStaffRole(role: Role | null | undefined): boolean {
 
 export function isSuperAdminRole(role: Role | null | undefined): boolean {
   return role === "super_admin";
+}
+
+// A field engineer (schema_step56.sql, schema_step57.sql) is a technician who
+// works from the HorizonCare360 Assist mobile app. They are not "staff" above:
+// the database keeps them out of every staff table, and the web app sends
+// them to /use-the-app. A limited web view for them is a later phase.
+export function isFieldEngineerRole(role: Role | null | undefined): boolean {
+  return role === "field_engineer";
 }

@@ -22,6 +22,14 @@ export default async function NewWorkOrderPage({
   // Internal equipment (organizations.is_internal) is never offered here — see lib/internal-org.ts.
   const internalOrgIds = await getInternalOrgIds(supabase);
 
+  // Field engineers a job can be assigned to (schema_step56.sql). An empty
+  // list on a database that has not run that step yet, not an error.
+  const { data: fieldEngineers } = await supabase
+    .from("profiles")
+    .select("id, full_name")
+    .eq("role", "field_engineer")
+    .order("full_name");
+
   // Spawned from a ticket's "Create Work Order" link (see app/tickets and
   // app/assets/[id]) — pre-fill asset/description/priority from it, and
   // carry ticket_id through as a hidden field so createWorkOrder can link
@@ -214,6 +222,22 @@ export default async function NewWorkOrderPage({
               <label className={labelClass}>Due Date</label>
               <input type="date" name="due_date" className={inputClass} />
             </div>
+          </div>
+
+          <div>
+            <label className={labelClass}>Assigned to (field engineer)</label>
+            <select name="assigned_to" defaultValue="" className={inputClass}>
+              <option value="">Unassigned</option>
+              {(fieldEngineers ?? []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.full_name ?? "Unnamed"}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-slate-500">
+              The person who owns this job in the mobile app. For a crew job, choose the team lead. An unassigned
+              work order is not visible to any field engineer.
+            </p>
           </div>
 
           <div className="flex items-center gap-3">

@@ -6,6 +6,15 @@ import { createClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/supabase/profile";
 import { notifyTicketStatusChange } from "@/lib/notify";
 
+// A work order can be assigned to one field engineer (schema_step57.sql,
+// work_orders.assigned_to): the person who owns the job in the mobile app, the
+// team lead for a crew job. Only a real field engineer is accepted.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function isFieldEngineer(supabase: any, id: string): Promise<boolean> {
+  const { data } = await supabase.from("profiles").select("id").eq("id", id).eq("role", "field_engineer").maybeSingle();
+  return !!data;
+}
+
 // Staff-only end to end — see the note in schema_step9.sql. Unlike
 // service_tickets, clients never raise or view work orders; this is the
 // internal maintenance-operations queue.
@@ -32,6 +41,13 @@ export async function createWorkOrder(formData: FormData) {
   const leadTechnician = String(formData.get("lead_technician") ?? "").trim();
   const dueDate = String(formData.get("due_date") ?? "");
   const ticketId = String(formData.get("ticket_id") ?? "").trim() || null;
+  const assignedTo = String(formData.get("assigned_to") ?? "").trim() || null;
+
+  if (assignedTo && !(await isFieldEngineer(supabase, assignedTo))) {
+    redirect(
+      `/work-orders/new?error=${encodeURIComponent("Please pick a field engineer from the list.")}${ticketId ? `&ticket_id=${ticketId}` : ""}`,
+    );
+  }
 
   if (!assetId) {
     redirect(
@@ -54,6 +70,9 @@ export async function createWorkOrder(formData: FormData) {
       priority,
       status: "open",
       lead_technician: leadTechnician || null,
+      // Only sent when chosen, so creating an unassigned work order never
+      // depends on the column existing yet.
+      ...(assignedTo ? { assigned_to: assignedTo } : {}),
       due_date: dueDate || null,
       created_by: user?.id ?? null,
     })
@@ -141,6 +160,28 @@ export async function createWorkOrder(formData: FormData) {
 
   revalidatePath("/work-orders");
   redirect("/work-orders?created=1");
+}
+
+// Assign a work order to a field engineer, or clear it (null). Called from the
+// "Assigned to" <select> in work-orders-table.tsx, like the status action below.
+// Existing work orders start unassigned: a field engineer sees none of them in
+// the mobile app until someone assigns one here.
+export async function assignWorkOrder(id: string, assignedTo: string | null) {
+  await requireStaff("/work-orders");
+
+  const supabase = await createClient();
+
+  if (assignedTo && !(await isFieldEngineer(supabase, assignedTo))) {
+    throw new Error("That person is not a field engineer.");
+  }
+
+  const { error } = await supabase
+    .from("work_orders")
+    .update({ assigned_to: assignedTo, updated_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/work-orders");
 }
 
 // Called directly from the client-side status <select> in

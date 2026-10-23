@@ -1,0 +1,21 @@
+-- Step 56 (part 1 of 2): add the 'field_engineer' role [idempotent].
+--
+-- A field engineer is a technician who works from the HorizonCare360 Assist
+-- mobile app: answers and replies to tickets, and works their own assigned
+-- jobs. They are NOT staff in the sense of is_internal_staff() (admin or
+-- super_admin), so every existing "staff manage ..." policy keeps them out by
+-- default. schema_step57.sql adds narrow policies for exactly what they need.
+--
+-- Run ONLY this file first, and let it finish/commit, before running
+-- schema_step57.sql. Postgres refuses to let a brand-new enum value be
+-- referenced anywhere, even inside a function body being defined, until the
+-- ALTER TYPE that added it has committed (error 55P04, "unsafe use of new
+-- value"). Pasting both files as one script hits that error, which is why
+-- schema_step22.sql and schema_step22b.sql were two separate runs too.
+--
+-- Nothing else changes here. No existing account's role changes, and no
+-- policy is touched. Safe to run more than once.
+--
+-- Run this once in the Supabase SQL editor (after schema_step55.sql).
+
+alter type user_role add value if not exists 'field_engineer' after 'super_admin';

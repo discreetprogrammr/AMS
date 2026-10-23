@@ -2660,7 +2660,9 @@ Column limits use a before-update trigger (`field_engineer_limit_update`), not a
 - The web action `updateTicketStatus` is **unchanged**. The two are kept in step by hand; a comment in `lib/ticket-status.ts` says so.
 - Unchanged: everything in the web app.
 
-**Not verified.** `npx tsc --noEmit`, `npm run lint` and `npm run build` pass. Not called against Supabase or from the app yet.
+**Tried** (24 Oct 2026, against the separate test Supabase project, as the Test Field Engineer): in progress, closed and open each return 200 and set the status, with `first_response_at` stamped on the first change and `resolved_at` on close, and both kept on reopen; a bad token returns 401, a bad status 400, an unknown ticket 404.
+
+**Not verified.** `npx tsc --noEmit`, `npm run lint` and `npm run build` pass. Not tried: a client's token (expected 403), a ticket linked to a work order (the service-role mirror onto the work order and its calendar event), the client's status email and push actually arriving, or a call from the app on a phone.
 
 ## Setup steps
 

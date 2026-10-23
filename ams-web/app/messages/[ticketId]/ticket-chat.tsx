@@ -452,10 +452,22 @@ export function TicketChat({
         {messages.map((m) => {
           const mine = m.sender_id === currentUserId;
           if (m.message_type !== "text") {
+            // Who logged this call note, so the timeline says who took a call
+            // (each side logs its own). Same labelling as the reply bubbles:
+            // a client sees staff as "Tech Support, <name>".
+            const callWho =
+              m.sender_id === currentUserId
+                ? "you"
+                : m.profiles?.full_name
+                  ? isStaff
+                    ? m.profiles.full_name
+                    : `Tech Support — ${m.profiles.full_name}`
+                  : null;
             return (
               <div key={m.id} className="flex justify-center">
                 <span className="rounded-full bg-surface-2 px-3 py-1 text-xs text-slate-500">
-                  {callLabel(m.call_kind, m.message_type)} · {timeLabel(m.created_at)}
+                  {callLabel(m.call_kind, m.message_type)}
+                  {callWho ? ` · ${callWho}` : ""} · {timeLabel(m.created_at)}
                 </span>
               </div>
             );

@@ -21,17 +21,19 @@ export default async function WorkOrdersPage({
   // work order rather than a single object. work_order_parts is the same
   // kind of reverse embed, added in schema_step31.sql, for the "parts
   // logged" tags shown under the task.
-  const [{ data: workOrders, error: fetchError }, { data: partsCatalog }] = await Promise.all([
+  const [{ data: workOrders, error: fetchError }, { data: partsCatalog }, { data: fieldEngineers }] = await Promise.all([
     supabase
       .from("work_orders")
       .select(
-        "id, task_title, description, work_type, priority, status, lead_technician, due_date, created_at, closed_at, assets(asset_tag, sites(address), organizations(name)), service_tickets(id), work_order_parts(id, quantity_used, part_name_snapshot)",
+        "id, task_title, description, work_type, priority, status, lead_technician, assigned_to, due_date, created_at, closed_at, assets(asset_tag, sites(address), organizations(name)), service_tickets(id), work_order_parts(id, quantity_used, part_name_snapshot)",
       )
       .order("created_at", { ascending: false }),
     supabase
       .from("parts")
       .select("id, name, unit, quantity_on_hand")
       .order("name"),
+    // Who a work order can be assigned to (schema_step56.sql, step57.sql).
+    supabase.from("profiles").select("id, full_name").eq("role", "field_engineer").order("full_name"),
   ]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -43,6 +45,7 @@ export default async function WorkOrdersPage({
     priority: w.priority,
     status: w.status,
     lead_technician: w.lead_technician,
+    assigned_to: w.assigned_to ?? null,
     due_date: w.due_date,
     created_at: w.created_at,
     closed_at: w.closed_at,
@@ -85,7 +88,7 @@ export default async function WorkOrdersPage({
           {fetchError.message}
         </p>
       )}
-      <WorkOrdersTable workOrders={rows} parts={partsCatalog ?? []} />
+      <WorkOrdersTable workOrders={rows} parts={partsCatalog ?? []} fieldEngineers={fieldEngineers ?? []} />
     </AppShell>
   );
 }

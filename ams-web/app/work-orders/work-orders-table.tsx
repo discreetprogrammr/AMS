@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { StatusBadge } from "@/components/status-badge";
 import { ticketRef, woRef, dateTimeLabel } from "@/lib/format";
-import { updateWorkOrderStatus } from "./actions";
+import { assignWorkOrder, updateWorkOrderStatus } from "./actions";
 import { LogPartsModal, type PartOption } from "./log-parts-modal";
 
 export type WorkOrderRow = {
@@ -15,6 +15,7 @@ export type WorkOrderRow = {
   priority: string;
   status: string;
   lead_technician: string | null;
+  assigned_to: string | null;
   due_date: string | null;
   created_at: string;
   closed_at: string | null;
@@ -23,6 +24,8 @@ export type WorkOrderRow = {
   from_ticket_id: string | null;
   parts_used: { quantity_used: number; part_name_snapshot: string }[];
 };
+
+export type FieldEngineerOption = { id: string; full_name: string | null };
 
 type FilterKey =
   | "all"
@@ -48,9 +51,11 @@ const FILTERS: { key: FilterKey; label: string; dotClass?: string }[] = [
 export function WorkOrdersTable({
   workOrders,
   parts,
+  fieldEngineers,
 }: {
   workOrders: WorkOrderRow[];
   parts: PartOption[];
+  fieldEngineers: FieldEngineerOption[];
 }) {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [isPending, startTransition] = useTransition();
@@ -88,6 +93,17 @@ export function WorkOrdersTable({
     });
   }
 
+  function handleAssign(id: string, assignedTo: string) {
+    setPendingId(id);
+    startTransition(async () => {
+      try {
+        await assignWorkOrder(id, assignedTo || null);
+      } finally {
+        setPendingId(null);
+      }
+    });
+  }
+
   return (
     <div>
       <div className="mb-5 flex flex-wrap items-center gap-2">
@@ -119,6 +135,7 @@ export function WorkOrdersTable({
               <th className="px-4 py-3">Task</th>
               <th className="px-4 py-3">Priority</th>
               <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Assigned to</th>
               <th className="px-4 py-3">Due</th>
               <th className="px-4 py-3">Created</th>
               <th className="px-4 py-3">Closed</th>
@@ -187,6 +204,22 @@ export function WorkOrdersTable({
                     <option value="closed">Closed</option>
                   </select>
                 </td>
+                <td className="px-4 py-3">
+                  <select
+                    value={w.assigned_to ?? ""}
+                    disabled={isPending && pendingId === w.id}
+                    onChange={(e) => handleAssign(w.id, e.target.value)}
+                    aria-label="Assigned to"
+                    className="max-w-[10rem] rounded-lg border border-hairline bg-surface-2 px-2 py-1 text-xs text-ink focus:border-blue-500 focus:outline-none disabled:opacity-50"
+                  >
+                    <option value="">Unassigned</option>
+                    {fieldEngineers.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.full_name ?? "Unnamed"}
+                      </option>
+                    ))}
+                  </select>
+                </td>
                 <td className="px-4 py-3 whitespace-nowrap text-ink-soft">
                   {w.due_date
                     ? new Date(w.due_date).toLocaleDateString()
@@ -212,7 +245,7 @@ export function WorkOrdersTable({
             {rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={9}
+                  colSpan={10}
                   className="px-4 py-8 text-center text-slate-500"
                 >
                   No work orders match this filter.

@@ -51,10 +51,18 @@ export async function applyWorkOrderStatus(
   if (error || !updated || updated.length === 0) return { result: "refused" };
 
   // calendar_events.status has its own vocabulary: "completed" or "scheduled".
-  await createServiceRoleClient()
+  const { data: events, error: calendarError } = await createServiceRoleClient()
     .from("calendar_events")
     .update({ status: status === "closed" ? "completed" : "scheduled" })
-    .eq("work_order_id", workOrderId);
+    .eq("work_order_id", workOrderId)
+    .select("id");
+  if (calendarError) {
+    // eslint-disable-next-line no-console
+    console.error("[work-order-status] Could not update the calendar event:", calendarError.message);
+  } else {
+    // eslint-disable-next-line no-console
+    console.log(`[work-order-status] calendar events updated: ${events?.length ?? 0}`);
+  }
 
   // Mirror onto the ticket this work order was created from, if any.
   const { data: linkedTicket } = await supabase
@@ -64,13 +72,17 @@ export async function applyWorkOrderStatus(
     .maybeSingle();
   if (!linkedTicket) return { result: "ok", linkedTicketId: null };
 
-  await supabase
+  const { error: ticketError } = await supabase
     .from("service_tickets")
     .update({
       status,
       resolved_at: status === "closed" ? (linkedTicket.resolved_at ?? now) : linkedTicket.resolved_at,
     })
     .eq("id", linkedTicket.id);
+  if (ticketError) {
+    // eslint-disable-next-line no-console
+    console.error("[work-order-status] Could not update the linked ticket:", ticketError.message);
+  }
 
   return { result: "ok", linkedTicketId: linkedTicket.id };
 }

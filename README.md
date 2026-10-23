@@ -2673,3 +2673,21 @@ Column limits use a before-update trigger (`field_engineer_limit_update`), not a
 4. Repeat with `open`: the status goes back, `first_response_at` and `resolved_at` stay as they were.
 5. No token or `Bearer not-a-token`: 401. A client's token: 403. A random ticket id: 404. A status of `done`: 400.
 6. A ticket linked to a work order: the work order's status (and `closed_at` on close) follows, and its calendar event becomes `completed` or `scheduled`.
+
+## Follow-up — Work order status from the HorizonCare360 Assist app
+
+**No database change.** The sibling of `/api/ticket-status` above, for the jobs a field engineer works from the mobile app.
+
+**What's here**
+- **`POST /api/work-order-status`** (`app/api/work-order-status/route.ts`). `Authorization: Bearer <Supabase access token>`, body `{ "workOrderId": "<uuid>", "status": "open" | "in_progress" | "parts_pending" | "closed" }` (work orders and tickets share one vocabulary, `schema_step21.sql`). A field engineer, admin or super admin may call it; a client gets 403, and so does the "HR & Admin" preset. 401, 400, 404 and 403 behave as for tickets. A field engineer can change **only the work orders assigned to them**: the work order is changed with the caller's own token, so row-level security and the column limit in `schema_step57.sql` (only `status`, `closed_at`, `updated_at`) enforce it, not the route. A work order they cannot see is a 404.
+- **`lib/work-order-status.ts`** (`applyWorkOrderStatus`). The same change `updateWorkOrderStatus` (`app/work-orders/actions.ts`) makes from the web table: stamps `closed_at` once and never clears it, keeps the calendar event in step, and mirrors the status onto the ticket the job was created from, then the route tells that ticket's client (`notifyTicketStatusChange`). The linked ticket is changed with the **caller's token** (a field engineer may change a ticket's status and resolved time). The only use of the **service role** is the job's calendar event, which a field engineer may not write; it touches only the events of the work order the caller has just legitimately changed, and only their status. The web action is unchanged and the two are kept in step by hand.
+
+**Not verified.** `npx tsc --noEmit` and `npm run lint` pass. Not called against Supabase or from the app yet.
+
+## Setup steps
+
+1. Nothing to run in Supabase.
+2. Assign a work order to a field engineer (Work Orders > Assigned to). Link a ticket to it by creating the work order from the ticket.
+3. With that engineer's token in `$TOKEN` and the work order id in `$WO`: `curl -s -w "\n%{http_code}\n" -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "{\"workOrderId\":\"$WO\",\"status\":\"closed\"}" http://localhost:3000/api/work-order-status` returns 200. The work order is `closed` with `closed_at` set, its calendar event is `completed`, and the linked ticket is `closed` with `resolved_at` set and the client notified.
+4. Repeat with `open`: all three go back (`closed_at` and `resolved_at` stay).
+5. A work order assigned to someone else, or an unknown id: 404. A client's token: 403. A bad status: 400.

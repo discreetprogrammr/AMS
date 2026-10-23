@@ -213,7 +213,7 @@ begin
   perform pg_temp.check('fe1 reads organisations',
     pg_temp.try(fe1, format('select 1 from organizations where id in (%L, %L)', org1, org2)), 'ok:2');
   perform pg_temp.check('fe1 reads a unit document file',
-    pg_temp.try(fe1, 'select 1 from storage.objects where bucket_id = ''asset-documents'''), 'ok:1');
+    pg_temp.try(fe1, format('select 1 from storage.objects where bucket_id = %L and name = %L', 'asset-documents', a1 || '/manual.pdf')), 'ok:1');
   perform pg_temp.check('client of another organisation cannot read it',
     pg_temp.try(cli, format('select 1 from storage.objects where bucket_id = %L and name like %L', 'asset-documents', a2 || '/%')), 'ok:0');
   perform pg_temp.check('fe1 cannot read the audit log',

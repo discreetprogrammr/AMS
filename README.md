@@ -2647,3 +2647,27 @@ Column limits use a before-update trigger (`field_engineer_limit_update`), not a
 5. As staff, open **Work Orders > Create Work Order**: the **Assigned to** list shows that user. Create one assigned to them, then change the assignment in the table.
 6. Open a ticket's chat after a call: each call note shows who logged it.
 7. As an admin, confirm nothing else changed: work orders, tickets, parts and units behave as before.
+
+## Follow-up — Ticket status from the HorizonCare360 Assist app
+
+**No database change.** A field engineer works tickets from the mobile app, and changing a ticket's status is more than setting a column, so the app asks the web app to do it.
+
+**Why a route.** In the web app a status change (`app/assets/tickets-actions.ts`) stamps `first_response_at` and `resolved_at` (the SLA Performance widget measures against them), mirrors the status onto a linked work order and its calendar event, and tells the client who raised the ticket by email and push (`notifyTicketStatusChange`, which needs the service role on the server). A direct table update from the phone would skip all of it: SLA figures would be wrong and the client would not be told.
+
+**What's here**
+- **`POST /api/ticket-status`** (`app/api/ticket-status/route.ts`). `Authorization: Bearer <Supabase access token>`, body `{ "ticketId": "<uuid>", "status": "open" | "in_progress" | "parts_pending" | "closed" }`. Only a field engineer, admin or super admin may call it (a client gets 403, and so does the "HR & Admin" preset). No token or a bad one is 401, a bad body 400, a ticket the caller cannot read 404, and one they can read but may not change 403. 200 on success.
+- **`lib/ticket-status.ts`** (`applyTicketStatus`). The same change `updateTicketStatus` makes from the web ticket modal. The ticket is updated with the **caller's own token**, so row-level security and the field engineer column limit (`schema_step57.sql`: only `status`, `first_response_at`, `resolved_at`, `updated_at`) are what authorise it. Only after that succeeds does it mirror the status onto a linked work order and its calendar event. That mirror uses the **service role**, because a field engineer may not write calendar events or other people's work orders directly, yet the web app's own change keeps the three in step. It touches only the work order linked to the ticket the caller has just legitimately changed, and only `status` and `closed_at`.
+- The web action `updateTicketStatus` is **unchanged**. The two are kept in step by hand; a comment in `lib/ticket-status.ts` says so.
+- Unchanged: everything in the web app.
+
+**Not verified.** `npx tsc --noEmit`, `npm run lint` and `npm run build` pass. Not called against Supabase or from the app yet.
+
+## Setup steps
+
+1. Nothing to run in Supabase. `schema_step56.sql` and `schema_step57.sql` must already be applied.
+2. With a field engineer's access token in `$TOKEN` and a ticket id in `$TICKET`:
+   `curl -s -w "\n%{http_code}\n" -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "{\"ticketId\":\"$TICKET\",\"status\":\"in_progress\"}" http://localhost:3000/api/ticket-status` returns `{"ok":true,...}` and 200. The ticket's status changes, and `first_response_at` is set the first time.
+3. Repeat with `closed`: `resolved_at` is set, and the client who raised the ticket gets the usual status email and push.
+4. Repeat with `open`: the status goes back, `first_response_at` and `resolved_at` stay as they were.
+5. No token or `Bearer not-a-token`: 401. A client's token: 403. A random ticket id: 404. A status of `done`: 400.
+6. A ticket linked to a work order: the work order's status (and `closed_at` on close) follows, and its calendar event becomes `completed` or `scheduled`.
